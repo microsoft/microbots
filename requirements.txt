@@ -60,7 +60,7 @@ tqdm==4.67.1
 typer-slim==0.21.1
 typing-inspection==0.4.1
 typing_extensions==4.15.0
-urllib3==2.5.0
+urllib3==2.6.3
 uvicorn==0.35.0
 xxhash==3.6.0
 yarl==1.20.1
