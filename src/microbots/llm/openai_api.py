@@ -1,22 +1,45 @@
 import json
 import os
+from collections.abc import Callable
 from dataclasses import asdict
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AzureOpenAI, OpenAI
 from microbots.llm.llm import LLMAskResponse, LLMInterface
 
 load_dotenv()
 
 endpoint = os.getenv("OPEN_AI_END_POINT")
+api_version = os.getenv("OPEN_AI_API_VERSION")
 deployment_name = os.getenv("OPEN_AI_DEPLOYMENT_NAME")
-api_key = os.getenv("OPEN_AI_KEY")  # use the api_key
+api_key = os.getenv("OPEN_AI_KEY")
 
 
 class OpenAIApi(LLMInterface):
 
-    def __init__(self, system_prompt, deployment_name=deployment_name, max_retries=3):
-        self.ai_client = OpenAI(base_url=f"{endpoint}", api_key=api_key)
+    def __init__(self, system_prompt, deployment_name=deployment_name, max_retries=3,
+                 token_provider: Callable[[], str] | None = None):
+        self.token_provider = token_provider
+
+        if not token_provider and not api_key:
+            raise ValueError(
+                "No authentication configured for OpenAI. Either set the OPEN_AI_KEY "
+                "environment variable or provide a token_provider (e.g. AzureTokenProvider)."
+            )
+
+        if token_provider:
+            # Azure users with AD token — use AzureOpenAI which calls token_provider natively per request
+            self.ai_client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=token_provider,
+                api_version=api_version,
+            )
+        else:
+            # Non-Azure users with a plain API key
+            self.ai_client = OpenAI(
+                base_url=endpoint,
+                api_key=api_key,
+            )
         self.deployment_name = deployment_name
         self.system_prompt = system_prompt
         self.messages = [{"role": "system", "content": system_prompt}]

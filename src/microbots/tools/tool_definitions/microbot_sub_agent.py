@@ -109,6 +109,7 @@ class MicrobotSubAgent(ExternalTool):
             model=parent_bot.model,
             system_prompt=system_prompt_common,
             environment=parent_bot.environment,
+            token_provider=parent_bot.token_provider,
         )
 
         result: BotRunResult = sub_bot.run(

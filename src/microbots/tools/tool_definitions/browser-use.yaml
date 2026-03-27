@@ -21,11 +21,12 @@ setup_commands:
   - cat /sbin/browser
 
 env_variables:
-  - AZURE_OPENAI_API_KEY
+  - AZURE_OPENAI_API_KEY  # Optional when using Azure AD auth (AZURE_AUTH_METHOD=azure_ad)
   - AZURE_OPENAI_ENDPOINT
   - AZURE_OPENAI_API_VERSION
   - BROWSER_USE_LLM_MODEL
   - BROWSER_USE_LLM_TEMPERATURE
+  # AZURE_OPENAI_AD_TOKEN is injected at runtime by BrowsingBot when token_provider is set — not listed here
 
 uninstall_commands:
   - playwright uninstall chromium

@@ -78,6 +78,24 @@ class TestOpenAIApiInitialization:
 
         assert api.ai_client is not None
 
+    def test_init_raises_when_no_auth_configured(self):
+        """ValueError is raised when neither api_key nor token_provider is supplied."""
+        with patch('microbots.llm.openai_api.api_key', None):
+            with pytest.raises(ValueError, match="No authentication configured for OpenAI"):
+                OpenAIApi(system_prompt="test", token_provider=None)
+
+    def test_init_with_token_provider_creates_azure_client(self):
+        """When token_provider is given, AzureOpenAI is used instead of OpenAI."""
+        mock_provider = Mock(return_value="token")
+
+        with patch('microbots.llm.openai_api.api_key', None), \
+             patch('microbots.llm.openai_api.AzureOpenAI') as mock_azure:
+            api = OpenAIApi(system_prompt="test", token_provider=mock_provider)
+
+        mock_azure.assert_called_once()
+        assert mock_azure.call_args.kwargs['azure_ad_token_provider'] is mock_provider
+        assert api.token_provider is mock_provider
+
 
 @pytest.mark.unit
 class TestOpenAIApiAsk:

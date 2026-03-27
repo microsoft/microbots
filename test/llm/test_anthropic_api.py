@@ -81,6 +81,24 @@ class TestAnthropicApiInitialization:
 
         assert api.ai_client is not None
 
+    def test_init_raises_when_no_auth_configured(self):
+        """ValueError is raised when neither api_key nor token_provider is supplied."""
+        with patch('microbots.llm.anthropic_api.api_key', None):
+            with pytest.raises(ValueError, match="No authentication configured for Anthropic"):
+                AnthropicApi(system_prompt="test", token_provider=None)
+
+    def test_init_with_token_provider_creates_foundry_client(self):
+        """When token_provider is given, AnthropicFoundry is used instead of Anthropic."""
+        mock_provider = Mock(return_value="token")
+
+        with patch('microbots.llm.anthropic_api.api_key', None), \
+             patch('microbots.llm.anthropic_api.AnthropicFoundry') as mock_foundry:
+            api = AnthropicApi(system_prompt="test", token_provider=mock_provider)
+
+        mock_foundry.assert_called_once()
+        assert mock_foundry.call_args.kwargs['azure_ad_token_provider'] is mock_provider
+        assert api.token_provider is mock_provider
+
 
 @pytest.mark.unit
 class TestAnthropicApiAsk:

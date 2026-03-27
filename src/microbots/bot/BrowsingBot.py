@@ -1,3 +1,4 @@
+import shlex
 from typing import Optional
 
 from microbots.MicroBot import BotType, MicroBot, BotRunResult
@@ -15,7 +16,8 @@ class BrowsingBot(MicroBot):
         self,
         model: str,
         environment: Optional[Environment] = None,
-        additional_tools: Optional[list[ToolAbstract]] = [],
+        additional_tools: Optional[list[ToolAbstract]] = None,
+        token_provider: Optional[any] = None,
     ):
         # validate init values before assigning
         bot_type = BotType.BROWSING_BOT
@@ -28,15 +30,22 @@ class BrowsingBot(MicroBot):
             model=model,
             system_prompt=system_prompt,
             environment=environment,
-            additional_tools=additional_tools + [BROWSER_USE_TOOL],
+            additional_tools=(additional_tools or []) + [BROWSER_USE_TOOL],
+            token_provider=token_provider,
         )
 
-    def run(self, task, max_iterations=20, timeout_in_seconds=200) -> BotRunResult:
+    def run(self, task, timeout_in_seconds=200) -> BotRunResult:
         for tool in self.additional_tools:
             tool.setup_tool(self.environment)
 
+        # If an Azure AD token provider is configured, get a fresh token and inject it into the
+        # container so that browser.py (running inside Docker) can use it for ChatAzureOpenAI.
+        if self.token_provider is not None:
+            token = self.token_provider()
+            self.environment.execute(f'export AZURE_OPENAI_AD_TOKEN={shlex.quote(token)}')
+
         # browser-use will run inside the docker. So, single command to env should be sufficient
-        browser_output = self.environment.execute(f"browser '{task}'", timeout=timeout_in_seconds)
+        browser_output = self.environment.execute(f"browser {shlex.quote(task)}", timeout=timeout_in_seconds)
         if browser_output.return_code != 0:
             return BotRunResult(
                 status=False,
@@ -45,9 +54,7 @@ class BrowsingBot(MicroBot):
             )
 
         browser_stdout = browser_output.stdout
-        # print("Browser stdout:", browser_stdout)
-        # final_result = browser_stdout.split("Final result:")[-1].strip() if "Final result:" in browser_stdout else browser_stdout.strip()
-        final_result = browser_stdout["Final result:"] if "Final result:" in browser_stdout else browser_stdout
+        final_result = browser_stdout.split("Final result:")[-1].strip() if "Final result:" in browser_stdout else browser_stdout.strip()
 
         return BotRunResult(
             status=browser_output.return_code == 0,

@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 import json
+import os
 from pprint import pformat
 import re
 import time
@@ -12,6 +13,7 @@ from microbots.constants import ModelProvider
 from microbots.environment.local_docker.LocalDockerEnvironment import (
     LocalDockerEnvironment,
 )
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from microbots.llm.anthropic_api import AnthropicApi
 from microbots.llm.openai_api import OpenAIApi
 from microbots.llm.ollama_local import OllamaLocal
@@ -100,8 +102,9 @@ class MicroBot:
         bot_type: BotType = BotType.CUSTOM_BOT,
         system_prompt: Optional[str] = None,
         environment: Optional[any] = None,
-        additional_tools: Optional[list[ToolAbstract]] = [],
+        additional_tools: Optional[list[ToolAbstract]] = None,
         folder_to_mount: Optional[Mount] = None,
+        token_provider: Optional[any] = None,
     ):
         """
         Init function for MicroBot class.
@@ -119,7 +122,7 @@ class MicroBot:
                 LocalDockerEnvironment will be created.
             additional_tools :Optional[list[ToolAbstract]]
                 A list of additional tools to install in the bot's environment.
-                Defaults to [].
+                Defaults to None (treated as an empty list).
             folder_to_mount :Optional[Mount]
                 A folder to mount into the bot's environment. The bot will be given
                 access to this folder based on the specified permissions. This will
@@ -150,7 +153,7 @@ class MicroBot:
         self.model = model
         self.bot_type = bot_type
         self.environment = environment
-        self.additional_tools = additional_tools
+        self.additional_tools = additional_tools or []
 
         # TODO: Replace iteration_count and max_iterations with cost management.
         # Iteration count represents overall LLM interactions including interactions
@@ -162,6 +165,20 @@ class MicroBot:
         self._validate_model_and_provider(model)
         self.model_provider = model.split("/")[0]
         self.deployment_name = model.split("/")[1]
+
+        # Only auto-create token provider from env for providers that support Azure AD tokens.
+        if token_provider is not None:
+            self.token_provider = token_provider
+        elif (
+            os.getenv("AZURE_AUTH_METHOD", "").strip().lower() == "azure_ad"
+            and self.model_provider == ModelProvider.OPENAI
+        ):
+            credential = DefaultAzureCredential()
+            self.token_provider = get_bearer_token_provider(
+                credential, "https://cognitiveservices.azure.com/.default"
+            )
+        else:
+            self.token_provider = None
 
         if not self.environment:
             self._create_environment(self.folder_to_mount)
@@ -327,7 +344,8 @@ class MicroBot:
 
         if self.model_provider == ModelProvider.OPENAI:
             self.llm = OpenAIApi(
-                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name
+                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
+                token_provider=self.token_provider,
             )
         elif self.model_provider == ModelProvider.OLLAMA_LOCAL:
             self.llm = OllamaLocal(
@@ -335,7 +353,8 @@ class MicroBot:
             )
         elif self.model_provider == ModelProvider.ANTHROPIC:
             self.llm = AnthropicApi(
-                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name
+                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
+                token_provider=self.token_provider,
             )
         # No Else case required as model provider is already validated using _validate_model_and_provider
 

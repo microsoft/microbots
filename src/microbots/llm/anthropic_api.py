@@ -1,10 +1,13 @@
 import json
 import os
+import re
+from collections.abc import Callable
 from dataclasses import asdict
 from logging import getLogger
 
 from dotenv import load_dotenv
 from anthropic import Anthropic
+from anthropic.lib.foundry import AnthropicFoundry
 from microbots.llm.llm import LLMAskResponse, LLMInterface
 
 logger = getLogger(__name__)
@@ -18,11 +21,27 @@ api_key = os.getenv("ANTHROPIC_API_KEY")
 
 class AnthropicApi(LLMInterface):
 
-    def __init__(self, system_prompt, deployment_name=deployment_name, max_retries=3):
-        self.ai_client = Anthropic(
-            api_key=api_key,
-            base_url=endpoint
-        )
+    def __init__(self, system_prompt, deployment_name=deployment_name, max_retries=3,
+                 token_provider: Callable[[], str] | None = None):
+        self.token_provider = token_provider
+
+        if not token_provider and not api_key:
+            raise ValueError(
+                "No authentication configured for Anthropic. Either set the ANTHROPIC_API_KEY "
+                "environment variable or provide a token_provider (e.g. AzureTokenProvider)."
+            )
+
+        if token_provider:
+            # Azure AD auth — use AnthropicFoundry with ANTHROPIC_END_POINT as base_url
+            self.ai_client = AnthropicFoundry(
+                azure_ad_token_provider=token_provider,
+                base_url=endpoint,
+            )
+        else:
+            self.ai_client = Anthropic(
+                api_key=api_key,
+                base_url=endpoint
+            )
         self.deployment_name = deployment_name
         self.system_prompt = system_prompt
         self.messages = []
@@ -50,7 +69,6 @@ class AnthropicApi(LLMInterface):
             logger.debug("Raw Anthropic response (first 500 chars): %s", response_text[:500])
 
             # Try to extract JSON if wrapped in markdown code blocks
-            import re
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
             if json_match:
                 response_text = json_match.group(1)

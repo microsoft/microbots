@@ -9,6 +9,8 @@ import subprocess
 import sys
 
 import pytest
+from unittest.mock import patch, MagicMock
+
 # Add src directory to path to import from local source
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
@@ -19,6 +21,83 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from microbots import LogAnalysisBot, BotRunResult
+from microbots.MicroBot import MicroBot
+from microbots.tools.tool import ToolAbstract
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_log_bot(model="azure-openai/test-deploy", additional_tools=None, token_provider=None):
+    """Create a LogAnalysisBot with Docker and LLM mocked out."""
+    mock_env = MagicMock()
+
+    with patch.object(MicroBot, "_create_environment"), \
+         patch.object(MicroBot, "_create_llm"):
+        bot = LogAnalysisBot(
+            model=model,
+            folder_to_mount="/tmp/fake-repo",
+            environment=mock_env,
+            additional_tools=additional_tools,
+            token_provider=token_provider,
+        )
+
+    bot.environment = mock_env
+    return bot
+
+
+# ---------------------------------------------------------------------------
+# Unit tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestLogAnalysisBotUnit:
+    """Unit tests for LogAnalysisBot.__init__ — no Docker or LLM required."""
+
+    def test_default_additional_tools_is_empty_list(self):
+        """When additional_tools is not passed, the bot has an empty tools list."""
+        bot = _make_log_bot()
+        assert bot.additional_tools == []
+
+    def test_none_additional_tools_normalised_to_empty_list(self):
+        """Passing additional_tools=None explicitly should also yield an empty list."""
+        bot = _make_log_bot(additional_tools=None)
+        assert bot.additional_tools == []
+
+    def test_additional_tools_passed_through(self):
+        """User-supplied tools are stored on the bot."""
+        extra_tool = MagicMock(spec=ToolAbstract)
+        extra_tool.install_tool = MagicMock()
+        extra_tool.verify_tool_installation = MagicMock()
+        extra_tool.usage_instructions_to_llm = None
+
+        bot = _make_log_bot(additional_tools=[extra_tool])
+        assert extra_tool in bot.additional_tools
+
+    def test_two_instances_do_not_share_tools_list(self):
+        """Each instance must get its own list — no shared mutable default."""
+        bot1 = _make_log_bot()
+        bot2 = _make_log_bot()
+        assert bot1.additional_tools is not bot2.additional_tools
+
+    def test_token_provider_stored(self):
+        """An explicit token_provider is forwarded to MicroBot."""
+        provider = MagicMock(return_value="tok")
+        bot = _make_log_bot(token_provider=provider)
+        assert bot.token_provider is provider
+
+    def test_system_prompt_contains_log_file_dir(self):
+        """The system prompt must reference the log file directory."""
+        from microbots.constants import LOG_FILE_DIR
+        bot = _make_log_bot()
+        assert LOG_FILE_DIR in bot.system_prompt
+
+    def test_folder_mount_sandbox_path_uses_basename(self):
+        """The sandbox path is derived from the basename of folder_to_mount."""
+        from microbots.constants import DOCKER_WORKING_DIR
+        bot = _make_log_bot()
+        assert bot.folder_to_mount.sandbox_path == f"/{DOCKER_WORKING_DIR}/fake-repo"
 
 @pytest.mark.integration
 @pytest.mark.docker

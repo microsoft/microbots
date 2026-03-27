@@ -36,6 +36,7 @@ def _make_parent_bot(**overrides):
     bot.max_iterations = overrides.get("max_iterations", 50)
     bot.iteration_count = overrides.get("iteration_count", 0)
     bot.environment = overrides.get("environment", MagicMock())
+    bot.token_provider = overrides.get("token_provider", None)
     return bot
 
 

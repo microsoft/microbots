@@ -23,6 +23,17 @@ else:
     sys.exit(1)
 
 
+def _build_llm():
+    ad_token = os.getenv("AZURE_OPENAI_AD_TOKEN")
+    if ad_token:
+        kwargs = {"azure_ad_token": ad_token}
+    else:
+        kwargs = {}
+    if TEMP is not None:
+        kwargs["temperature"] = TEMP
+    return ChatAzureOpenAI(model=MODEL, **kwargs)
+
+
 async def main(args: list[str]) -> int:
     if len(args) > 1:
         print("browse allows only one query at a time.")
@@ -48,7 +59,7 @@ async def main(args: list[str]) -> int:
     agent = Agent(
         task=what_to_browse,
         browser=browser,
-        llm=ChatAzureOpenAI(model=MODEL, temperature=TEMP) if TEMP else ChatAzureOpenAI(model=MODEL),
+        llm=_build_llm(),
         use_vision=False,
     )
     history: AgentHistoryList = await agent.run()
