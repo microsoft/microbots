@@ -36,8 +36,10 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - admonition
+  - pymdownx.details
   - tables
   - attr_list
+  - md_in_html
 
 nav:
   - Getting Started:

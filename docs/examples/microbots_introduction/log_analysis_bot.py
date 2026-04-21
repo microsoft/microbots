@@ -1,7 +1,16 @@
+import logging
+import os
+
+logging.basicConfig(level=logging.INFO)
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from microbots import LogAnalysisBot
 
 my_bot = LogAnalysisBot(
-    model="azure-openai/my-gpt-5",
+    model="azure-openai/gpt-5-swe-agent",
     folder_to_mount="code",
 )
 
