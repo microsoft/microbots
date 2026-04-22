@@ -1,24 +1,24 @@
-from collections.abc import Iterable
 import json
 import os
-from pprint import pformat
 import re
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from logging import getLogger
+from pprint import pformat
 from typing import Optional
 
 from microbots.constants import ModelProvider
 from microbots.environment.local_docker.LocalDockerEnvironment import (
     LocalDockerEnvironment,
 )
-from microbots.llm.anthropic_api import AnthropicApi
-from microbots.llm.openai_api import OpenAIApi
-from microbots.llm.ollama_local import OllamaLocal
-from microbots.llm.llm import llm_output_format_str
-from microbots.tools.tool import ToolAbstract, get_tool_from_call
 from microbots.extras.mount import Mount, MountType
+from microbots.llm.anthropic_api import AnthropicApi
+from microbots.llm.llm import llm_output_format_str
+from microbots.llm.ollama_local import OllamaLocal
+from microbots.llm.openai_api import OpenAIApi
+from microbots.tools.tool import ToolAbstract, get_tool_from_call
 from microbots.utils.logger import LogLevelEmoji
 from microbots.utils.network import get_free_port
 
@@ -61,38 +61,46 @@ class BotType(StrEnum):
 
 @dataclass
 class BotRunResult:
+    """Result of a bot run execution.
+
+    Contains the status, result output, and any error information from a bot's run.
+    """
+
     status: bool
+    """Whether the bot run completed successfully."""
     result: str | None
+    """The output produced by the bot run, or None if no output was generated."""
     error: Optional[str]
+    """Error message if the run failed, or None if successful."""
 
 
 class MicroBot:
-    """
-    The core Microbot class.
+    """The core Microbot class.
 
-    MicroBot class is the core class representing the autonomous agent. Other bots are extensions of this class.
+    MicroBot is the core class representing the autonomous agent. Other bots are extensions of this class.
     If you want to create a custom bot, you can directly use this class or extend it into your own bot class.
 
-    Attributes
+    Parameters
     ----------
-        model : str
-            The model to use for the bot, in the format <provider>/<model_name>.
-        bot_type : BotType
-            The type of bot being created. It's unused. Will be removed soon.
-        system_prompt : Optional[str]
-            The system prompt to guide the bot's behavior.
-        environment : Optional[any]
-            The execution environment for the bot. If not provided, a default
-            LocalDockerEnvironment will be created.
-        additional_tools : Optional[list[ToolAbstract]]
-            A list of additional tools to install in the bot's environment.
-        folder_to_mount : Optional[Mount]
-            A folder to mount into the bot's environment. The bot will be given
-            access to this folder based on the specified permissions. This will
-            be the main code folder where the bot will work. Additional folders
-            can be mounted during the run() method. Refer to `Mount` class
-            regarding the directory structure and permission details. Defaults
-            to None.
+    model : str
+        The model to use, in the format ``<provider>/<model_name>``.
+        See [ModelProvider][microbots.constants.ModelProvider] for supported providers.
+    bot_type : BotType, optional
+        The type of bot being created. Defaults to ``BotType.CUSTOM_BOT``.
+    system_prompt : str, optional
+        The system prompt to guide the bot's behavior. Defaults to None.
+    environment : any, optional
+        The execution environment for the bot. If not provided, a default
+        ``LocalDockerEnvironment`` will be created.
+    additional_tools : list[ToolAbstract], optional
+        A list of additional tools to install in the bot's environment.
+        Defaults to None.
+    folder_to_mount : Mount, optional
+        A folder to mount into the bot's environment. See
+        [Mount][microbots.extras.mount.Mount] for details. Defaults to None.
+    token_provider : any, optional
+        A token provider for authentication. Required for Azure OpenAI
+        with Azure AD auth. Defaults to None.
     """
 
     def __init__(
@@ -105,65 +113,43 @@ class MicroBot:
         folder_to_mount: Optional[Mount] = None,
         token_provider: Optional[any] = None,
     ):
-        """
-        Init function for MicroBot class.
+        """Create a new MicroBot instance."""
 
-        Parameters
-        ----------
-            model :str
-                The model to use for the bot, in the format <provider>/<model_name>.
-            bot_type :BotType
-                The type of bot being created. It's unused. Will be removed soon.
-            system_prompt :Optional[str]
-                The system prompt to guide the bot's behavior. Defaults to None.
-            environment :Optional[any]
-                The execution environment for the bot. If not provided, a default
-                LocalDockerEnvironment will be created.
-            additional_tools :Optional[list[ToolAbstract]]
-                A list of additional tools to install in the bot's environment.
-                Defaults to None (treated as an empty list).
-            folder_to_mount :Optional[Mount]
-                A folder to mount into the bot's environment. The bot will be given
-                access to this folder based on the specified permissions. This will
-                be the main code folder where the bot will work. Additional folders
-                can be mounted using the run() method. Refer to `Mount` class
-                regarding the directory structure and permission details. Defaults
-                to None.
+        self.folder_to_mount: Optional[Mount] = folder_to_mount
+        """A folder to mount into the bot's environment. The bot will be given access to this folder based on the specified permissions. This will be the main code folder where the bot will work. Additional folders can be mounted during the ``run()`` method. Refer to [Mount][microbots.extras.mount.Mount] for directory structure and permission details. Supports only ``MountType.MOUNT`` for now."""
 
-                Note: Supports only mount type MountType.MOUNT for now.
-        """
-
-        self.folder_to_mount = folder_to_mount
-
-        # TODO : Need to check on the purpose of variable `mounted`
-        # 1. If we allow user to mount multiple directories,
-        # we should able to get it as an argument and store them in self.mounted.
-        # This require changes in _create_environment to handle multiple mount directories or files.
-        #
-        # 2. We should let user to mount only one directory. In that case self.mounted may not be required.
-        # Just one self.folder_to_mount and necessary extra mounts at the derived class similar to LogAnalyticsBot.
-
-        self.mounted = []
+        self.mounted: list[Mount] = []
+        """List of all mounted directories in the bot's environment."""
         if folder_to_mount is not None:
             self._validate_folder_to_mount(folder_to_mount)
             self.mounted.append(folder_to_mount)
 
-        self.system_prompt = system_prompt
-        self.model = model
-        self.bot_type = bot_type
-        self.environment = environment
-        self.additional_tools = additional_tools or []
+        self.system_prompt: Optional[str] = system_prompt
+        """The system prompt to guide the bot's behavior. Defaults to None."""
+        self.model: str = model
+        """The model to use for the bot, in the format ``<provider>/<model_name>``. See [ModelProvider][microbots.constants.ModelProvider] for supported providers."""
+        self.bot_type: BotType = bot_type
+        """The type of bot being created. It's unused. Will be removed soon."""
+        self.environment: Optional[any] = environment
+        """The execution environment for the bot. If not provided, a default ``LocalDockerEnvironment`` will be created."""
+        self.additional_tools: list[ToolAbstract] = additional_tools or []
+        """A list of additional tools to install in the bot's environment. Defaults to an empty list."""
 
-        # TODO: Replace iteration_count and max_iterations with cost management.
-        # Iteration count represents overall LLM interactions including interactions
-        # done by sub agents.
-        self.iteration_count = 0
-        self.max_iterations = 0
-        self.step_count = 0
+        self.iteration_count: int = 0
+        """Number of LLM interactions so far, including sub-agent interactions."""
+        self.max_iterations: int = 0
+        """Maximum allowed iterations for the current run."""
+        self.step_count: int = 0
+        """Number of steps completed in the current run."""
 
         self._validate_model_and_provider(model)
-        self.model_provider = model.split("/")[0]
-        self.deployment_name = model.split("/")[1]
+        self.model_provider: str = model.split("/")[0]
+        """The LLM provider extracted from the model string. See [ModelProvider][microbots.constants.ModelProvider] for supported values."""
+        self.deployment_name: str = model.split("/")[1]
+        """The model deployment name extracted from the model string."""
+
+        self.token_provider: Optional[any] = None
+        """Token provider for Azure AD authentication. If not provided and ``AZURE_AUTH_METHOD`` is set to ``azure_ad``, a default provider using ``DefaultAzureCredential`` will be created automatically."""
 
         # Only auto-create token provider from env for providers that support Azure AD tokens.
         if token_provider is not None:
@@ -173,7 +159,10 @@ class MicroBot:
             and self.model_provider == ModelProvider.OPENAI
         ):
             try:
-                from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+                from azure.identity import (
+                    DefaultAzureCredential,
+                    get_bearer_token_provider,
+                )
             except ImportError:
                 raise ImportError(
                     "Azure AD authentication requires the 'azure-identity' package. "
@@ -200,9 +189,32 @@ class MicroBot:
         task: str,
         additional_mounts: Optional[list[Mount]] = None,
         max_iterations: int = 20,
-        timeout_in_seconds: int = 200
+        timeout_in_seconds: int = 200,
     ) -> BotRunResult:
+        """Execute a task with the bot.
 
+        Parameters
+        ----------
+        task : str
+            The task to execute.
+        additional_mounts : Optional[list[Mount]]
+            Extra mounts to add to the environment. Only ``MountType.COPY`` is
+            supported. Defaults to None.
+        max_iterations : int
+            Maximum number of agent loop iterations. Defaults to 20.
+        timeout_in_seconds : int
+            Timeout for the task in seconds. Defaults to 200.
+
+        Returns
+        -------
+        BotRunResult
+            The result containing status, output, and any errors.
+
+        Raises
+        ------
+        ValueError
+            If ``max_iterations`` is less than or equal to 0.
+        """
         if max_iterations <= 0:
             raise ValueError("max_iterations must be greater than 0")
 
@@ -253,7 +265,6 @@ class MicroBot:
                 return_value.error = f"Timeout of {timeout} seconds reached"
                 return return_value
 
-
             logger.info("%s Step-%d %s", "-" * 20, self.step_count, "-" * 20)
             if llm_response.thoughts:
                 logger.info(
@@ -268,7 +279,9 @@ class MicroBot:
             if not is_safe:
                 error_msg = f"Dangerous command detected and blocked: {llm_response.command}\n{explanation}"
                 logger.info("%s %s", LogLevelEmoji.WARNING, error_msg)
-                llm_response = self.llm.ask(f"COMMAND_ERROR: {error_msg}\nPlease provide a safer alternative command.")
+                llm_response = self.llm.ask(
+                    f"COMMAND_ERROR: {error_msg}\nPlease provide a safer alternative command."
+                )
                 continue
 
             tool = get_tool_from_call(llm_response.command, self.additional_tools)
@@ -278,11 +291,11 @@ class MicroBot:
                 llm_command_output = self.environment.execute(llm_response.command)
 
             logger.debug(
-                    " 🔧  Command executed.\nReturn Code: %d\nStdout:\n%s\nStderr:\n%s",
-                    llm_command_output.return_code,
-                    llm_command_output.stdout,
-                    llm_command_output.stderr,
-                )
+                " 🔧  Command executed.\nReturn Code: %d\nStdout:\n%s\nStderr:\n%s",
+                llm_command_output.return_code,
+                llm_command_output.stdout,
+                llm_command_output.stderr,
+            )
 
             if llm_command_output.return_code == 0:
                 if llm_command_output.stdout:
@@ -290,12 +303,17 @@ class MicroBot:
                     # HACK: anthropic-text-editor tool extra formats the output
                     try:
                         output_json = json.loads(llm_command_output.stdout)
-                        if isinstance(output_json, Iterable) and "content" in output_json:
+                        if (
+                            isinstance(output_json, Iterable)
+                            and "content" in output_json
+                        ):
                             output_text = pformat(output_json["content"])
                     except json.JSONDecodeError:
                         pass
                     except Exception as e:
-                        logger.warning("Failed to parse command output as JSON, using raw stdout")
+                        logger.warning(
+                            "Failed to parse command output as JSON, using raw stdout"
+                        )
                         logger.debug("Error details: %s", str(e))
                 else:
                     output_text = f"Command executed successfully with no output\nreturn code: {llm_command_output.return_code}\nstdout: {llm_command_output.stdout}\nstderr: {llm_command_output.stderr}"
@@ -350,7 +368,8 @@ class MicroBot:
 
         if self.model_provider == ModelProvider.OPENAI:
             self.llm = OpenAIApi(
-                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
+                system_prompt=system_prompt_with_tools,
+                deployment_name=self.deployment_name,
                 token_provider=self.token_provider,
             )
         elif self.model_provider == ModelProvider.OLLAMA_LOCAL:
@@ -359,7 +378,8 @@ class MicroBot:
             )
         elif self.model_provider == ModelProvider.ANTHROPIC:
             self.llm = AnthropicApi(
-                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
+                system_prompt=system_prompt_with_tools,
+                deployment_name=self.deployment_name,
                 token_provider=self.token_provider,
             )
         # No Else case required as model provider is already validated using _validate_model_and_provider
@@ -378,9 +398,7 @@ class MicroBot:
                 "%s Only MOUNT mount type is supported for folder_to_mount",
                 LogLevelEmoji.ERROR,
             )
-            raise ValueError(
-                "Only MOUNT mount type is supported for folder_to_mount"
-            )
+            raise ValueError("Only MOUNT mount type is supported for folder_to_mount")
 
     def _get_dangerous_command_explanation(self, command: str) -> Optional[str]:
         """Provides detailed explanation for why a command is dangerous and suggests alternatives.
@@ -403,34 +421,34 @@ class MicroBot:
         # Note: Don't convert to lowercase before checking, as we need case-sensitive pattern matching
         dangerous_checks = [
             {
-                'pattern': r'\bls\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)',
-                'reason': 'Recursive ls commands (ls -R) can generate massive output in large repositories, exceeding context limits',
-                'alternative': 'Use targeted paths like "ls drivers/block/" or "ls -la <specific-directory>" instead'
+                "pattern": r"\bls\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)",
+                "reason": "Recursive ls commands (ls -R) can generate massive output in large repositories, exceeding context limits",
+                "alternative": 'Use targeted paths like "ls drivers/block/" or "ls -la <specific-directory>" instead',
             },
             {
-                'pattern': r'\btree\b',
-                'reason': 'Tree command recursively lists entire directory structures, which can exceed context limits',
-                'alternative': 'Use "ls -la <specific-directory>" or "find <path> -maxdepth 2 -type d" for controlled exploration'
+                "pattern": r"\btree\b",
+                "reason": "Tree command recursively lists entire directory structures, which can exceed context limits",
+                "alternative": 'Use "ls -la <specific-directory>" or "find <path> -maxdepth 2 -type d" for controlled exploration',
             },
             {
-                'pattern': r'\brm\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)',
-                'reason': 'Recursive rm commands (rm -r/-rf) can delete entire directory trees, which is destructive',
-                'alternative': 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss'
+                "pattern": r"\brm\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)",
+                "reason": "Recursive rm commands (rm -r/-rf) can delete entire directory trees, which is destructive",
+                "alternative": 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss',
             },
             {
-                'pattern': r'\brm\s+--recursive\b',
-                'reason': 'Recursive rm commands can delete entire directory trees, which is destructive',
-                'alternative': 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss'
+                "pattern": r"\brm\s+--recursive\b",
+                "reason": "Recursive rm commands can delete entire directory trees, which is destructive",
+                "alternative": 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss',
             },
             {
-                'pattern': r'\bfind\b(?!.*-maxdepth)',
-                'reason': 'Find command without -maxdepth can recursively search entire filesystems, causing excessive output',
-                'alternative': 'Use "find <path> -name "*.ext" -maxdepth 2" to limit search depth and control output size'
+                "pattern": r"\bfind\b(?!.*-maxdepth)",
+                "reason": "Find command without -maxdepth can recursively search entire filesystems, causing excessive output",
+                "alternative": 'Use "find <path> -name "*.ext" -maxdepth 2" to limit search depth and control output size',
             },
         ]
 
         for check in dangerous_checks:
-            if re.search(check['pattern'], stripped_command, re.IGNORECASE):
+            if re.search(check["pattern"], stripped_command, re.IGNORECASE):
                 return f"REASON: {check['reason']}\nALTERNATIVE: {check['alternative']}"
 
         return None

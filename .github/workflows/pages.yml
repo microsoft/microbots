@@ -3,6 +3,14 @@ name: Deploy GitHub Pages
 on:
   push:
     branches: ["main"]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "src/microbots/MicroBot.py"
+      - "src/microbots/bot/**"
+      - "src/microbots/llm/**"
+      - "src/microbots/environment/**"
+      - "src/microbots/tools/**"
   workflow_dispatch:
 
 permissions:
@@ -28,6 +36,11 @@ jobs:
 
       - name: Install Zensical
         run: pip install zensical
+
+      - name: Install mkdocstrings and project
+        run: |
+          pip install "mkdocstrings[python]"
+          pip install -e .
 
       - name: Build site
         run: zensical build --clean
