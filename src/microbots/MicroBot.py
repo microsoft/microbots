@@ -142,6 +142,10 @@ class MicroBot:
         self.additional_tools: list[ToolAbstract] = additional_tools or []
         """A list of additional tools to install in the bot's environment. Defaults to an empty list."""
 
+        # TODO: Replace iteration_count and max_iterations with cost management.
+        # Iteration count represents overall LLM interactions including interactions
+        
+        # done by sub agents.
         self.iteration_count: int = 0
         """Number of LLM interactions so far, including sub-agent interactions."""
         self.max_iterations: int = 0
