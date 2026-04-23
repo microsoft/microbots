@@ -193,7 +193,7 @@ class MicroBot:
         task: str,
         additional_mounts: Optional[list[Mount]] = None,
         max_iterations: int = 20,
-        timeout_in_seconds: int = 200,
+        timeout_in_seconds: int = 200
     ) -> BotRunResult:
         """Execute a task with the bot.
 
