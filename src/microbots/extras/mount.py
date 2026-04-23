@@ -3,7 +3,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from microbots.constants import PermissionLabels, PermissionMapping
-from microbots.utils.path import PathInfo, ends_with_separator, get_path_info
+from microbots.utils.path import PathInfo, get_path_info, ends_with_separator
 
 
 class MountType(StrEnum):
@@ -43,7 +43,7 @@ class Mount:
     host_path: str
     """The absolute path on the host machine to be mounted or copied."""
     sandbox_path: str
-    """The absolute path inside the Bot's sandbox environment where the host_path will be mounted or copied. If the host_path is a file and the sandbox_path ends with a path separator, the file will be placed inside the sandbox_path directory with the same base name."""
+    """The absolute path inside the Bot's sandbox environment where the host_path will be mounted or copied. If the host_path is a file and the sandbox_path ends with a path separator ("/"), then the file will be placed inside the sandbox_path directory with the same base name."""
     permission: PermissionLabels
     """The permission level for the mounted/copied folder. See [PermissionLabels][microbots.constants.PermissionLabels] for supported values."""
     mount_type: MountType = MountType.MOUNT
@@ -67,9 +67,7 @@ class Mount:
                 f"sandbox_path must be an absolute path. Given: {self.sandbox_path}"
             )
 
-        if not ends_with_separator(self.host_path) and ends_with_separator(
-            self.sandbox_path
-        ):
+        if not ends_with_separator(self.host_path) and ends_with_separator(self.sandbox_path):
             # If host_path is a file and sandbox_path ends with separator,
             # place the file inside the sandbox_path directory with same base name
             sandbox_path = str(sandbox_path / self.host_path_info.base_name)
