@@ -21,8 +21,12 @@ class ModelEnum(StrEnum):
 
 
 class PermissionLabels(StrEnum):
+    """Permission levels for mounted folders in the bot's sandbox environment."""
+
     READ_ONLY = "READ_ONLY"
+    """Read-only access to the mounted folder."""
     READ_WRITE = "READ_WRITE"
+    """Read and write access to the mounted folder."""
 
 
 class PermissionMapping:

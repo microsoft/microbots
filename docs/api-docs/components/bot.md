@@ -15,6 +15,7 @@ bot = MicroBot(
     system_prompt="You are a helpful coding assistant.",
     folder_to_mount=Mount(
         host_path="code",
+        sandbox_path="/home/user/code",
         mount_type=MountType.MOUNT,
         permission=PermissionLabels.READ_ONLY,
     ),
@@ -27,6 +28,10 @@ print(result.status, result.result)
 ## API Reference
 
 <!-- Auto-generated from source code -->
+
+!!! info "Parameters vs Attributes"
+    **Parameters** are the arguments you pass when creating an instance of a class (e.g., `MicroBot(model=..., system_prompt=...)`).
+    **Attributes** are the internal variables available on the instance after creation, used by the class during its operation.
 
 ::: microbots.MicroBot.MicroBot
     options:
@@ -46,5 +51,9 @@ print(result.status, result.result)
       show_source: false
 
 ::: microbots.extras.mount.Mount
+    options:
+      show_source: false
+
+::: microbots.constants.PermissionLabels
     options:
       show_source: false

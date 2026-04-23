@@ -22,6 +22,22 @@ class Mount:
     All the folders and files to be presented for the Bot should be
     either mounted or copied to the Bot's sandbox environment using
     this class.
+
+    Parameters
+    ----------
+    host_path : str
+        The absolute path on the host machine to be mounted or copied.
+    sandbox_path : str
+        The absolute path inside the Bot's sandbox environment where the
+        host_path will be mounted or copied. If the host_path is a file
+        and the sandbox_path ends with a path separator, the file will be
+        placed inside the sandbox_path directory with the same base name.
+    permission : PermissionLabels
+        The permission level for the mounted/copied folder. See
+        [PermissionLabels][microbots.constants.PermissionLabels] for supported values.
+    mount_type : MountType, optional
+        The type of mount operation. See [MountType][microbots.extras.mount.MountType]
+        for supported values. Defaults to ``MountType.MOUNT``.
     """
 
     host_path: str

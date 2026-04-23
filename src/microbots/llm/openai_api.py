@@ -4,8 +4,8 @@ from collections.abc import Callable
 from dataclasses import asdict
 
 from dotenv import load_dotenv
-from openai import AzureOpenAI, OpenAI
 from microbots.llm.llm import LLMAskResponse, LLMInterface
+from openai import AzureOpenAI, OpenAI
 
 load_dotenv()
 
@@ -17,8 +17,13 @@ api_key = os.getenv("OPEN_AI_KEY")
 
 class OpenAIApi(LLMInterface):
 
-    def __init__(self, system_prompt, deployment_name=deployment_name, max_retries=3,
-                 token_provider: Callable[[], str] | None = None):
+    def __init__(
+        self,
+        system_prompt,
+        deployment_name=deployment_name,
+        max_retries=3,
+        token_provider: Callable[[], str] | None = None,
+    ):
         self.token_provider = token_provider
 
         if not token_provider and not api_key:
@@ -29,7 +34,9 @@ class OpenAIApi(LLMInterface):
 
         if token_provider:
             if not callable(token_provider):
-                raise ValueError("token_provider must be a callable that returns a string token.")
+                raise ValueError(
+                    "token_provider must be a callable that returns a string token."
+                )
             try:
                 token = token_provider()
             except Exception as e:
@@ -44,9 +51,10 @@ class OpenAIApi(LLMInterface):
             )
         else:
             # Non-Azure users with a plain API key
-            self.ai_client = OpenAI(
-                base_url=endpoint,
-                api_key=api_key,
+            self.ai_client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=token_provider,
+                api_version=api_version,
             )
         self.deployment_name = deployment_name
         self.system_prompt = system_prompt
@@ -57,7 +65,7 @@ class OpenAIApi(LLMInterface):
         self.retries = 0
 
     def ask(self, message) -> LLMAskResponse:
-        self.retries = 0 # reset retries for each ask. Handled in parent class.
+        self.retries = 0  # reset retries for each ask. Handled in parent class.
 
         self.messages.append({"role": "user", "content": message})
 
@@ -68,11 +76,15 @@ class OpenAIApi(LLMInterface):
                 input=self.messages,
             )
             self.messages.append({"role": "assistant", "content": response.output_text})
-            valid, askResponse = self._validate_llm_response(response=response.output_text)
+            valid, askResponse = self._validate_llm_response(
+                response=response.output_text
+            )
 
         # Remove last assistant message and replace with structured response
         self.messages.pop()
-        self.messages.append({"role": "assistant", "content": json.dumps(asdict(askResponse))})
+        self.messages.append(
+            {"role": "assistant", "content": json.dumps(asdict(askResponse))}
+        )
 
         return askResponse
 
@@ -84,4 +96,3 @@ class OpenAIApi(LLMInterface):
             }
         ]
         return True
-
