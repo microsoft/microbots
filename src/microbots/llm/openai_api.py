@@ -4,8 +4,8 @@ from collections.abc import Callable
 from dataclasses import asdict
 
 from dotenv import load_dotenv
-from microbots.llm.llm import LLMAskResponse, LLMInterface
 from openai import AzureOpenAI, OpenAI
+from microbots.llm.llm import LLMAskResponse, LLMInterface
 
 load_dotenv()
 
@@ -51,10 +51,9 @@ class OpenAIApi(LLMInterface):
             )
         else:
             # Non-Azure users with a plain API key
-            self.ai_client = AzureOpenAI(
-                azure_endpoint=endpoint,
-                azure_ad_token_provider=token_provider,
-                api_version=api_version,
+            self.ai_client = OpenAI(
+                base_url=endpoint,
+                api_key=api_key,
             )
         self.deployment_name = deployment_name
         self.system_prompt = system_prompt
