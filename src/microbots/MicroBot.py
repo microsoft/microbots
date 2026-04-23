@@ -159,10 +159,7 @@ class MicroBot:
             and self.model_provider == ModelProvider.OPENAI
         ):
             try:
-                from azure.identity import (
-                    DefaultAzureCredential,
-                    get_bearer_token_provider,
-                )
+                from azure.identity import DefaultAzureCredential, get_bearer_token_provider
             except ImportError:
                 raise ImportError(
                     "Azure AD authentication requires the 'azure-identity' package. "
@@ -265,6 +262,7 @@ class MicroBot:
                 return_value.error = f"Timeout of {timeout} seconds reached"
                 return return_value
 
+
             logger.info("%s Step-%d %s", "-" * 20, self.step_count, "-" * 20)
             if llm_response.thoughts:
                 logger.info(
@@ -279,9 +277,7 @@ class MicroBot:
             if not is_safe:
                 error_msg = f"Dangerous command detected and blocked: {llm_response.command}\n{explanation}"
                 logger.info("%s %s", LogLevelEmoji.WARNING, error_msg)
-                llm_response = self.llm.ask(
-                    f"COMMAND_ERROR: {error_msg}\nPlease provide a safer alternative command."
-                )
+                llm_response = self.llm.ask(f"COMMAND_ERROR: {error_msg}\nPlease provide a safer alternative command.")
                 continue
 
             tool = get_tool_from_call(llm_response.command, self.additional_tools)
@@ -291,11 +287,11 @@ class MicroBot:
                 llm_command_output = self.environment.execute(llm_response.command)
 
             logger.debug(
-                " 🔧  Command executed.\nReturn Code: %d\nStdout:\n%s\nStderr:\n%s",
-                llm_command_output.return_code,
-                llm_command_output.stdout,
-                llm_command_output.stderr,
-            )
+                    " 🔧  Command executed.\nReturn Code: %d\nStdout:\n%s\nStderr:\n%s",
+                    llm_command_output.return_code,
+                    llm_command_output.stdout,
+                    llm_command_output.stderr,
+                )
 
             if llm_command_output.return_code == 0:
                 if llm_command_output.stdout:
@@ -303,17 +299,12 @@ class MicroBot:
                     # HACK: anthropic-text-editor tool extra formats the output
                     try:
                         output_json = json.loads(llm_command_output.stdout)
-                        if (
-                            isinstance(output_json, Iterable)
-                            and "content" in output_json
-                        ):
+                        if isinstance(output_json, Iterable) and "content" in output_json:
                             output_text = pformat(output_json["content"])
                     except json.JSONDecodeError:
                         pass
                     except Exception as e:
-                        logger.warning(
-                            "Failed to parse command output as JSON, using raw stdout"
-                        )
+                        logger.warning("Failed to parse command output as JSON, using raw stdout")
                         logger.debug("Error details: %s", str(e))
                 else:
                     output_text = f"Command executed successfully with no output\nreturn code: {llm_command_output.return_code}\nstdout: {llm_command_output.stdout}\nstderr: {llm_command_output.stderr}"
@@ -368,8 +359,7 @@ class MicroBot:
 
         if self.model_provider == ModelProvider.OPENAI:
             self.llm = OpenAIApi(
-                system_prompt=system_prompt_with_tools,
-                deployment_name=self.deployment_name,
+                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
                 token_provider=self.token_provider,
             )
         elif self.model_provider == ModelProvider.OLLAMA_LOCAL:
@@ -378,8 +368,7 @@ class MicroBot:
             )
         elif self.model_provider == ModelProvider.ANTHROPIC:
             self.llm = AnthropicApi(
-                system_prompt=system_prompt_with_tools,
-                deployment_name=self.deployment_name,
+                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
                 token_provider=self.token_provider,
             )
         # No Else case required as model provider is already validated using _validate_model_and_provider
@@ -398,7 +387,9 @@ class MicroBot:
                 "%s Only MOUNT mount type is supported for folder_to_mount",
                 LogLevelEmoji.ERROR,
             )
-            raise ValueError("Only MOUNT mount type is supported for folder_to_mount")
+            raise ValueError(
+                "Only MOUNT mount type is supported for folder_to_mount"
+            )
 
     def _get_dangerous_command_explanation(self, command: str) -> Optional[str]:
         """Provides detailed explanation for why a command is dangerous and suggests alternatives.
@@ -421,34 +412,34 @@ class MicroBot:
         # Note: Don't convert to lowercase before checking, as we need case-sensitive pattern matching
         dangerous_checks = [
             {
-                "pattern": r"\bls\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)",
-                "reason": "Recursive ls commands (ls -R) can generate massive output in large repositories, exceeding context limits",
-                "alternative": 'Use targeted paths like "ls drivers/block/" or "ls -la <specific-directory>" instead',
+                'pattern': r'\bls\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)',
+                'reason': 'Recursive ls commands (ls -R) can generate massive output in large repositories, exceeding context limits',
+                'alternative': 'Use targeted paths like "ls drivers/block/" or "ls -la <specific-directory>" instead'
             },
             {
-                "pattern": r"\btree\b",
-                "reason": "Tree command recursively lists entire directory structures, which can exceed context limits",
-                "alternative": 'Use "ls -la <specific-directory>" or "find <path> -maxdepth 2 -type d" for controlled exploration',
+                'pattern': r'\btree\b',
+                'reason': 'Tree command recursively lists entire directory structures, which can exceed context limits',
+                'alternative': 'Use "ls -la <specific-directory>" or "find <path> -maxdepth 2 -type d" for controlled exploration'
             },
             {
-                "pattern": r"\brm\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)",
-                "reason": "Recursive rm commands (rm -r/-rf) can delete entire directory trees, which is destructive",
-                "alternative": 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss',
+                'pattern': r'\brm\s+(?:[^-]*\s+)?-[a-z]*[rR](?:[a-z]*\b|\s|$)',
+                'reason': 'Recursive rm commands (rm -r/-rf) can delete entire directory trees, which is destructive',
+                'alternative': 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss'
             },
             {
-                "pattern": r"\brm\s+--recursive\b",
-                "reason": "Recursive rm commands can delete entire directory trees, which is destructive",
-                "alternative": 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss',
+                'pattern': r'\brm\s+--recursive\b',
+                'reason': 'Recursive rm commands can delete entire directory trees, which is destructive',
+                'alternative': 'Delete specific files individually or use "rm <specific-file>" to avoid accidental data loss'
             },
             {
-                "pattern": r"\bfind\b(?!.*-maxdepth)",
-                "reason": "Find command without -maxdepth can recursively search entire filesystems, causing excessive output",
-                "alternative": 'Use "find <path> -name "*.ext" -maxdepth 2" to limit search depth and control output size',
+                'pattern': r'\bfind\b(?!.*-maxdepth)',
+                'reason': 'Find command without -maxdepth can recursively search entire filesystems, causing excessive output',
+                'alternative': 'Use "find <path> -name "*.ext" -maxdepth 2" to limit search depth and control output size'
             },
         ]
 
         for check in dangerous_checks:
-            if re.search(check["pattern"], stripped_command, re.IGNORECASE):
+            if re.search(check['pattern'], stripped_command, re.IGNORECASE):
                 return f"REASON: {check['reason']}\nALTERNATIVE: {check['alternative']}"
 
         return None
