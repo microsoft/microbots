@@ -73,9 +73,7 @@ Only when you have run all necessary commands and identified the root cause, you
             token_provider=token_provider,
         )
 
-    def run(
-        self, file_name: str, max_iterations: int = 20, timeout_in_seconds: int = 300
-    ) -> any:
+    def run(self, file_name: str, max_iterations: int = 20, timeout_in_seconds: int = 300) -> any:
         """Run the log analysis bot on a log file.
 
         Parameters
@@ -108,5 +106,5 @@ Only when you have run all necessary commands and identified the root cause, you
             task=file_name_prompt,
             additional_mounts=[file_mount_info],
             max_iterations=max_iterations,
-            timeout_in_seconds=timeout_in_seconds,
+            timeout_in_seconds=timeout_in_seconds
         )
