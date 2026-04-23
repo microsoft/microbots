@@ -116,6 +116,13 @@ class MicroBot:
         """Create a new MicroBot instance."""
 
         self.folder_to_mount: Optional[Mount] = folder_to_mount
+        # TODO : Need to check on the purpose of variable `mounted`
+        # 1. If we allow user to mount multiple directories,
+        # we should able to get it as an argument and store them in self.mounted.
+        # This require changes in _create_environment to handle multiple mount directories or files.
+        #
+        # 2. We should let user to mount only one directory. In that case self.mounted may not be required.
+        # Just one self.folder_to_mount and necessary extra mounts at the derived class similar to LogAnalyticsBot.
         """A folder to mount into the bot's environment. The bot will be given access to this folder based on the specified permissions. This will be the main code folder where the bot will work. Additional folders can be mounted during the ``run()`` method. Refer to [Mount][microbots.extras.mount.Mount] for directory structure and permission details. Supports only ``MountType.MOUNT`` for now."""
 
         self.mounted: list[Mount] = []
@@ -261,7 +268,6 @@ class MicroBot:
                 )
                 return_value.error = f"Timeout of {timeout} seconds reached"
                 return return_value
-
 
             logger.info("%s Step-%d %s", "-" * 20, self.step_count, "-" * 20)
             if llm_response.thoughts:
