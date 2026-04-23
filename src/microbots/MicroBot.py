@@ -1,24 +1,24 @@
+from collections.abc import Iterable
 import json
 import os
+from pprint import pformat
 import re
 import time
-from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from logging import getLogger
-from pprint import pformat
 from typing import Optional
 
 from microbots.constants import ModelProvider
 from microbots.environment.local_docker.LocalDockerEnvironment import (
     LocalDockerEnvironment,
 )
-from microbots.extras.mount import Mount, MountType
 from microbots.llm.anthropic_api import AnthropicApi
-from microbots.llm.llm import llm_output_format_str
-from microbots.llm.ollama_local import OllamaLocal
 from microbots.llm.openai_api import OpenAIApi
+from microbots.llm.ollama_local import OllamaLocal
+from microbots.llm.llm import llm_output_format_str
 from microbots.tools.tool import ToolAbstract, get_tool_from_call
+from microbots.extras.mount import Mount, MountType
 from microbots.utils.logger import LogLevelEmoji
 from microbots.utils.network import get_free_port
 
