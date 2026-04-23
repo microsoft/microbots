@@ -3,14 +3,39 @@ import os
 from typing import Optional
 
 from microbots.constants import DOCKER_WORKING_DIR, LOG_FILE_DIR, PermissionLabels
+from microbots.extras.mount import Mount, MountType
 from microbots.MicroBot import BotType, MicroBot, system_prompt_common
 from microbots.tools.tool import ToolAbstract
-from microbots.extras.mount import Mount, MountType
 
 logger = logging.getLogger(__name__)
 
 
 class LogAnalysisBot(MicroBot):
+    """A specialized bot for analyzing log files.
+
+    LogAnalysisBot extends [MicroBot][microbots.MicroBot.MicroBot] to analyze log files
+    inside a sandboxed container and identify root causes by cross-referencing
+    with source code. The source code folder is mounted as read-only.
+
+    Parameters
+    ----------
+    model : str
+        The model to use, in the format ``<provider>/<model_name>``.
+        See [ModelProvider][microbots.constants.ModelProvider] for supported providers.
+    folder_to_mount : str
+        The absolute path to the source code folder on the host machine.
+        This folder will be mounted as read-only inside the bot's sandbox
+        for cross-referencing with log entries.
+    environment : any, optional
+        The execution environment for the bot. If not provided, a default
+        ``LocalDockerEnvironment`` will be created.
+    additional_tools : list[ToolAbstract], optional
+        A list of additional tools to install in the bot's environment.
+        Defaults to None.
+    token_provider : any, optional
+        A token provider for authentication. Required for Azure OpenAI
+        with Azure AD auth. Defaults to None.
+    """
 
     def __init__(
         self,
@@ -26,7 +51,7 @@ class LogAnalysisBot(MicroBot):
         folder_mount_info = Mount(
             folder_to_mount,
             f"/{DOCKER_WORKING_DIR}/{os.path.basename(folder_to_mount)}",
-            PermissionLabels.READ_ONLY
+            PermissionLabels.READ_ONLY,
         )
 
         system_prompt = f"""
@@ -48,7 +73,25 @@ Only when you have run all necessary commands and identified the root cause, you
             token_provider=token_provider,
         )
 
-    def run(self, file_name: str, max_iterations: int = 20, timeout_in_seconds: int = 300) -> any:
+    def run(
+        self, file_name: str, max_iterations: int = 20, timeout_in_seconds: int = 300
+    ) -> any:
+        """Run the log analysis bot on a log file.
+
+        Parameters
+        ----------
+        file_name : str
+            The absolute path to the log file on the host machine to analyze.
+        max_iterations : int, optional
+            Maximum number of LLM interactions allowed. Defaults to 20.
+        timeout_in_seconds : int, optional
+            Maximum time in seconds before the run times out. Defaults to 300.
+
+        Returns
+        -------
+        BotRunResult
+            The result of the log analysis.
+        """
 
         # Add the logic to copy the file from the user path to /var/log path in container
         file_mount_info = Mount(
@@ -65,5 +108,5 @@ Only when you have run all necessary commands and identified the root cause, you
             task=file_name_prompt,
             additional_mounts=[file_mount_info],
             max_iterations=max_iterations,
-            timeout_in_seconds=timeout_in_seconds
+            timeout_in_seconds=timeout_in_seconds,
         )
