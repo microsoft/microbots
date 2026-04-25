@@ -26,8 +26,8 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Install Zensical
-        run: pip install zensical
+      - name: Install Zensical and plugins
+        run: pip install zensical mkdocstrings[python]
 
       - name: Build site
         run: zensical build --clean

@@ -137,3 +137,35 @@
 .lightbox-close:hover {
   opacity: 1;
 }
+
+/* API Reference - permalink anchors on doc headings */
+.doc.doc-heading {
+  position: relative;
+}
+
+.doc.doc-heading::after {
+  content: "¶";
+  margin-left: 0.5em;
+  opacity: 0;
+  font-size: 0.7em;
+  color: var(--md-accent-fg-color, #526cfe);
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.doc.doc-heading:hover::after {
+  opacity: 0.6;
+}
+
+.doc.doc-heading:hover::after:hover {
+  opacity: 1;
+}
+
+/* Make doc headings themselves clickable anchor links */
+.doc.doc-heading {
+  cursor: pointer;
+}
+
+.doc.doc-heading code {
+  cursor: pointer;
+}
