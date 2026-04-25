@@ -26,8 +26,33 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Install Zensical
-        run: pip install zensical
+      - name: Install Zensical and plugins
+        run: pip install zensical mkdocstrings[python]
+
+      - name: Generate API reference stubs
+        run: |
+          python -c "
+          import os, re
+          from pathlib import Path
+
+          src = Path('src')
+          docs_ref = Path('docs/api-reference')
+
+          # Walk source tree and create stub md files with mkdocstrings directives
+          for py_file in sorted(src.rglob('*.py')):
+              parts = py_file.relative_to(src).with_suffix('').parts
+
+              # Skip __pycache__, __init__, and dirs with hyphens (not valid Python identifiers)
+              if any(p.startswith('__') for p in parts):
+                  continue
+              if any(not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', p) for p in parts):
+                  continue
+
+              module_path = '.'.join(parts)
+              md_path = docs_ref.joinpath(*parts).with_suffix('.md')
+              md_path.parent.mkdir(parents=True, exist_ok=True)
+              md_path.write_text(f'::: {module_path}\n')
+          "
 
       - name: Build site
         run: zensical build --clean

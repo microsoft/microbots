@@ -22,13 +22,33 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
-    - navigation.instant
-    - navigation.sections
     - navigation.top
     - navigation.tabs
     - content.code.copy
 
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: alphabetical
+            docstring_style: numpy
+            show_if_no_docstring: true
+            show_labels: true
+            show_bases: true
+            show_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+
 markdown_extensions:
+  - toc:
+      permalink: true
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences
@@ -50,9 +70,49 @@ nav:
   - Blogs:
     - blog/index.md
     - "Microbots : Safety First Agentic Workflow": blog/microbots-safety-first-ai-agent.md
+  - API Reference:
+    - MicroBot: api-reference/microbots/MicroBot.md
+    - bot:
+      - AgentBoss: api-reference/microbots/bot/AgentBoss.md
+      - BrowsingBot: api-reference/microbots/bot/BrowsingBot.md
+      - CopilotBot: api-reference/microbots/bot/CopilotBot.md
+      - LogAnalysisBot: api-reference/microbots/bot/LogAnalysisBot.md
+      - ReadingBot: api-reference/microbots/bot/ReadingBot.md
+      - WritingBot: api-reference/microbots/bot/WritingBot.md
+    - environment:
+      - Environment: api-reference/microbots/environment/Environment.md
+      - local_docker:
+        - LocalDockerEnvironment: api-reference/microbots/environment/local_docker/LocalDockerEnvironment.md
+        - image_builder:
+          - dockerShell: api-reference/microbots/environment/local_docker/image_builder/dockerShell.md
+          - ShellCommunicator: api-reference/microbots/environment/local_docker/image_builder/ShellCommunicator.md
+    - extras:
+      - mount: api-reference/microbots/extras/mount.md
+    - llm:
+      - anthropic_api: api-reference/microbots/llm/anthropic_api.md
+      - llm: api-reference/microbots/llm/llm.md
+      - ollama_local: api-reference/microbots/llm/ollama_local.md
+      - openai_api: api-reference/microbots/llm/openai_api.md
+    - tools:
+      - external_tool: api-reference/microbots/tools/external_tool.md
+      - internal_tool: api-reference/microbots/tools/internal_tool.md
+      - tool: api-reference/microbots/tools/tool.md
+      - tool_yaml_parser: api-reference/microbots/tools/tool_yaml_parser.md
+      - tool_definitions:
+        - memory_tool: api-reference/microbots/tools/tool_definitions/memory_tool.md
+        - microbot_sub_agent: api-reference/microbots/tools/tool_definitions/microbot_sub_agent.md
+    - utils:
+      - copilot_auth: api-reference/microbots/utils/copilot_auth.md
+      - logger: api-reference/microbots/utils/logger.md
+      - multi_agent_log_parser: api-reference/microbots/utils/multi_agent_log_parser.md
+      - network: api-reference/microbots/utils/network.md
+      - path: api-reference/microbots/utils/path.md
+    - constants: api-reference/microbots/constants.md
+    - "Docstring Guide": api-reference-guide.md
 
 extra_css:
   - stylesheets/extra.css
 
 extra_javascript:
   - javascripts/lightbox.js
+  - javascripts/doc-anchors.js
