@@ -31,8 +31,8 @@ Choose the instructions that match your operating system:
 After installation, verify that Python and `pip` are available:
 
 ```bash title="Terminal"
-python --version   # or python3 --version on Linux
-pip --version      # or pip3 --version on Linux
+python3 --version
+pip3 --version
 ```
 
 You should see a version that is **at least 3.10 and below 3.13**. If both commands succeed, Python is ready, and you can move on to installing Docker.

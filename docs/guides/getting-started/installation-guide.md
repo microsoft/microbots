@@ -15,7 +15,7 @@ To complete this guide, you will need:
 - An **Azure OpenAI** resource with an API key, endpoint URL, and a deployed model. See the [Azure OpenAI documentation](https://learn.microsoft.com/azure/ai-services/openai/how-to/create-resource) for setup instructions.
 
 !!! warning "Python 3.13 is not supported"
-    Some of the `microbots` dependencies do not yet support Python 3.13. Use a Python version that is **at least 3.10 and below 3.13** (for example, 3.10, 3.11, or 3.12). You can check your version with `python --version`.
+    Some of the `microbots` dependencies do not yet support Python 3.13. Use a Python version that is **at least 3.10 and below 3.13** (for example, 3.10, 3.11, or 3.12). You can check your version with `python3 --version`.
 
 ## Step 1 — Setting Up the Project Directory
 
@@ -33,7 +33,7 @@ The `mkdir` command creates a new directory named `microbots-introduction`, and 
 Next, create a Python virtual environment inside the project folder:
 
 ```bash title="Terminal"
-python -m venv .venv
+python3 -m venv .venv
 ```
 
 The `-m venv` flag tells Python to run the built-in `venv` module, which creates an isolated environment in the `.venv` directory. Any packages installed while this environment is active will be scoped to this project only.

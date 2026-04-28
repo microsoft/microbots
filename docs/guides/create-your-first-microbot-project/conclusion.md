@@ -6,7 +6,7 @@ You have now built a complete Microbots project: a sample TypeScript application
 
 ## What Just Happened
 
-When you executed `python log_analysis_bot.py`, the framework performed the following steps on your behalf:
+When you executed `python3 log_analysis_bot.py`, the framework performed the following steps on your behalf:
 
 1. **Created a Docker container** with the `code` folder mounted using the appropriate permissions (read-only, in this case).
 2. **Sent your task** to the LLM along with a system prompt tailored to the `LogAnalysisBot` role.

@@ -21,7 +21,7 @@ In this step, you will execute the script you created in the previous guide and 
 From the root of the `microbots-introduction` project, with your virtual environment activated, run:
 
 ```bash title="Terminal"
-python log_analysis_bot.py
+python3 log_analysis_bot.py
 ```
 
 The `LogAnalysisBot` spins up a Docker container, mounts the `code` folder as read-only, copies `build.log` into `/var/log/` inside the container, and uses the LLM to analyze the log file and report the root cause.
