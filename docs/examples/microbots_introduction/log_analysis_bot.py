@@ -2,10 +2,6 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from microbots import LogAnalysisBot
 
 my_bot = LogAnalysisBot(
