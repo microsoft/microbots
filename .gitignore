@@ -4,6 +4,8 @@
 # Log files
 *.log
 
+node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
