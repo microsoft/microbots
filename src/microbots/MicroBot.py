@@ -14,6 +14,7 @@ from microbots.environment.local_docker.LocalDockerEnvironment import (
     LocalDockerEnvironment,
 )
 from microbots.llm.anthropic_api import AnthropicApi
+from microbots.llm.azure_openai_api import AzureOpenAIApi
 from microbots.llm.openai_api import OpenAIApi
 from microbots.llm.ollama_local import OllamaLocal
 from microbots.llm.llm import llm_output_format_str
@@ -170,7 +171,7 @@ class MicroBot:
             self.token_provider = token_provider
         elif (
             os.getenv("AZURE_AUTH_METHOD", "").strip().lower() == "azure_ad"
-            and self.model_provider == ModelProvider.OPENAI
+            and self.model_provider == ModelProvider.AZURE_OPENAI
         ):
             try:
                 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
@@ -348,10 +349,14 @@ class MicroBot:
                 if tool.usage_instructions_to_llm:
                     system_prompt_with_tools += f"\n\n{tool.usage_instructions_to_llm}"
 
-        if self.model_provider == ModelProvider.OPENAI:
-            self.llm = OpenAIApi(
+        if self.model_provider == ModelProvider.AZURE_OPENAI:
+            self.llm = AzureOpenAIApi(
                 system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
                 token_provider=self.token_provider,
+            )
+        elif self.model_provider == ModelProvider.OPENAI:
+            self.llm = OpenAIApi(
+                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
             )
         elif self.model_provider == ModelProvider.OLLAMA_LOCAL:
             self.llm = OllamaLocal(

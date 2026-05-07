@@ -262,10 +262,10 @@ class TestMemoryToolWiringOpenAI:
 
         openai_deployment = "gpt-4"
 
-        with patch("microbots.llm.openai_api.OpenAI") as mock_openai_cls, \
-             patch("microbots.llm.openai_api.api_key", "test-key"), \
-             patch("microbots.llm.openai_api.endpoint", "https://api.openai.com"), \
-             patch("microbots.llm.openai_api.deployment_name", openai_deployment):
+        with patch("microbots.llm.azure_openai_api.AzureOpenAI") as mock_openai_cls, \
+             patch("microbots.llm.azure_openai_api.api_key", "test-key"), \
+             patch("microbots.llm.azure_openai_api.endpoint", "https://test-resource.openai.azure.com"), \
+             patch("microbots.llm.azure_openai_api.deployment_name", openai_deployment):
 
             bot = MicroBot(
                 model=f"azure-openai/{openai_deployment}",

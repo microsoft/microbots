@@ -124,20 +124,17 @@ jobs:
 
       - name: Run ${{ matrix.test-type }} tests
         env:
-          # OpenAI API Configuration
-          OPEN_AI_KEY: ${{ secrets.OPEN_AI_KEY }}
-          OPEN_AI_DEPLOYMENT_NAME: ${{ secrets.OPEN_AI_DEPLOYMENT_NAME }}
-          OPEN_AI_END_POINT: ${{ secrets.OPEN_AI_END_POINT }}
           # Azure OpenAI API Configuration
-          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_DEPLOYMENT_NAME: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
           BROWSER_USE_LLM_MODEL: "gpt-5"
           BROWSER_USE_LLM_TEMPERATURE: 1
           #Anthrpic API Configuration
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_DEPLOYMENT_NAME: ${{ secrets.ANTHROPIC_DEPLOYMENT_NAME }}
-          ANTHROPIC_END_POINT: ${{ secrets.ANTHROPIC_END_POINT }}
+          ANTHROPIC_DEPLOYMENT_NAME: ${{ vars.ANTHROPIC_DEPLOYMENT_NAME }}
+          ANTHROPIC_END_POINT: ${{ vars.ANTHROPIC_END_POINT }}
           #Local Model Configuration
           LOCAL_MODEL_NAME: "qwen2.5-coder:latest"
           LOCAL_MODEL_PORT: 11434
