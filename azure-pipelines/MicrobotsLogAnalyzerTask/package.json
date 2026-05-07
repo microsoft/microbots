@@ -1,0 +1,10 @@
+{
+  "name": "microbots-log-analyzer-task",
+  "version": "0.1.0",
+  "description": "Azure DevOps custom task that runs the Microbots LogAnalysisBot.",
+  "main": "index.js",
+  "dependencies": {
+    "azure-pipelines-task-lib": "^5.2.4",
+    "azure-pipelines-tasks-azure-arm-rest": "^3.274.0"
+  }
+}

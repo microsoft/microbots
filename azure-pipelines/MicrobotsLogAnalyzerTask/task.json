@@ -1,0 +1,79 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "90104301-67ce-42b6-8f74-e520533e6a66",
+  "name": "MicrobotsLogAnalyzer",
+  "friendlyName": "Microbots Log Analyzer",
+  "description": "Run Microbots LogAnalysisBot against a log file using Azure OpenAI. Authenticates via the supplied Azure Resource Manager service connection.",
+  "category": "Utility",
+  "author": "Microbots contributors",
+  "version": {
+    "Major": 0,
+    "Minor": 1,
+    "Patch": 0
+  },
+  "instanceNameFormat": "Microbots Log Analyzer: $(logFilePath)",
+  "inputs": [
+    {
+      "name": "serviceConnection",
+      "type": "connectedService:AzureRM",
+      "label": "Azure Resource Manager connection",
+      "required": true,
+      "helpMarkDown": "Service connection used to obtain a token for Azure OpenAI."
+    },
+    {
+      "name": "deploymentName",
+      "type": "string",
+      "label": "Deployment name",
+      "required": true,
+      "helpMarkDown": "Azure OpenAI deployment name used by Microbots."
+    },
+    {
+      "name": "endpoint",
+      "type": "string",
+      "label": "Azure OpenAI endpoint",
+      "required": true,
+      "helpMarkDown": "Azure OpenAI resource endpoint, for example https://my-resource.openai.azure.com/."
+    },
+    {
+      "name": "apiVersion",
+      "type": "string",
+      "label": "API version",
+      "defaultValue": "2025-03-01-preview",
+      "required": false
+    },
+    {
+      "name": "codebasePath",
+      "type": "filePath",
+      "label": "Codebase path",
+      "required": true,
+      "helpMarkDown": "Path to the repository or source folder Microbots can inspect while analyzing the log."
+    },
+    {
+      "name": "logFilePath",
+      "type": "string",
+      "label": "Log file path",
+      "required": true,
+      "helpMarkDown": "Path to the log file. (Both Absolute Path and Relative to Codebase Path are supported.)"
+    },
+    {
+      "name": "timeoutSeconds",
+      "type": "string",
+      "label": "Timeout in seconds",
+      "defaultValue": "600",
+      "required": false
+    }
+  ],
+  "execution": {
+    "Node20_1": {
+      "target": "index.js"
+    }
+  },
+  "restrictions": {
+    "commands": {
+      "mode": "restricted"
+    },
+    "settableVariables": {
+      "allowed": []
+    }
+  }
+}
