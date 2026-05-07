@@ -822,6 +822,24 @@ class TestMicrobotUnit:
 
         assert bot.token_provider is None
 
+    def test_openai_provider_creates_openai_api_instance(self):
+        """Test that 'openai' provider creates an OpenAIApi instance."""
+        mock_env = Mock()
+        mock_env.execute.return_value = Mock(return_code=0, stdout="", stderr="")
+
+        with patch('microbots.llm.openai_api.OpenAI'), \
+             patch('microbots.llm.openai_api.api_key', 'test-key'):
+            bot = MicroBot(
+                model="openai/gpt-4",
+                system_prompt="test",
+                environment=mock_env,
+            )
+
+        from microbots.llm.openai_api import OpenAIApi
+        assert isinstance(bot.llm, OpenAIApi)
+        assert bot.deployment_name == "gpt-4"
+        assert bot.model_provider == "openai"
+
 
 @pytest.mark.integration
 @pytest.mark.docker
