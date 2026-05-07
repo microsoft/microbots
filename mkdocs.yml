@@ -66,6 +66,7 @@ nav:
     - CopilotBot: copilot-bot.md
     - "Authentication Setup": authentication.md
     - "Azure Managed Identity & Service Connection Setup": guides/azure-managed-identity-setup.md
+    - Azure Pipelines Log Analyzer: azure-pipelines-log-analyzer.md
     - Tools:
       - "Custom Tool Integration Walkthrough": blog/guides/tesseract_ocr_tool_use.md
   - Blogs:

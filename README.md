@@ -92,6 +92,10 @@ The `WritingBot` will read and write the files inside `code` folder based on spe
 
 The MicroBots create a containerized environment and mount the specified directory with restricting the permissions to read-only or read/write based on Bot used. It ensures that the AI agents operate within defined boundaries which enhances security and control over code modifications as well as protecting the local environment.
 
+## Azure Pipelines Log Analyzer
+
+Microbots includes a custom Azure DevOps task, `MicrobotsLogAnalyzer@0`, for analyzing logs with Azure OpenAI models through an Azure Resource Manager Service Connection. See [docs/azure-pipelines-log-analyzer.md](docs/azure-pipelines-log-analyzer.md) to publish and use the task.
+
 #Legal Notice
 
 Trademarks This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies.
