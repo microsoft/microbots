@@ -19,6 +19,7 @@ from microbots.llm.llm import LLMAskResponse, LLMInterface
 def patch_openai_config():
     """Automatically patch OpenAI configuration for all tests"""
     with patch('microbots.llm.azure_openai_api.endpoint', 'https://api.openai.com'), \
+         patch('microbots.llm.azure_openai_api.api_version', '2025-03-01-preview'), \
          patch('microbots.llm.azure_openai_api.deployment_name', 'gpt-4'), \
          patch('microbots.llm.azure_openai_api.api_key', 'test-api-key'), \
          patch('microbots.llm.azure_openai_api.AzureOpenAI') as mock_azure_openai:
@@ -77,6 +78,18 @@ class TestAzureOpenAIApiInitialization:
         api = AzureOpenAIApi(system_prompt=system_prompt)
 
         assert api.ai_client is not None
+
+    def test_init_raises_when_endpoint_not_set(self):
+        """ValueError is raised when AZURE_OPENAI_ENDPOINT is not set."""
+        with patch('microbots.llm.azure_openai_api.endpoint', None):
+            with pytest.raises(ValueError, match="AZURE_OPENAI_ENDPOINT environment variable is required"):
+                AzureOpenAIApi(system_prompt="test")
+
+    def test_init_raises_when_api_version_not_set(self):
+        """ValueError is raised when AZURE_OPENAI_API_VERSION is not set."""
+        with patch('microbots.llm.azure_openai_api.api_version', None):
+            with pytest.raises(ValueError, match="AZURE_OPENAI_API_VERSION environment variable is required"):
+                AzureOpenAIApi(system_prompt="test")
 
     def test_init_raises_when_no_auth_configured(self):
         """ValueError is raised when neither api_key nor token_provider is supplied."""
