@@ -55,6 +55,7 @@ Azure OpenAI Models — add environment variables in a `.env` file:
 ```env
 AZURE_OPENAI_ENDPOINT=your-endpoint-url
 AZURE_OPENAI_API_KEY=your-api-key
+AZURE_OPENAI_API_VERSION=2025-03-01-preview
 ```
 
 ## 📚 Links

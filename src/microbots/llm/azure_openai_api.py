@@ -21,6 +21,18 @@ class AzureOpenAIApi(LLMInterface):
                  token_provider: Callable[[], str] | None = None):
         self.token_provider = token_provider
 
+        if not endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_ENDPOINT environment variable is required when using Azure OpenAI. "
+                "Set it to your Azure OpenAI resource endpoint (e.g. 'https://<resource>.openai.azure.com/')."
+            )
+
+        if not api_version:
+            raise ValueError(
+                "AZURE_OPENAI_API_VERSION environment variable is required when using Azure OpenAI. "
+                "Set it to a valid API version (e.g. '2024-12-01-preview')."
+            )
+
         if not token_provider and not api_key:
             raise ValueError(
                 "No authentication configured for Azure OpenAI. Either set the AZURE_OPENAI_API_KEY "
