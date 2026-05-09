@@ -3,7 +3,8 @@ from pathlib import Path
 
 
 class ModelProvider(StrEnum):
-    OPENAI = "azure-openai"
+    AZURE_OPENAI = "azure-openai"
+    OPENAI = "openai"
     OLLAMA_LOCAL = "ollama-local"
     ANTHROPIC = "anthropic"
 

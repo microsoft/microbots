@@ -53,8 +53,9 @@ MicroBots creates a containerized environment and mounts the specified directory
 Azure OpenAI Models — add environment variables in a `.env` file:
 
 ```env
-OPEN_AI_END_POINT=your-endpoint-url
-OPEN_AI_KEY=your-api-key
+AZURE_OPENAI_ENDPOINT=your-endpoint-url
+AZURE_OPENAI_API_KEY=your-api-key
+AZURE_OPENAI_API_VERSION=2025-03-01-preview
 ```
 
 ## 📚 Links
