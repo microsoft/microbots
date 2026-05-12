@@ -64,12 +64,14 @@ nav:
     - Home: index.md
   - Guides:
     - CopilotBot: copilot-bot.md
-    - Authentication: authentication.md
+    - "Authentication Setup": authentication.md
+    - "Understanding RBAC & Authentication": guides/rbac-authentication.md
     - Tools:
       - "Custom Tool Integration Walkthrough": blog/guides/tesseract_ocr_tool_use.md
   - Blogs:
     - blog/index.md
     - "Microbots : Safety First Agentic Workflow": blog/microbots-safety-first-ai-agent.md
+    - "Microbots : Customizability at Every Layer": blog/microbots-customizability.md
   - API Reference:
     - MicroBot: api-reference/microbots/MicroBot.md
     - bot:
