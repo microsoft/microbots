@@ -65,13 +65,14 @@ nav:
   - Guides:
     - CopilotBot: copilot-bot.md
     - "Authentication Setup": authentication.md
-    - "Understanding RBAC & Authentication": guides/rbac-authentication.md
+    - "Azure Managed Identity & Service Connection Setup": guides/azure-managed-identity-setup.md
     - Tools:
       - "Custom Tool Integration Walkthrough": blog/guides/tesseract_ocr_tool_use.md
   - Blogs:
     - blog/index.md
     - "Microbots : Safety First Agentic Workflow": blog/microbots-safety-first-ai-agent.md
     - "Microbots : Customizability at Every Layer": blog/microbots-customizability.md
+    - "Understanding RBAC & Authentication": blog/rbac-authentication.md
   - API Reference:
     - MicroBot: api-reference/microbots/MicroBot.md
     - bot:

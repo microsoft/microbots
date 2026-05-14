@@ -1,12 +1,12 @@
 # Microbots: Customizability at Every Layer
 
-**Published on:** May 12, 2026 | **Author:** Kavya Sree Kaitepalli
+**Published on:** May 14, 2026 | **Author:** Kavya Sree Kaitepalli
 
 A user needed to extract text from scanned PDFs. We said: "Write 15 lines of YAML." No pull request. No release cycle. No code review. That's the kind of extensibility we built Microbots for.
 
 > **Customization is a configuration choice — not a code-change project.**
 
-![Customization Layers](../images/microbots-customizability/layer_cake.svg)
+![Customization Layers](assets/microbots-customizability/layer_cake.svg)
 
 ---
 
@@ -34,7 +34,7 @@ The most common customization: giving a bot new capabilities.
 
 Instead of hardcoding tools into the base image, Microbots uses a **YAML-based tool definition system**. One file defines everything — what to install, how to verify it works, and how the LLM should use it.
 
-![Tool Lifecycle](../images/microbots-customizability/tool_lifecycle.svg)
+![Tool Lifecycle](assets/microbots-customizability/tool_lifecycle.svg)
 
 ### What a tool definition looks like
 
@@ -95,7 +95,7 @@ These layers don't require new code — you pick from built-in options to shape 
 
 ## 3. Scope File Access with Mounts
 
-![Mount Permissions Matrix](../images/microbots-customizability/mount_matrix.svg)
+![Mount Permissions Matrix](assets/microbots-customizability/mount_matrix.svg)
 
 Mounts control what the bot can see and how its changes are handled. The primary mount (`folder_to_mount`) must be `MountType.MOUNT` — `READ_ONLY` gets an **OverlayFS** so writes stay in a disposable layer and are discarded when the container exits, while `READ_WRITE` is a direct bind mount so the bot's writes are **persisted to the mounted folder** (and only that folder). Additional mounts must be `MountType.COPY` — files are copied into the container via `docker cp`, so the original files are never modified.
 
@@ -125,7 +125,7 @@ response = bot.run(task="Fix the bug in auth.py", additional_mounts=[docs_mount]
 
 ## 4. Switch LLM Providers
 
-![Provider Swap](../images/microbots-customizability/provider_swap.svg)
+![Provider Swap](assets/microbots-customizability/provider_swap.svg)
 
 Switch between the three built-in providers by changing one string — everything else stays the same:
 
@@ -159,7 +159,7 @@ def my_auth() -> str:
 bot = WritingBot(model="azure-openai/gpt-4o", folder_to_mount="/project", token_provider=my_auth)
 ```
 
-For more on why Microbots supports both API keys and Azure AD, see [Understanding RBAC & Authentication](../guides/rbac-authentication.md).
+For more on why Microbots supports both API keys and Azure AD, see [Understanding RBAC & Authentication](rbac-authentication.md).
 
 ---
 
@@ -210,7 +210,7 @@ The rest of Microbots doesn't notice the difference.
 
 The power is in **composition**. Each layer is independent, so you can mix and match:
 
-![Composition](../images/microbots-customizability/composition.svg)
+![Composition](assets/microbots-customizability/composition.svg)
 
 ```python
 sast_tool = parse_tool_definition("sast-scanner.yaml")
