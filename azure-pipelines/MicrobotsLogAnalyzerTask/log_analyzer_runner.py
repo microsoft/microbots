@@ -10,6 +10,7 @@ def main():
     codebase_path = os.path.abspath(sys.argv[1])
     log_file_path = sys.argv[2]
     timeout_seconds = int(sys.argv[3])
+    max_iterations = int(sys.argv[4]) if len(sys.argv) > 4 else None
 
     os.chdir(codebase_path)
     print(
@@ -18,6 +19,8 @@ def main():
         flush=True,
     )
     print(f"MicrobotsLogAnalyzer: timeout is {timeout_seconds} seconds", flush=True)
+    if max_iterations is not None:
+        print(f"MicrobotsLogAnalyzer: max iterations is {max_iterations}", flush=True)
 
     token_provider = get_bearer_token_provider(
         AzureCliCredential(),
@@ -28,7 +31,14 @@ def main():
         folder_to_mount=codebase_path,
         token_provider=token_provider,
     )
-    result = bot.run(file_name=log_file_path, timeout_in_seconds=timeout_seconds)
+    run_kwargs = {
+        "file_name": log_file_path,
+        "timeout_in_seconds": timeout_seconds,
+    }
+    if max_iterations is not None:
+        run_kwargs["max_iterations"] = max_iterations
+
+    result = bot.run(**run_kwargs)
     message = result.result or result.error or ""
 
     print("##[section]MicrobotsLogAnalyzer: LLM analysis")

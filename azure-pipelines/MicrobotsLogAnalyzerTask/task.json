@@ -61,6 +61,13 @@
       "label": "Timeout in seconds",
       "defaultValue": "600",
       "required": false
+    },
+    {
+      "name": "maxIterations",
+      "type": "string",
+      "label": "Maximum iterations",
+      "required": false,
+      "helpMarkDown": "Optional maximum number of Microbots iterations."
     }
   ],
   "execution": {

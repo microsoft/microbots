@@ -25,3 +25,4 @@ jobs:
       codebasePath: $(Build.SourcesDirectory)
       logFilePath: logs/build.log
       timeoutSeconds: 600
+      maxIterations: 20

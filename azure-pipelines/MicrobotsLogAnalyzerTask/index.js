@@ -37,6 +37,7 @@ function getInputs() {
     codebasePath: tl.getPathInput("codebasePath", true, true),
     logFilePath: input("logFilePath", true),
     timeoutSeconds: input("timeoutSeconds", false) || DEFAULT_TIMEOUT_SECONDS,
+    maxIterations: input("maxIterations", false),
   };
 
   validateInputs(inputs);
@@ -70,6 +71,14 @@ function validateInputs(inputs) {
     throw new Error(`timeoutSeconds must be a positive integer: ${inputs.timeoutSeconds}`);
   }
   inputs.timeoutSeconds = String(timeoutSeconds);
+
+  if (inputs.maxIterations) {
+    const maxIterations = Number(inputs.maxIterations);
+    if (!Number.isSafeInteger(maxIterations) || maxIterations <= 0) {
+      throw new Error(`maxIterations must be a positive integer: ${inputs.maxIterations}`);
+    }
+    inputs.maxIterations = String(maxIterations);
+  }
 }
 
 async function loginWithServiceConnection(serviceConnection) {
@@ -140,11 +149,11 @@ function microbotsEnvironment(inputs) {
 
 function runLogAnalyzer(python, inputs) {
   const scriptPath = path.join(__dirname, "log_analyzer_runner.py");
-  runCommand(
-    python,
-    [scriptPath, inputs.codebasePath, inputs.logFilePath, inputs.timeoutSeconds],
-    microbotsEnvironment(inputs)
-  );
+  const args = [scriptPath, inputs.codebasePath, inputs.logFilePath, inputs.timeoutSeconds];
+
+  if (inputs.maxIterations) args.push(inputs.maxIterations);
+
+  runCommand(python, args, microbotsEnvironment(inputs));
 }
 
 async function run() {
