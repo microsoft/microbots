@@ -44,7 +44,7 @@ See the complete sample pipeline at [docs/examples/azure-pipelines/microbots-log
 - task: MicrobotsLogAnalyzer@0
   displayName: Analyze build log
   inputs:
-    serviceConnection: my-azure-service-connection
+    azureSubscription: my-azure-service-connection
     deploymentName: my-azure-openai-deployment
     endpoint: https://my-azure-openai-resource.openai.azure.com/
     apiVersion: 2025-03-01-preview
@@ -60,7 +60,7 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 
 | Input | Required | Default | Description |
 |---|---:|---|---|
-| `serviceConnection` | Yes | - | Azure Resource Manager Service Connection used for Azure CLI login. |
+| `azureSubscription` | Yes | - | Azure Resource Manager service connection used for Azure CLI login. Alias: `serviceConnection`. |
 | `deploymentName` | Yes | - | Azure OpenAI deployment name. |
 | `endpoint` | Yes | - | Azure OpenAI endpoint, for example `https://my-resource.openai.azure.com/`. |
 | `apiVersion` | Yes | - | Azure OpenAI API version passed to Microbots, for example `2025-03-01-preview`. |
