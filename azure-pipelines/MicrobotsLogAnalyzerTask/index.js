@@ -60,9 +60,9 @@ function validateInputs(inputs) {
 
   try {
     const endpoint = new URL(inputs.endpoint);
-    if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") throw new Error();
+    if (endpoint.protocol !== "https:") throw new Error();
   } catch (_) {
-    throw new Error(`endpoint must be a valid HTTP or HTTPS URL: ${inputs.endpoint}`);
+    throw new Error(`endpoint must be a valid HTTPS URL: ${inputs.endpoint}`);
   }
 
   const timeoutSeconds = Number(inputs.timeoutSeconds);
