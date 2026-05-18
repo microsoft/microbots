@@ -21,6 +21,12 @@ function input(name, required) {
   return value ? value.trim() : value;
 }
 
+function azureSubscriptionInput() {
+  const value = input("azureSubscription", false) || input("serviceConnection", false);
+  if (!value) throw new Error("azureSubscription is required");
+  return value;
+}
+
 function resolveLogPath(codebasePath, logFilePath) {
   return path.isAbsolute(logFilePath)
     ? path.resolve(logFilePath)
@@ -29,7 +35,7 @@ function resolveLogPath(codebasePath, logFilePath) {
 
 function getInputs() {
   const inputs = {
-    serviceConnection: input("serviceConnection", true),
+    serviceConnection: azureSubscriptionInput(),
     deploymentName: input("deploymentName", true),
     endpoint: input("endpoint", true),
     apiVersion: input("apiVersion", true),
