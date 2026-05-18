@@ -38,8 +38,8 @@
       "name": "apiVersion",
       "type": "string",
       "label": "API version",
-      "defaultValue": "2025-03-01-preview",
-      "required": false
+      "required": true,
+      "helpMarkDown": "Azure OpenAI API version, for example 2025-03-01-preview."
     },
     {
       "name": "codebasePath",

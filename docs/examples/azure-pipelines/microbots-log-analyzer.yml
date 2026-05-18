@@ -22,6 +22,7 @@ jobs:
       serviceConnection: my-azure-service-connection
       deploymentName: my-azure-openai-deployment
       endpoint: https://my-azure-openai-resource.openai.azure.com/
+      apiVersion: 2025-03-01-preview
       codebasePath: $(Build.SourcesDirectory)
       logFilePath: logs/build.log
       timeoutSeconds: 600
