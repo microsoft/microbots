@@ -6,7 +6,6 @@ const { spawnSync } = require("child_process");
 const tl = require("azure-pipelines-task-lib/task");
 const { loginAzureRM } = require("azure-pipelines-tasks-azure-arm-rest/azCliUtility");
 
-const DEFAULT_API_VERSION = "2025-03-01-preview";
 const DEFAULT_TIMEOUT_SECONDS = "600";
 const VENV_NAME = "microbots-log-analyzer-venv";
 const VENV_READY_MARKER = ".microbots-venv-ready-v1";
@@ -33,7 +32,7 @@ function getInputs() {
     serviceConnection: input("serviceConnection", true),
     deploymentName: input("deploymentName", true),
     endpoint: input("endpoint", true),
-    apiVersion: input("apiVersion", false) || DEFAULT_API_VERSION,
+    apiVersion: input("apiVersion", true),
     codebasePath: tl.getPathInput("codebasePath", true, true),
     logFilePath: input("logFilePath", true),
     timeoutSeconds: input("timeoutSeconds", false) || DEFAULT_TIMEOUT_SECONDS,

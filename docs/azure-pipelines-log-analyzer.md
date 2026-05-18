@@ -47,6 +47,7 @@ See the complete sample pipeline at [docs/examples/azure-pipelines/microbots-log
     serviceConnection: my-azure-service-connection
     deploymentName: my-azure-openai-deployment
     endpoint: https://my-azure-openai-resource.openai.azure.com/
+    apiVersion: 2025-03-01-preview
     codebasePath: $(Build.SourcesDirectory)
     logFilePath: logs/build.log
     timeoutSeconds: 600
@@ -62,7 +63,7 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 | `serviceConnection` | Yes | - | Azure Resource Manager Service Connection used for Azure CLI login. |
 | `deploymentName` | Yes | - | Azure OpenAI deployment name. |
 | `endpoint` | Yes | - | Azure OpenAI endpoint, for example `https://my-resource.openai.azure.com/`. |
-| `apiVersion` | No | `2025-03-01-preview` | Azure OpenAI API version passed to Microbots. |
+| `apiVersion` | Yes | - | Azure OpenAI API version passed to Microbots, for example `2025-03-01-preview`. |
 | `codebasePath` | Yes | - | Repository or source folder Microbots can inspect while analyzing the log. |
 | `logFilePath` | Yes | - | Log file path. Use an absolute path, or a relative path resolved from `codebasePath`. |
 | `timeoutSeconds` | No | `600` | Maximum time for `LogAnalysisBot.run()`. |
