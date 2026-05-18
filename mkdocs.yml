@@ -78,8 +78,8 @@ nav:
     - Tools:
       - "Custom Tool Integration Walkthrough": advanced/tools/tesseract_ocr_tool_use.md
     - "Technical Writing Guidelines": advanced/technical-writing-guidelines.md
-  - Blogs:
-    - blog/index.md
+  - Blog:
+    - "Blog Posts": blog/index.md
     - "Microbots : Safety First Agentic Workflow": blog/microbots-safety-first-ai-agent.md
     - "Microbots : Customizability at Every Layer": blog/microbots-customizability.md
     - "Understanding RBAC & Authentication": blog/rbac-authentication.md
