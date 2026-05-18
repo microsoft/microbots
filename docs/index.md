@@ -3,9 +3,11 @@ hide:
   - navigation
 ---
 
+# 🤖 Microbots
+
 MicroBots is a lightweight, extensible AI agent for code comprehension and controlled file edits. It integrates cleanly into automation pipelines, mounting a target directory with explicit read-only or read/write modes so LLMs can safely inspect, refactor, or generate files with least-privilege access.
 
-## � Quick Start
+## 🚀 Quick Start
 
 ### Pre-requisites
 
@@ -69,7 +71,7 @@ AZURE_OPENAI_API_VERSION=2025-03-01-preview
 
 ---
 
-## 🚀 Getting Started
+## 🎯 Getting Started
 
 Ready to build your first Microbot project? Follow the step-by-step onboarding guide:
 
