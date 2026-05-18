@@ -33,5 +33,5 @@ The core philosophy is simple — assume the LLM will eventually produce a harmf
 
 ## Conclusion
 
-In this article, you reviewed what Microbots is and the five-layer safety model that keeps every agent action contained. Next, set up the development environment by following the [Pre-requisites](getting-started/prerequisites.md) guide to install Python and Docker, then continue with the [Microbot Installation](getting-started/installation-guide.md) guide to install the package and configure your LLM provider.
+In this article, you reviewed what Microbots is and the five-layer safety model that keeps every agent action contained. Next, set up the development environment by following the [Pre-requisites](../getting-started/prerequisites.md) guide to install Python and Docker, then continue with the [Microbot Installation](../getting-started/installation-guide.md) guide to install the package and configure your LLM provider.
 

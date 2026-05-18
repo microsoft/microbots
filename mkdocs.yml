@@ -52,7 +52,9 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ['.', 'docs']
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
   - admonition
@@ -62,17 +64,15 @@ markdown_extensions:
   - md_in_html
 
 nav:
-  - Guides:
+  - Introduction: index.md
+  - Getting Started:
+    - "Pre-requisites": getting-started/prerequisites.md
+    - "Microbot Installation": getting-started/installation-guide.md
+    - "Create Your First Microbot Project": getting-started/create-your-first-microbot-project/index.md
+    - "Output and Log Parsing": getting-started/create-your-first-microbot-project/output-and-log-parsing.md
+    - "Conclusion": getting-started/conclusion.md
+  - Advanced Guides:
     - guides/index.md
-    - "Microbots Introduction": guides/introduction.md
-    - Installation Guide:
-      - "Pre-requisites": guides/getting-started/prerequisites.md
-      - "Microbot Installation": guides/getting-started/installation-guide.md
-    - Create Your First Microbot Project:
-      - "Sample Project Creation and First Run": guides/create-your-first-microbot-project/sample-project-and-first-run.md
-      - "LogAnalysisBot": guides/create-your-first-microbot-project/log-analysis-bot.md
-      - "Output and Log Parsing": guides/create-your-first-microbot-project/output-and-log-parsing.md
-      - "Conclusion": guides/create-your-first-microbot-project/conclusion.md
     - Bots:
       - CopilotBot: guides/bots/copilot-bot.md
     - Tools:

@@ -10,9 +10,8 @@ In this guide, you will run the script, inspect the full logger output to see ho
 
 To complete this guide, you will need:
 
-- A `log_analysis_bot.py` script at the root of your project. See the [LogAnalysisBot](log-analysis-bot.md) guide.
-- A `code/` folder containing `app.ts` and `build.log`. See the [Sample Project Creation and First Run](sample-project-and-first-run.md) guide.
-- Docker running on your machine. See the [Pre-requisites](../getting-started/prerequisites.md#step-2-installing-docker) guide.
+- A `code/` folder containing `app.ts` and `build.log`, and a `log_analysis_bot.py` script at the project root. See the [Create Your First Microbot Project](index.md) guide.
+- Docker running on your machine. See the [Pre-requisites](../prerequisites.md#step-2-installing-docker) guide.
 
 ## Step 1 — Running the Bot
 
@@ -143,4 +142,4 @@ The `LogAnalysisBot` read `build.log`, correlated the compiler errors with the s
 
 ## Conclusion
 
-In this guide, you executed the `log_analysis_bot.py` script, traced the bot's reasoning through the logger output, and reviewed the root-cause analysis returned in `result.result`. Continue to the [Conclusion](conclusion.md) guide to see what Microbots did under the hood and to explore the other bots available in the framework.
+In this guide, you executed the `log_analysis_bot.py` script, traced the bot's reasoning through the logger output, and reviewed the root-cause analysis returned in `result.result`. Continue to the [Conclusion](../conclusion.md) guide to see what Microbots did under the hood and to explore the other bots available in the framework.
