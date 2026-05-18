@@ -1,6 +1,7 @@
 # Create Your First Microbot Project
 
-Create a sample C project with a deliberate compile error, generate a build log, and run a `LogAnalysisBot` against it.
+Create a sample C project with a deliberate compile error.
+Generate a build log. Run a `LogAnalysisBot` against it.
 
 **Requires:** `gcc` (preinstalled on most Linux distributions, or `sudo apt install build-essential`).
 
@@ -53,13 +54,15 @@ microbots-introduction/
 
 ## Step 3 — Write the Bot Script
 
-`LogAnalysisBot` is a read-only bot that mounts a folder and analyzes log files. Create `log_analysis_bot.py` at the project root:
+Create `log_analysis_bot.py` at the project root:
 
 ```python title="log_analysis_bot.py" linenums="1"
 --8<-- "docs/examples/microbots_introduction/log_analysis_bot.py"
 ```
 
-The script mounts `code/` **read-only** inside Docker, runs `LogAnalysisBot` against `code/build.log` with a 10-minute timeout, and prints the root-cause analysis from `result.result` (a `BotRunResult`).
+The script mounts `code/` **read-only** inside Docker,     
+Runs `LogAnalysisBot` against `code/build.log` with a 10-minute timeout.  
+Prints the root-cause analysis from `result.result`
 
 ## Step 4 — Run the Bot
 

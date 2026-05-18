@@ -1,6 +1,8 @@
 # Pre-requisites
 
-Install **Python** (the runtime) and **Docker** (the sandboxed execution environment) before running any bot.
+Install   
+1. **Python** (the runtime)  
+2. **Docker** (the sandboxed execution environment) before running any bot.
 
 ## Step 1 — Installing Python
 
