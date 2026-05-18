@@ -70,18 +70,19 @@ nav:
     - "Microbot Installation": getting-started/installation-guide.md
     - "Create Your First Microbot Project": getting-started/create-your-first-microbot-project/index.md
     - "Conclusion": getting-started/conclusion.md
-  - Advanced Guides:
-    - guides/index.md
+  - Advanced:
     - Bots:
-      - CopilotBot: guides/bots/copilot-bot.md
+      - CopilotBot: advanced/bots/copilot-bot.md
+    - "Authentication Setup": advanced/authentication.md
+    - "Azure Managed Identity & Service Connection Setup": advanced/azure-managed-identity-setup.md
     - Tools:
-      - "Custom Tool Integration Walkthrough": guides/tools/tesseract_ocr_tool_use.md
-    - Advanced:
-      - Authentication: guides/advanced/authentication.md
-    - "Technical Writing Guidelines": guides/technical-writing-guidelines.md
+      - "Custom Tool Integration Walkthrough": advanced/tools/tesseract_ocr_tool_use.md
+    - "Technical Writing Guidelines": advanced/technical-writing-guidelines.md
   - Blogs:
     - blog/index.md
     - "Microbots : Safety First Agentic Workflow": blog/microbots-safety-first-ai-agent.md
+    - "Microbots : Customizability at Every Layer": blog/microbots-customizability.md
+    - "Understanding RBAC & Authentication": blog/rbac-authentication.md
   - API Reference:
     - MicroBot: api-reference/microbots/MicroBot.md
     - bot:

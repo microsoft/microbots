@@ -18,7 +18,15 @@ Fix the error and make sure the build is successful.""", timeout_in_seconds=600)
 print(data.results)
 ```
 
-## 🚀 How to install
+## � Getting Started
+
+New to Microbots? Follow the step-by-step onboarding guide on the docs site:
+
+➡️ **[Get Started with Microbots](https://microsoft.github.io/microbots/getting-started/prerequisites/)**
+
+It walks you through prerequisites, installation, and building your first Microbot project end-to-end.
+
+## �🚀 How to install
 
 ### Pre-requisites
 
@@ -37,8 +45,9 @@ pip install microbots
 Azure OpenAI Models - Add the below environment variables in a `.env` file in the root of your application
 
 ```env
-OPEN_AI_END_POINT=XXXXXXXXXXXXXXXXXXXXXXXXXX
-OPEN_AI_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+AZURE_OPENAI_ENDPOINT=XXXXXXXXXXXXXXXXXXXXXXXXXX
+AZURE_OPENAI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+AZURE_OPENAI_API_VERSION=2025-03-01-preview
 ```
 
 ## 🤖 Bots & Usage Examples
@@ -90,6 +99,14 @@ The `WritingBot` will read and write the files inside `code` folder based on spe
 ![Overall Architecture Image](./docs/images/overall_architecture.png)
 
 The MicroBots create a containerized environment and mount the specified directory with restricting the permissions to read-only or read/write based on Bot used. It ensures that the AI agents operate within defined boundaries which enhances security and control over code modifications as well as protecting the local environment.
+
+---
+
+## 🚀 Getting Started
+
+Ready to build your first Microbot project? Follow the step-by-step onboarding guide:
+
+➡️ **[Get Started with Microbots](https://microsoft.github.io/microbots/getting-started/prerequisites/)**
 
 #Legal Notice
 
