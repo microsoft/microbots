@@ -15,7 +15,7 @@ def main():
     os.chdir(codebase_path)
     print(
         f"MicrobotsLogAnalyzer: analyzing {log_file_path} with deployment "
-        f"{os.environ['OPEN_AI_DEPLOYMENT_NAME']}",
+        f"{os.environ['AZURE_OPENAI_DEPLOYMENT_NAME']}",
         flush=True,
     )
     print(f"MicrobotsLogAnalyzer: timeout is {timeout_seconds} seconds", flush=True)
@@ -27,7 +27,7 @@ def main():
         "https://cognitiveservices.azure.com/.default",
     )
     bot = LogAnalysisBot(
-        model=f"azure-openai/{os.environ['OPEN_AI_DEPLOYMENT_NAME']}",
+        model=f"azure-openai/{os.environ['AZURE_OPENAI_DEPLOYMENT_NAME']}",
         folder_to_mount=codebase_path,
         token_provider=token_provider,
     )
