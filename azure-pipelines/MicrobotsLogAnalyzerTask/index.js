@@ -144,9 +144,7 @@ function setupVenv() {
 
 function microbotsEnvironment(inputs) {
   return Object.assign({}, process.env, {
-    OPEN_AI_DEPLOYMENT_NAME: inputs.deploymentName,
-    OPEN_AI_END_POINT: inputs.endpoint,
-    OPEN_AI_API_VERSION: inputs.apiVersion,
+    AZURE_OPENAI_DEPLOYMENT_NAME: inputs.deploymentName,
     AZURE_OPENAI_ENDPOINT: inputs.endpoint,
     AZURE_OPENAI_API_VERSION: inputs.apiVersion,
   });
