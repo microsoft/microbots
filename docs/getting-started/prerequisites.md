@@ -2,14 +2,9 @@
 
 Install **Python** (the runtime) and **Docker** (the sandboxed execution environment) before running any bot.
 
-!!! warning "External Links Disclaimer"
-    External references were verified at the time of writing and may change over time.
-
 ## Step 1 — Installing Python
 
-Microbots requires **Python 3.10 or later, but below 3.13** (some dependencies lack 3.13-compatible wheels).
-
-On Linux, install Python with your distribution's package manager.
+Microbots requires **Python 3.10 or later, but below 3.13**
 
 Ubuntu / Debian:
 

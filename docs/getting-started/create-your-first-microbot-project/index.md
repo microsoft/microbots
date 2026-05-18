@@ -1,8 +1,8 @@
 # Create Your First Microbot Project
 
-Create a sample TypeScript project with a deliberate compile error, generate a build log, and run a `LogAnalysisBot` against it.
+Create a sample C project with a deliberate compile error, generate a build log, and run a `LogAnalysisBot` against it.
 
-**Requires:** A configured Microbots project (see [Microbot Installation](../installation-guide.md)) plus **Node.js** and **TypeScript** (`npm install -g typescript`).
+**Requires:** `gcc` (preinstalled on most Linux distributions, or `sudo apt install build-essential`).
 
 ## Step 1 — Create the Sample Project
 
@@ -12,30 +12,32 @@ From the root of your `microbots-introduction` project, create a `code/` folder:
 mkdir code
 ```
 
-Add a TypeScript file with a deliberate syntax error:
+Add a C file with a deliberate syntax error:
 
-```typescript title="code/app.ts" linenums="1"
---8<-- "docs/examples/microbots_introduction/code/app.ts"
+```c title="code/app.c" linenums="1"
+--8<-- "docs/examples/microbots_introduction/code/app.c"
 ```
 
-Line 8 has a malformed signature (`b: number: number` instead of `b: number): number`), so `tsc` will fail.
+Line 5 is missing the trailing `;` after `return a + b`, so `gcc` will fail.
 
 ## Step 2 — Generate the Build Log
 
 ```bash title="Terminal"
 cd code
-tsc app.ts > build.log 2>&1
+gcc app.c > build.log 2>&1
 cd ..
 ```
 
 `code/build.log` should contain:
 
 ```log title="code/build.log"
-app.ts(8,34): error TS1005: ',' expected.
-app.ts(8,43): error TS1005: ',' expected.
-app.ts(9,12): error TS1005: ':' expected.
-app.ts(9,14): error TS1005: ',' expected.
-app.ts(10,1): error TS1128: Declaration or statement expected.
+app.c: In function ‘add’:
+app.c:5:17: error: expected ‘;’ before ‘}’ token
+    5 |     return a + b
+      |                 ^
+      |                 ;
+    6 | }
+      | ~ 
 ```
 
 Project layout:
@@ -45,8 +47,7 @@ microbots-introduction/
 ├── .venv
 ├── .env
 └── code/
-    ├── app.ts
-    ├── app.js
+    ├── app.c
     └── build.log
 ```
 
@@ -60,8 +61,22 @@ microbots-introduction/
 
 The script mounts `code/` **read-only** inside Docker, runs `LogAnalysisBot` against `code/build.log` with a 10-minute timeout, and prints the root-cause analysis from `result.result` (a `BotRunResult`).
 
-See the API Reference for all parameters: [`LogAnalysisBot`](../../api-reference/microbots/bot/LogAnalysisBot.md), [`BotRunResult`](../../api-reference/microbots/MicroBot.md#microbots.MicroBot.BotRunResult).
+## Step 4 — Run the Bot
 
-Continue to the [Output and Log Parsing](output-and-log-parsing.md) guide to run the script and inspect the output.
+From the project root, with your virtual environment activated:
 
+```bash title="Terminal"
+python3 log_analysis_bot.py
+```
 
+`print(result.result)` outputs the root-cause analysis:
+
+```text title="Output"
+Root cause identified: The build failed due to a syntax error in 
+//workdir/code/app.c at line 5. The function add(int a, int b) has 
+a missing semicolon after the return statement (`return a + b`). 
+This matches the compiler error in /var/log/build.log: "error: 
+expected ';' before '}' token". Fix by adding a semicolon: `return a + b;`.
+```
+
+Continue with [Conclusion](../conclusion.md).

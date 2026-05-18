@@ -14,11 +14,15 @@ source .venv/bin/activate
 pip install microbots
 ```
 
-When the venv is active, your shell prompt is prefixed with `(.venv)`.
+When the venv is active, your shell prompt is prefixed with `(.venv)` as below:
+
+```bash title="Terminal"
+(.venv) user@host:~/microbots-introduction$
+```
 
 ## Step 2 — Configuring the LLM Provider
 
-Microbots supports **Azure OpenAI**, **Anthropic**, and **Ollama**. This guide uses Azure OpenAI.
+Microbots supports **Azure OpenAI**, **OpenAI**, **Anthropic**, and **Ollama**. This guide uses Azure OpenAI.
 
 Create a `.env` file in the project root:
 
