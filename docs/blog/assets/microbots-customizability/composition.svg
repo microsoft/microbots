@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 300">
+  <rect width="700" height="300" fill="#010409"/>
+  <rect x="1" y="1" width="698" height="298" fill="none" stroke="#3d444d" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="350" y="28" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">Composing All Layers Together</text>
+
+  <!-- Center: SecurityAuditorBot -->
+  <rect x="230" y="50" width="240" height="50" rx="8" fill="#151b23" stroke="#e6edf3" stroke-width="2"/>
+  <text x="350" y="72" text-anchor="middle" font-family="'SF Mono', monospace" font-size="12" font-weight="700" fill="#e6edf3">SecurityAuditorBot</text>
+  <text x="350" y="90" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">Custom bot subclass</text>
+
+  <!-- Lines down from bot to each layer -->
+  <!-- To LLM -->
+  <line x1="280" y1="100" x2="100" y2="140" stroke="#f0883e" stroke-width="1"/>
+  <!-- To Tool -->
+  <line x1="320" y1="100" x2="270" y2="140" stroke="#58a6ff" stroke-width="1"/>
+  <!-- To Mount -->
+  <line x1="350" y1="100" x2="350" y2="140" stroke="#d2a8ff" stroke-width="1"/>
+  <!-- To Environment -->
+  <line x1="380" y1="100" x2="440" y2="140" stroke="#f778ba" stroke-width="1"/>
+  <!-- To Auth -->
+  <line x1="420" y1="100" x2="600" y2="140" stroke="#ffd33d" stroke-width="1"/>
+
+  <!-- LLM Provider -->
+  <rect x="25" y="140" width="150" height="55" rx="6" fill="#0d1117" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="100" y="163" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" font-weight="600" fill="#f0883e">ollama-local</text>
+  <text x="100" y="180" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">qwen2.5-coder</text>
+  <text x="100" y="193" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="8" fill="#484f58">privacy-first</text>
+
+  <!-- Custom Tool -->
+  <rect x="195" y="140" width="150" height="55" rx="6" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="270" y="163" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" font-weight="600" fill="#58a6ff">sast-scanner</text>
+  <text x="270" y="180" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">YAML-defined tool</text>
+  <text x="270" y="193" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="8" fill="#484f58">install → verify → use</text>
+
+  <!-- Mount -->
+  <rect x="365" y="140" width="150" height="55" rx="6" fill="#0d1117" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="440" y="163" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" font-weight="600" fill="#d2a8ff">READ_ONLY</text>
+  <text x="440" y="180" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">MOUNT type</text>
+  <text x="440" y="193" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="8" fill="#484f58">can't modify source</text>
+
+  <!-- Environment -->
+  <rect x="535" y="140" width="140" height="55" rx="6" fill="#0d1117" stroke="#f778ba" stroke-width="1.5"/>
+  <text x="605" y="163" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" font-weight="600" fill="#f778ba">K8s Pod</text>
+  <text x="605" y="180" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">Custom Environment</text>
+  <text x="605" y="193" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="8" fill="#484f58">ephemeral sandbox</text>
+
+  <!-- Bottom: what each layer doesn't know -->
+  <rect x="50" y="225" width="600" height="55" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+  <text x="350" y="248" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e6edf3">Zero coupling between layers</text>
+  <text x="350" y="268" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">Tools don't know which LLM runs them · The LLM doesn't know it's in Kubernetes · The environment doesn't know what tools are installed</text>
+</svg>
