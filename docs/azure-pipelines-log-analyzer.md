@@ -50,6 +50,7 @@ See the complete sample pipeline at [docs/examples/azure-pipelines/microbots-log
     codebasePath: $(Build.SourcesDirectory)
     logFilePath: logs/build.log
     timeoutSeconds: 600
+    maxIterations: 20
 ```
 
 The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFilePath` values are resolved from `codebasePath`; absolute paths are also supported.
@@ -65,6 +66,7 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 | `codebasePath` | Yes | - | Repository or source folder Microbots can inspect while analyzing the log. |
 | `logFilePath` | Yes | - | Log file path. Use an absolute path, or a relative path resolved from `codebasePath`. |
 | `timeoutSeconds` | No | `600` | Maximum time for `LogAnalysisBot.run()`. |
+| `maxIterations` | No | LogAnalysisBot default | Maximum number of Microbots iterations. Leave unset to use the default from `LogAnalysisBot.run()`. |
 
 ## How It Works
 
@@ -72,6 +74,6 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 2. The task logs in with the supplied Azure Resource Manager Service Connection.
 3. The task creates or reuses a virtual environment (`microbots-log-analyzer-venv`).
 4. The task installs `microbots[azure_ad]` into that virtual environment.
-5. A short Python runner creates `LogAnalysisBot` with `AzureCliCredential`, mounts `codebasePath` as context, passes `logFilePath` to `LogAnalysisBot.run()`, and prints the analysis result.
+5. A short Python runner creates `LogAnalysisBot` with `AzureCliCredential`, mounts `codebasePath` as context, passes `logFilePath`, optional `maxIterations`, and `timeoutSeconds` to `LogAnalysisBot.run()`, and prints the analysis result.
 
 The task clears the Azure CLI account at the end of the run. Its task manifest also uses Azure Pipelines command restrictions so analyzed log content cannot set arbitrary pipeline variables.
