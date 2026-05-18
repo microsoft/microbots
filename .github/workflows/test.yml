@@ -87,6 +87,10 @@ jobs:
         run: |
           pip install -e .
 
+      - name: Run Azure Pipelines task unit tests
+        if: matrix.test-type == 'unit'
+        run: npm test --prefix azure-pipelines/MicrobotsLogAnalyzerTask
+
       - name: Build Docker images for integration tests
         if: matrix.test-type != 'unit'
         run: |

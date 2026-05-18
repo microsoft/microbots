@@ -11,9 +11,27 @@ const VENV_NAME = "microbots-log-analyzer-venv";
 const VENV_READY_MARKER = ".microbots-venv-ready-v1";
 
 function runCommand(command, args, env) {
-  const result = spawnSync(command, args, { stdio: "inherit", env: env || process.env });
+  const result = spawnSync(command, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: env || process.env,
+    encoding: "utf8",
+  });
+
+  if (result.stdout) {
+    if (process.stdout && typeof process.stdout.write === "function") process.stdout.write(result.stdout);
+    else console.log(result.stdout.trimEnd());
+  }
+  if (result.stderr) {
+    if (process.stderr && typeof process.stderr.write === "function") process.stderr.write(result.stderr);
+    else console.error(result.stderr.trimEnd());
+  }
+
   if (result.error) throw new Error(`Failed to run ${command}: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} -> exit ${result.status}`);
+  if (result.status !== 0) {
+    const output = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+    const details = output ? `: ${output.split(/\r?\n/).slice(-10).join("\n")}` : "";
+    throw new Error(`${command} ${args.join(" ")} -> exit ${result.status}${details}`);
+  }
 }
 
 function input(name, required) {
