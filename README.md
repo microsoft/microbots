@@ -18,15 +18,7 @@ Fix the error and make sure the build is successful.""", timeout_in_seconds=600)
 print(data.results)
 ```
 
-## � Getting Started
-
-New to Microbots? Follow the step-by-step onboarding guide on the docs site:
-
-➡️ **[Get Started with Microbots](https://microsoft.github.io/microbots/getting-started/prerequisites/)**
-
-It walks you through prerequisites, installation, and building your first Microbot project end-to-end.
-
-## �🚀 How to install
+## 🚀 How to install
 
 ### Pre-requisites
 
@@ -100,9 +92,7 @@ The `WritingBot` will read and write the files inside `code` folder based on spe
 
 The MicroBots create a containerized environment and mount the specified directory with restricting the permissions to read-only or read/write based on Bot used. It ensures that the AI agents operate within defined boundaries which enhances security and control over code modifications as well as protecting the local environment.
 
----
-
-## 🚀 Getting Started
+## 🎯 Getting Started
 
 Ready to build your first Microbot project? Follow the step-by-step onboarding guide:
 
