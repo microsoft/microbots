@@ -135,7 +135,6 @@ function microbotsEnvironment(inputs) {
     OPEN_AI_API_VERSION: inputs.apiVersion,
     AZURE_OPENAI_ENDPOINT: inputs.endpoint,
     AZURE_OPENAI_API_VERSION: inputs.apiVersion,
-    AZURE_AUTH_METHOD: "azure_ad",
   });
 }
 
