@@ -14,9 +14,12 @@
   "instanceNameFormat": "Microbots Log Analyzer: $(logFilePath)",
   "inputs": [
     {
-      "name": "serviceConnection",
+      "name": "azureSubscription",
+      "aliases": [
+        "serviceConnection"
+      ],
       "type": "connectedService:AzureRM",
-      "label": "Azure Resource Manager connection",
+      "label": "Azure Subscription",
       "required": true,
       "helpMarkDown": "Service connection used to obtain a token for Azure OpenAI."
     },

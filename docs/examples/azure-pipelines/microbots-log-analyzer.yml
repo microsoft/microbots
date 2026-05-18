@@ -19,7 +19,7 @@ jobs:
   - task: MicrobotsLogAnalyzer@0
     displayName: Analyze build log
     inputs:
-      serviceConnection: my-azure-service-connection
+      azureSubscription: my-azure-service-connection
       deploymentName: my-azure-openai-deployment
       endpoint: https://my-azure-openai-resource.openai.azure.com/
       apiVersion: 2025-03-01-preview
