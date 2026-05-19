@@ -155,6 +155,11 @@ from types import SimpleNamespace
 
 class LogAnalysisBot:
     def __init__(self, model, folder_to_mount, token_provider):
+        if os.environ.get("MICROBOTS_MOCK_INIT_ERROR") == "docker":
+            class DockerException(Exception):
+                pass
+            DockerException.__module__ = "docker.errors"
+            raise DockerException("Error while fetching server API version")
         self.model = model
         self.folder_to_mount = folder_to_mount
         self.token_provider = token_provider
@@ -183,6 +188,7 @@ class LogAnalysisBot:
     MICROBOTS_MOCK_STATUS: options.status === false ? "false" : "true",
     MICROBOTS_MOCK_RESULT: Object.hasOwn(options, "result") ? options.result : "Root cause found",
     MICROBOTS_MOCK_ERROR: Object.hasOwn(options, "error") ? options.error : "",
+    MICROBOTS_MOCK_INIT_ERROR: options.initError || "",
     PYTHONPATH: mockModules + (process.env.PYTHONPATH ? path.delimiter + process.env.PYTHONPATH : ""),
   });
 
@@ -216,9 +222,11 @@ async function runTaskWithMockServiceConnectionAndMockMicrobots(options = {}) {
     },
     inputs,
     spawnSync(command, args, spawnOptions) {
+      const commandArgs = Array.from(args || []);
       loaded.calls.spawnSync.push({ command, args, options: spawnOptions });
       loaded.events.push({ name: "spawnSync", command, args });
-      if (Array.from(args || [])[0] === path.join(taskDir, "log_analyzer_runner.py")) {
+
+      if (commandArgs[0] === path.join(taskDir, "log_analyzer_runner.py")) {
         const mockMicrobots = mockMicrobotsEnvironment(Object.assign({
           deploymentName: inputs.deploymentName,
           result: "Root cause found",
@@ -451,6 +459,21 @@ test("Python Setup Command Failures Include Error Details", () => {
 
   const nonZero = loadTask({ spawnSync: () => ({ status: 2, stderr: "venv creation failed" }) });
   assert.throws(() => nonZero.task.runCommand("python3", ["-m", "venv"]), /exit 2: venv creation failed/);
+});
+
+test("Runner Reports Docker Sandbox Startup Failures", async () => {
+  const { calls, events, runnerResult } = await runTaskWithMockServiceConnectionAndMockMicrobots({
+    mockMicrobots: { initError: "docker" },
+  });
+
+  assert.equal(events.some((event) => event.name === "loginAzureRM"), true);
+  assert.equal(events.filter((event) => (
+    event.name === "spawnSync" && Array.from(event.args || [])[0] === path.join(taskDir, "log_analyzer_runner.py")
+  )).length, 1);
+  assert.equal(runnerResult.status, 1);
+  assert.match(runnerResult.stderr, /Docker-compatible daemon was not accessible/);
+  assert.equal(calls.setResult[0].result, "Failed");
+  assert.match(calls.setResult[0].message, /Docker-compatible daemon was not accessible/);
 });
 
 test("Task Fails With Proper Error Message When LLM Deployment Cannot Be Reached (After Login With ServiceConnection)", async () => {

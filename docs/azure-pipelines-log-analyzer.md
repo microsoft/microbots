@@ -6,7 +6,7 @@
 
 - Azure DevOps organization where you can install custom extensions.
 - Azure Resource Manager Service Connection with permission to request tokens for the Azure OpenAI resource. The pipeline must be authorized to use this service connection.
-- Azure Pipelines agent with `azure-cli`, `python3`, `pip` and `python3 -m venv` support.
+- Azure Pipelines agent with `azure-cli`, `python3`, `pip` and `python3 -m venv` support. Microbots uses Docker sandboxing by default, so the agent also needs a reachable Docker-compatible daemon.
 - Azure OpenAI deployment that works with Microbots and is reachable by the service connection.
 - Node.js on the machine where you package and publish the extension.
 
