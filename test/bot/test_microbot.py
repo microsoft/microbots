@@ -591,12 +591,64 @@ class TestMicrobotUnit:
             assert isinstance(bot.llm, OllamaLocal)
             assert bot.llm.system_prompt == base_system_prompt
 
-    def test_run_json_output_with_content_key(self):
-        """Test anthropic-text-editor hack: JSON output with 'content' key is reformatted using pformat."""
-        json_content = {"content": ["line 1", "line 2"], "other_key": "data"}
+    # ------------------------------------------------------------------
+    # Anthropic-text-editor JSON-output handling
+    #
+    # These four scenarios share identical setup (MicroBot + scripted mock
+    # LLM that runs one command then signals done). They differ only in the
+    # captured command stdout and the expected message handed back to the
+    # LLM on the second iteration. They are parametrized into a single test
+    # to remove ~140 lines of boilerplate and ~4x the MicroBot construction
+    # overhead while preserving identical branch coverage in MicroBot.run.
+    # ------------------------------------------------------------------
+    @pytest.mark.parametrize(
+        "stdout_value, expected_extractor, patch_json_loads, expect_warning",
+        [
+            # JSON with 'content' key -> pformat of the content value
+            (
+                json.dumps({"content": ["line 1", "line 2"], "other_key": "data"}),
+                lambda s: pformat(json.loads(s)["content"]),
+                False,
+                False,
+            ),
+            # JSON without 'content' key -> raw stdout preserved
+            (
+                json.dumps({"other": "data", "number": 42}),
+                lambda s: s,
+                False,
+                False,
+            ),
+            # Non-JSON stdout -> JSONDecodeError caught, raw stdout preserved
+            (
+                "this is plain text, not JSON",
+                lambda s: s,
+                False,
+                False,
+            ),
+            # Blanket exception path -> raw stdout preserved + warning logged
+            (
+                '{"content": "valid json"}',
+                lambda s: s,
+                True,
+                True,
+            ),
+        ],
+        ids=[
+            "json_with_content_key",
+            "json_without_content_key",
+            "non_json_decode_error",
+            "blanket_exception_in_json_parsing",
+        ],
+    )
+    def test_run_json_output_handling(
+        self, caplog, stdout_value, expected_extractor, patch_json_loads, expect_warning
+    ):
+        """Anthropic-text-editor hack: command stdout is conditionally JSON-decoded
+        before being handed back to the LLM. Covers the with-`content`, without-`content`,
+        JSONDecodeError, and blanket-exception branches."""
         mock_env = Mock()
         mock_env.execute.return_value = Mock(
-            return_code=0, stdout=json.dumps(json_content), stderr=""
+            return_code=0, stdout=stdout_value, stderr=""
         )
 
         with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
@@ -613,124 +665,22 @@ class TestMicrobotUnit:
             call_count[0] += 1
             if call_count[0] == 1:
                 return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # The output passed to LLM should be pformat of the "content" value
-        assert captured_output[0] == pformat(json_content["content"])
-
-    def test_run_json_output_without_content_key(self):
-        """Test anthropic-text-editor hack: JSON output without 'content' key preserves raw stdout."""
-        json_data = {"other": "data", "number": 42}
-        raw_stdout = json.dumps(json_data)
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=raw_stdout, stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # Without "content" key, raw stdout is preserved
-        assert captured_output[0] == raw_stdout
-
-    def test_run_non_json_output_json_decode_error(self):
-        """Test anthropic-text-editor hack: non-JSON stdout triggers JSONDecodeError, raw stdout kept."""
-        raw_stdout = "this is plain text, not JSON"
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=raw_stdout, stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # JSONDecodeError is caught silently, raw stdout preserved
-        assert captured_output[0] == raw_stdout
-
-    def test_run_json_parse_blanket_exception(self, caplog):
-        """Test anthropic-text-editor hack: blanket exception during JSON parsing logs warning and keeps raw stdout."""
-        raw_stdout = '{"content": "valid json"}'
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=raw_stdout, stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
+            captured_output[0] = message
+            return LLMAskResponse(command="", task_done=True, thoughts="done")
 
         bot.llm.ask = mock_ask
 
         caplog.set_level(logging.WARNING)
-        with patch('microbots.MicroBot.json.loads', side_effect=TypeError("test type error")):
+        if patch_json_loads:
+            with patch('microbots.MicroBot.json.loads', side_effect=TypeError("test type error")):
+                result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
+        else:
             result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
 
         assert result.status is True
-        # Blanket exception caught, raw stdout preserved
-        assert captured_output[0] == raw_stdout
-        # Warning should be logged
-        assert "Failed to parse command output as JSON, using raw stdout" in caplog.text
+        assert captured_output[0] == expected_extractor(stdout_value)
+        if expect_warning:
+            assert "Failed to parse command output as JSON, using raw stdout" in caplog.text
 
     def test_explicit_token_provider_is_stored(self):
         """When token_provider is passed explicitly it is stored as-is, regardless of env."""
@@ -1109,3 +1059,191 @@ Put your final answer in the `thoughts` field. The answer MUST include:
                 f"LLM should have found that main() calls add_numbers. Got: {response.result}"
         finally:
             del bot
+
+
+# =============================================================================
+# Functional tests
+#
+# These tests exercise MicroBot.run end-to-end with a fully scripted mock LLM
+# and a scripted mock environment, covering realistic agentic scenarios that
+# the existing unit tests only touch in isolation. They do NOT require Docker,
+# Ollama or any external service, so they run in the unit suite and execute
+# in milliseconds.
+# =============================================================================
+
+
+def _build_mock_bot(env_responses):
+    """Build a MicroBot whose environment returns the given queued responses in
+    order. `env_responses` is a list of dicts: {return_code, stdout, stderr}.
+    Returns (bot, executed_commands_list).
+    """
+    executed = []
+    iterator = iter(env_responses)
+    fallback = Mock(return_code=0, stdout="", stderr="")
+
+    def _execute(cmd, *args, **kwargs):
+        executed.append(cmd)
+        try:
+            spec = next(iterator)
+        except StopIteration:
+            return fallback
+        return Mock(
+            return_code=spec["return_code"],
+            stdout=spec.get("stdout", ""),
+            stderr=spec.get("stderr", ""),
+        )
+
+    mock_env = Mock()
+    mock_env.execute.side_effect = _execute
+
+    with patch("microbots.llm.azure_openai_api.AzureOpenAI"):
+        bot = MicroBot(
+            model="azure-openai/test-model",
+            system_prompt="You are a helpful agent.",
+            environment=mock_env,
+        )
+    return bot, executed
+
+
+def _script_llm(bot, scripted_responses):
+    """Replace `bot.llm.ask` with a function that returns the next scripted
+    response on each call. Captures the messages passed to the LLM."""
+    iterator = iter(scripted_responses)
+    seen_messages = []
+
+    def _ask(message):
+        seen_messages.append(message)
+        try:
+            return next(iterator)
+        except StopIteration:
+            # Stop the loop if the script runs out
+            return LLMAskResponse(command="", task_done=True, thoughts="done")
+
+    bot.llm.ask = _ask
+    return seen_messages
+
+
+@pytest.mark.unit
+class TestMicrobotFunctional:
+    """End-to-end MicroBot.run flows with a scripted LLM + scripted environment.
+
+    Each test reflects a realistic agent scenario:
+      * multi-step command sequence terminating with task_done
+      * recovery after a failing command
+      * recovery after a blocked dangerous command
+      * successful command with empty stdout
+    """
+
+    def test_multi_step_command_sequence(self):
+        """Realistic scenario: LLM issues several shell commands, gets feedback
+        from each, and signals task_done on the final iteration. Verifies that
+        every command is executed in order and that each command's stdout is
+        what the LLM sees on the next turn."""
+        bot, executed = _build_mock_bot([
+            {"return_code": 0, "stdout": "file1.py\nfile2.py\n"},
+            {"return_code": 0, "stdout": "def foo():\n    return 1\n"},
+            {"return_code": 0, "stdout": "all checks passed"},
+        ])
+        seen = _script_llm(bot, [
+            # Initial response to the task itself
+            LLMAskResponse(command="ls", task_done=False, thoughts="listing"),
+            LLMAskResponse(command="cat file1.py", task_done=False, thoughts="reading"),
+            LLMAskResponse(command="pytest", task_done=False, thoughts="testing"),
+            LLMAskResponse(command="", task_done=True, thoughts="all done!"),
+        ])
+
+        result = bot.run("explore the repo", max_iterations=10, timeout_in_seconds=60)
+
+        assert result.status is True
+        assert result.result == "all done!"
+        assert executed == ["ls", "cat file1.py", "pytest"]
+        # Each iteration after the first should feed the previous command's stdout back to the LLM
+        assert seen[0] == "explore the repo"
+        assert seen[1] == "file1.py\nfile2.py\n"
+        assert seen[2] == "def foo():\n    return 1\n"
+        assert seen[3] == "all checks passed"
+
+    def test_recovers_from_failed_command(self):
+        """Realistic scenario: a command fails (non-zero return code); the
+        formatted failure message is delivered to the LLM, which then issues
+        a corrected command that succeeds and completes the task."""
+        bot, executed = _build_mock_bot([
+            {"return_code": 1, "stdout": "", "stderr": "command not found: pytsst"},
+            {"return_code": 0, "stdout": "1 passed"},
+        ])
+        seen = _script_llm(bot, [
+            LLMAskResponse(command="pytsst", task_done=False, thoughts="typo on purpose"),
+            LLMAskResponse(command="pytest", task_done=False, thoughts="corrected"),
+            LLMAskResponse(command="", task_done=True, thoughts="fixed and tested"),
+        ])
+
+        result = bot.run("run tests", max_iterations=10, timeout_in_seconds=60)
+
+        assert result.status is True
+        assert executed == ["pytsst", "pytest"]
+        # The failure message handed to the LLM should follow MicroBot's failure-format contract
+        failure_msg = seen[1]
+        assert "COMMAND EXECUTION FAILED" in failure_msg
+        assert "return code: 1" in failure_msg
+        assert "command not found: pytsst" in failure_msg
+
+    def test_dangerous_command_is_blocked_and_llm_can_recover(self):
+        """Realistic scenario: LLM proposes a destructive command (rm -rf /),
+        MicroBot blocks it without executing, prompts the LLM for an
+        alternative, and the LLM completes the task with a safer command."""
+        bot, executed = _build_mock_bot([
+            # Only the safer command should actually reach the environment
+            {"return_code": 0, "stdout": "removed file.tmp"},
+        ])
+        seen = _script_llm(bot, [
+            LLMAskResponse(command="rm -rf /", task_done=False, thoughts="cleanup"),
+            LLMAskResponse(command="rm file.tmp", task_done=False, thoughts="safer"),
+            LLMAskResponse(command="", task_done=True, thoughts="cleaned"),
+        ])
+
+        result = bot.run("clean up", max_iterations=10, timeout_in_seconds=60)
+
+        assert result.status is True
+        # The dangerous command must NOT have hit the environment
+        assert executed == ["rm file.tmp"]
+        # The LLM should have been told the command was blocked
+        block_msg = seen[1]
+        assert "COMMAND_ERROR" in block_msg
+        assert "Dangerous command detected and blocked" in block_msg
+
+    def test_successful_command_with_no_stdout_reports_success_message(self):
+        """Realistic scenario: a successful command produces no stdout (e.g.
+        `mkdir`). MicroBot must surface a synthetic success message to the
+        LLM rather than an empty string, so the LLM can reason about it."""
+        bot, executed = _build_mock_bot([
+            {"return_code": 0, "stdout": "", "stderr": ""},
+        ])
+        seen = _script_llm(bot, [
+            LLMAskResponse(command="mkdir build", task_done=False, thoughts="create dir"),
+            LLMAskResponse(command="", task_done=True, thoughts="created"),
+        ])
+
+        result = bot.run("create build directory", max_iterations=5, timeout_in_seconds=60)
+
+        assert result.status is True
+        assert executed == ["mkdir build"]
+        assert "Command executed successfully with no output" in seen[1]
+        assert "return code: 0" in seen[1]
+
+    def test_max_iterations_reached_returns_error(self):
+        """Realistic scenario: an LLM that never signals task_done is stopped
+        at max_iterations with a descriptive error in the result."""
+        bot, _ = _build_mock_bot([
+            {"return_code": 0, "stdout": "ok"},
+        ] * 10)
+        # LLM keeps issuing commands forever
+        bot.llm.ask = lambda msg: LLMAskResponse(
+            command="echo loop", task_done=False, thoughts="not done"
+        )
+
+        result = bot.run("infinite task", max_iterations=3, timeout_in_seconds=60)
+
+        assert result.status is False
+        assert result.error is not None
+        assert "Max iterations 3 reached" in result.error
+

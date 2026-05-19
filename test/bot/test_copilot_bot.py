@@ -1292,11 +1292,14 @@ class TestCopilotBotExecuteSession:
                 environment=mock_environment,
                 github_token="ghp_test",
             )
+            # Use a very small timeout so the asyncio.wait_for fallback path
+            # (waiting for a done_event that never fires) exits almost immediately.
+            # Previously timeout=1 made this test the slowest in the unit suite (~1s).
             result = asyncio.run(
                 bot._execute_session(
                     task="do something",
                     system_content="",
-                    timeout=1,
+                    timeout=0.01,
                     streaming=False,
                 )
             )
