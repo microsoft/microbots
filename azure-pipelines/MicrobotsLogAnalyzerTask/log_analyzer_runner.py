@@ -6,6 +6,10 @@ from azure.identity import AzureCliCredential, get_bearer_token_provider
 from microbots import LogAnalysisBot
 
 
+def is_docker_access_error(error):
+    return "docker" in type(error).__module__.lower() or "docker" in str(error).lower()
+
+
 def main():
     codebase_path = os.path.abspath(sys.argv[1])
     log_file_path = sys.argv[2]
@@ -26,11 +30,6 @@ def main():
         AzureCliCredential(),
         "https://cognitiveservices.azure.com/.default",
     )
-    bot = LogAnalysisBot(
-        model=f"azure-openai/{os.environ['AZURE_OPENAI_DEPLOYMENT_NAME']}",
-        folder_to_mount=codebase_path,
-        token_provider=token_provider,
-    )
     run_kwargs = {
         "file_name": log_file_path,
         "timeout_in_seconds": timeout_seconds,
@@ -38,7 +37,24 @@ def main():
     if max_iterations is not None:
         run_kwargs["max_iterations"] = max_iterations
 
-    result = bot.run(**run_kwargs)
+    try:
+        bot = LogAnalysisBot(
+            model=f"azure-openai/{os.environ['AZURE_OPENAI_DEPLOYMENT_NAME']}",
+            folder_to_mount=codebase_path,
+            token_provider=token_provider,
+        )
+        result = bot.run(**run_kwargs)
+    except Exception as error:
+        if not is_docker_access_error(error):
+            raise
+        print(
+            "MicrobotsLogAnalyzer: Docker-compatible daemon was not accessible "
+            "while starting the Microbots sandbox.",
+            file=sys.stderr,
+        )
+        print(f"Details: {error}", file=sys.stderr)
+        return 1
+
     message = result.result or result.error or ""
 
     print("##[section]MicrobotsLogAnalyzer: LLM analysis")
