@@ -304,12 +304,28 @@ class CopilotBot:
     ):
         try:
             from copilot import CopilotClient, ExternalServerConfig
-            from copilot.types import PermissionHandler
         except ImportError:
             raise ImportError(
                 "CopilotBot requires the github-copilot-sdk package. "
                 "Install with: pip install microbots[ghcp]"
             )
+
+        # ``PermissionHandler`` lives in ``copilot.session`` in
+        # github-copilot-sdk >= 0.3.0 and in ``copilot.types`` in older
+        # releases.  Try the new location first and fall back to the old
+        # one so we work with both.
+        try:
+            from copilot.session import PermissionHandler
+        except ImportError:
+            try:
+                from copilot.types import PermissionHandler
+            except ImportError as exc:
+                raise ImportError(
+                    "CopilotBot could not locate 'PermissionHandler' in the "
+                    "installed github-copilot-sdk (looked in copilot.session "
+                    "and copilot.types). Please install a compatible version, "
+                    "e.g. pip install -U microbots[ghcp]."
+                ) from exc
 
         self.additional_tools = additional_tools or []
 
