@@ -5,7 +5,7 @@ CopilotBot is a Microbots agent that delegates the entire agent loop to the **Gi
 ## Prerequisites
 
 - **Docker** — a running Docker daemon
-- **Python 3.10+**
+- **Python 3.11 or 3.12** (Python 3.13 is not currently supported)
 - **One of the following** for authentication:
     - A GitHub Copilot subscription (for native Copilot auth), **or**
     - API credentials for any OpenAI-compatible, Azure OpenAI, or Anthropic endpoint (BYOK — no Copilot subscription needed)
