@@ -28,6 +28,8 @@ _mock_copilot.ExternalServerConfig = MagicMock
 
 _mock_session = MagicMock()
 _mock_session.PermissionRequestResult = MagicMock
+_mock_session.PermissionHandler = MagicMock()
+_mock_session.PermissionHandler.approve_all = MagicMock()
 
 _mock_events = MagicMock()
 _mock_events.SessionEventType = MagicMock()
