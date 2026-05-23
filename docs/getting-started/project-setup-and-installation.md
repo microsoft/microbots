@@ -1,6 +1,6 @@
-# Microbot Installation
+# Project Setup and Microbots Installation
 
-Install the `microbots` package and configure an LLM provider.
+In this guide, you will set up a project folder, install the `microbots` package inside a virtual environment, and configure an LLM provider so your bot has a brain to think with.
 
 ## Step 1 — Setting Up the Project Directory
 
@@ -22,7 +22,7 @@ When the venv is active, your shell prompt is prefixed with `(.venv)` as below:
 
 ## Step 2 — Configuring the LLM Provider
 
-Microbots supports **Azure OpenAI**, **OpenAI**, **Anthropic**, and **Ollama**. This guide uses Azure OpenAI.
+Microbots supports **Azure OpenAI**, **OpenAI**, **Anthropic**, and **Ollama**. This guide uses Azure OpenAI — for the environment variables required by the other providers, see the [Authentication Setup](../advanced/authentication.md) guide.
 
 Create a `.env` file in the project root:
 

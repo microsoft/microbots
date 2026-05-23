@@ -1,12 +1,20 @@
 # Pre-requisites
 
+In this guide, you will install the two tools every Microbots project needs on your machine. By the end, your laptop will be ready to run any bot safely.
+
 Install   
 1. **Python** (the runtime)  
 2. **Docker** (the sandboxed execution environment) before running any bot.
 
+!!! note
+    You only need Python and Docker installed system-wide on your machine. Microbots itself will be installed into a **project-specific Python virtual environment** in the [next article](project-setup-and-installation.md) — so nothing gets added to your system Python.
+
 ## Step 1 — Installing Python
 
 Microbots requires **Python 3.10 or later, but below 3.13**.
+
+!!! info
+    Python 3.13 compatibility is in progress — this page will be updated once it lands.
 
 Pick your OS:
 
@@ -45,5 +53,5 @@ docker run hello-world
 
 A "Hello from Docker!" message confirms the daemon is reachable.
 
-With Python and Docker in place, your machine is ready to run Microbots safely in an isolated sandbox. Next continue with the [Microbot Installation](installation-guide.md) guide.
+That's it — with Python and Docker installed, your machine is ready to run Microbots in an isolated sandbox. Continue with the [Project Setup and Microbots Installation](project-setup-and-installation.md) guide to set up your first project.
 

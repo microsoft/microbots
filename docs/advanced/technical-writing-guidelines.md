@@ -122,7 +122,7 @@ To complete this tutorial, you will need:
 
 - **Python 3.10+** installed on your machine. See the [Pre-requisites](../getting-started/prerequisites.md) guide.
 - **Docker** installed and running. See the [Pre-requisites](../getting-started/prerequisites.md#docker) guide.
-- A working **Azure OpenAI** API key, endpoint, and deployed model. See the [Microbot Installation](../getting-started/installation-guide.md) guide.
+- A working **Azure OpenAI** API key, endpoint, and deployed model. See the [Project Setup and Microbots Installation](../getting-started/project-setup-and-installation.md) guide.
 ```
 
 Each prerequisite must link to an existing Microbots article or official documentation. Be specific — "Familiarity with Python" is not actionable; instead write "Familiarity with Python virtual environments. See [Python venv documentation](https://docs.python.org/3/library/venv.html)."
@@ -175,11 +175,11 @@ Microbots documentation is written in Markdown and rendered with MkDocs Material
 
 ### Headers
 
-| Level | Usage |
-|-------|-------|
-| H1 (`#`) | Title only — one per article |
-| H2 (`##`) | Major sections: Introduction, Prerequisites, Steps, Conclusion |
-| H3 (`###`) | Subsections within a step or section |
+| Level       | Usage                                                           |
+| ----------- | --------------------------------------------------------------- |
+| H1 (`#`)    | Title only — one per article                                    |
+| H2 (`##`)   | Major sections: Introduction, Prerequisites, Steps, Conclusion  |
+| H3 (`###`)  | Subsections within a step or section                            |
 | H4 (`####`) | Use sparingly; prefer restructuring into multiple steps instead |
 
 For procedural tutorials, step headers should include step numbers followed by an em dash (—) and use the gerund (-ing form):
@@ -350,14 +350,14 @@ For articles that have prerequisites the reader should complete first, add prere
 
 Use the official class name with proper capitalization:
 
-| Correct | Incorrect |
-|---------|-----------|
+| Correct          | Incorrect                        |
+| ---------------- | -------------------------------- |
 | `LogAnalysisBot` | Log Analysis Bot, loganalysisbot |
-| `ReadingBot` | Reading Bot, readingbot |
-| `WritingBot` | Writing Bot, writingbot |
-| `BrowsingBot` | Browsing Bot, browsingbot |
-| `AgentBoss` | Agent Boss, agentboss |
-| `CopilotBot` | Copilot Bot, copilotbot |
+| `ReadingBot`     | Reading Bot, readingbot          |
+| `WritingBot`     | Writing Bot, writingbot          |
+| `BrowsingBot`    | Browsing Bot, browsingbot        |
+| `AgentBoss`      | Agent Boss, agentboss            |
+| `CopilotBot`     | Copilot Bot, copilotbot          |
 
 ### LLM Providers
 

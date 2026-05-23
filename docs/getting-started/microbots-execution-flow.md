@@ -70,6 +70,8 @@ Pick whichever fits your goal:
 
 ## Available Bots
 
+Similar to `LogAnalysisBot`, you can explore other pre-built bots that ship with Microbots. The table below lists them along with their special capabilities.
+
 | Bot                                                                  | Permission | Description                                            |
 | -------------------------------------------------------------------- | ---------- | ------------------------------------------------------ |
 | [`ReadingBot`](../api-reference/microbots/bot/ReadingBot.md)         | Read-only  | Reads files and extracts information.                  |
@@ -77,4 +79,6 @@ Pick whichever fits your goal:
 | [`BrowsingBot`](../api-reference/microbots/bot/BrowsingBot.md)       | —          | Browses the web to gather information.                 |
 | [`LogAnalysisBot`](../api-reference/microbots/bot/LogAnalysisBot.md) | Read-only  | Analyzes logs for root-cause debugging.                |
 | [`AgentBoss`](../api-reference/microbots/bot/AgentBoss.md)           | —          | Orchestrates multiple bots for complex tasks.          |
+
+Try them on different use cases — and feel free to open a [GitHub issue](https://github.com/microsoft/microbots/issues) if you run into any problems while building your agent. We're happy to help.
 

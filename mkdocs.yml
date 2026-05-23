@@ -71,7 +71,7 @@ nav:
   - Introduction: index.md
   - Getting Started:
     - "Pre-requisites": getting-started/prerequisites.md
-    - "Microbot Installation": getting-started/installation-guide.md
+    - "Project Setup and Microbots Installation": getting-started/project-setup-and-installation.md
     - "Create Your First Microbot Project": getting-started/create-your-first-microbot-project/index.md
     - "Microbots Execution Flow": getting-started/microbots-execution-flow.md
     - "Configure Logging in Microbots": getting-started/microbots-logging.md
