@@ -29,11 +29,15 @@ Create a `.env` file in the project root:
 ```env title=".env"
 AZURE_OPENAI_ENDPOINT="https://your-resource-name.openai.azure.com"
 AZURE_OPENAI_API_KEY="your-api-key-here"
-AZURE_OPENAI_API_VERSION="2023-03-15-preview"
+AZURE_OPENAI_API_VERSION="2025-03-01-preview"
 ```
 
-Replace `your-resource-name` and `your-api-key-here` with values from the Azure portal.
+Replace the placeholders with values from the Azure portal:
 
-Continue with the [Sample Project Creation and First Run](create-your-first-microbot-project/index.md) guide.
+- **`AZURE_OPENAI_ENDPOINT`** — the endpoint URL of your Azure OpenAI resource.
+- **`AZURE_OPENAI_API_KEY`** — a key from the resource's **Keys and Endpoint** page.
+- **`AZURE_OPENAI_API_VERSION`** — the REST API version your deployment supports.
+
+Your project is now set up with the `microbots` package installed and an LLM provider configured. Next, you'll create a sample project and run your first bot — continue with the [Sample Project Creation and First Run](create-your-first-microbot-project/index.md) guide.
 
 

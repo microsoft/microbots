@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 380" role="img" aria-label="Microbots execution flow diagram" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+
+    <marker id="arrow" viewBox="0 0 14 14" refX="10" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M0,1 L13,7 L0,13 L3,7 z" fill="#E5E7EB"/>
+    </marker>
+  </defs>
+
+  <style>
+    .title { fill: #FFFFFF; font-size: 22px; font-weight: 700; }
+    .sub   { fill: #F3F4F6; font-size: 16px; }
+    .icon  { font-size: 30px; }
+    .edge  { stroke: #E5E7EB; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .edge-label { fill: #FFFFFF; font-size: 16px; font-weight: 600; }
+    .edge-label-bg { fill: #111827; stroke: #E5E7EB; stroke-width: 1.5; }
+  </style>
+
+  <!-- Row 1: 5 boxes -->
+  <!-- A: Your Script -->
+  <g filter="url(#shadow)">
+    <rect x="20"  y="40" width="220" height="120" rx="14" ry="14" fill="#B45309" stroke="#78350F" stroke-width="2"/>
+    <text x="130" y="78"  text-anchor="middle" class="icon">🐍</text>
+    <text x="130" y="112" text-anchor="middle" class="title">Your Script</text>
+    <text x="130" y="138" text-anchor="middle" class="sub">log_analysis_bot.py</text>
+  </g>
+
+  <!-- B: LogAnalysisBot.run -->
+  <g filter="url(#shadow)">
+    <rect x="290" y="40" width="240" height="120" rx="14" ry="14" fill="#2563EB" stroke="#1E3A8A" stroke-width="2"/>
+    <text x="410" y="78"  text-anchor="middle" class="icon">🤖</text>
+    <text x="410" y="120" text-anchor="middle" class="title">LogAnalysisBot.run</text>
+  </g>
+
+  <!-- C: Docker Container -->
+  <g filter="url(#shadow)">
+    <rect x="580" y="40" width="260" height="120" rx="14" ry="14" fill="#0284C7" stroke="#0C4A6E" stroke-width="2"/>
+    <text x="710" y="78"  text-anchor="middle" class="icon">🐳</text>
+    <text x="710" y="112" text-anchor="middle" class="title">Docker Container</text>
+    <text x="710" y="136" text-anchor="middle" class="sub">code/ read-only • OverlayFS</text>
+  </g>
+
+  <!-- D: LLM -->
+  <g filter="url(#shadow)">
+    <rect x="890" y="40" width="220" height="120" rx="14" ry="14" fill="#7C3AED" stroke="#4C1D95" stroke-width="2"/>
+    <text x="1000" y="78"  text-anchor="middle" class="icon">🧠</text>
+    <text x="1000" y="112" text-anchor="middle" class="title">LLM</text>
+    <text x="1000" y="136" text-anchor="middle" class="sub">task + prompt</text>
+  </g>
+
+  <!-- F: Container exec -->
+  <g filter="url(#shadow)">
+    <rect x="1160" y="40" width="240" height="120" rx="14" ry="14" fill="#16A34A" stroke="#14532D" stroke-width="2"/>
+    <text x="1280" y="78"  text-anchor="middle" class="icon">📦</text>
+    <text x="1280" y="112" text-anchor="middle" class="title">Container exec</text>
+    <text x="1280" y="136" text-anchor="middle" class="sub">ls, cat, nl, …</text>
+  </g>
+
+  <!-- Row 2: H, I (under D, F roughly) -->
+  <!-- H: BotRunResult -->
+  <g filter="url(#shadow)">
+    <rect x="890" y="230" width="240" height="120" rx="14" ry="14" fill="#E11D48" stroke="#881337" stroke-width="2"/>
+    <text x="1010" y="268" text-anchor="middle" class="icon">📊</text>
+    <text x="1010" y="302" text-anchor="middle" class="title">BotRunResult</text>
+    <text x="1010" y="326" text-anchor="middle" class="sub">root-cause analysis</text>
+  </g>
+
+  <!-- I: print -->
+  <g filter="url(#shadow)">
+    <rect x="1180" y="230" width="240" height="120" rx="14" ry="14" fill="#4B5563" stroke="#111827" stroke-width="2"/>
+    <text x="1300" y="268" text-anchor="middle" class="icon">🖨️</text>
+    <text x="1300" y="312" text-anchor="middle" class="title">print(result.result)</text>
+  </g>
+
+  <!-- Arrows row 1 (smooth straight links with rounded ends) -->
+  <line x1="244" y1="100" x2="282"  y2="100" class="edge" marker-end="url(#arrow)"/>
+  <line x1="534" y1="100" x2="572"  y2="100" class="edge" marker-end="url(#arrow)"/>
+  <line x1="844" y1="100" x2="882"  y2="100" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- D <-> F bidirectional tool loop (two parallel arrows offset vertically) -->
+  <path d="M1114,86  L1152,86"  class="edge" marker-end="url(#arrow)"/>
+  <path d="M1156,118 L1118,118" class="edge" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="1108" y="162" width="104" height="28" rx="8" class="edge-label-bg"/>
+    <text x="1160" y="181" text-anchor="middle" class="edge-label">⚡ tool loop</text>
+  </g>
+
+  <!-- D -> H (clean straight vertical drop) -->
+  <line x1="1010" y1="162" x2="1010" y2="222" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- H -> I -->
+  <line x1="1134" y1="290" x2="1172" y2="290" class="edge" marker-end="url(#arrow)"/>
+</svg>

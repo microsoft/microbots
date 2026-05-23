@@ -51,7 +51,11 @@ markdown_extensions:
       permalink: true
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.snippets:
       base_path: ['.', 'docs']
       check_paths: true
@@ -69,7 +73,8 @@ nav:
     - "Pre-requisites": getting-started/prerequisites.md
     - "Microbot Installation": getting-started/installation-guide.md
     - "Create Your First Microbot Project": getting-started/create-your-first-microbot-project/index.md
-    - "Conclusion": getting-started/conclusion.md
+    - "Microbots Execution Flow": getting-started/microbots-execution-flow.md
+    - "Configure Logging in Microbots": getting-started/microbots-logging.md
   - Advanced:
     - Bots:
       - CopilotBot: advanced/bots/copilot-bot.md

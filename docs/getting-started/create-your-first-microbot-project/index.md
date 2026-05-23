@@ -5,6 +5,8 @@ Generate a build log. Run a `LogAnalysisBot` against it.
 
 **Requires:** `gcc` (preinstalled on most Linux distributions, or `sudo apt install build-essential`).
 
+The sample C project files and `LogAnalysisBot` script used in this guide are available in the Microbots examples directory at `examples/microbots_introduction/`. Clone or download the Microbots repository and use those files to follow along.
+
 ## Step 1 — Create the Sample Project
 
 From the root of your `microbots-introduction` project, create a `code/` folder:
@@ -31,7 +33,7 @@ cd ..
 
 `code/build.log` should contain:
 
-```log title="code/build.log"
+```log title="code/build.log" linenums="1"
 app.c: In function ‘add’:
 app.c:5:17: error: expected ‘;’ before ‘}’ token
     5 |     return a + b
@@ -82,4 +84,6 @@ This matches the compiler error in /var/log/build.log: "error:
 expected ';' before '}' token". Fix by adding a semicolon: `return a + b;`.
 ```
 
-Continue with [Conclusion](../conclusion.md).
+In this walkthrough, we created buggy code and successfully analyzed it with Microbots. Based on the analysis output, `LogAnalysisBot` correctly identified the bug in the code and explained the fix as well.
+
+Please read the next article to understand what happens behind the scenes and how to debug Microbots code with logs. Continue with [Microbots Execution Flow](../microbots-execution-flow.md).

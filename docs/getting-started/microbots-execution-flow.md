@@ -26,8 +26,8 @@ Pick whichever fits your goal:
 
 ## Available Bots
 
-| Bot                                                                  | Permission | Description                                            |
-| -------------------------------------------------------------------- | ---------- | ------------------------------------------------------ |
+| Bot              | Permission | Description                                            |
+| ---------------- | ---------- | ------------------------------------------------------ |
 | [`ReadingBot`](../api-reference/microbots/bot/ReadingBot.md)         | Read-only  | Reads files and extracts information.                  |
 | [`WritingBot`](../api-reference/microbots/bot/WritingBot.md)         | Read-write | Reads and writes files to fix issues or generate code. |
 | [`BrowsingBot`](../api-reference/microbots/bot/BrowsingBot.md)       | —          | Browses the web to gather information.                 |

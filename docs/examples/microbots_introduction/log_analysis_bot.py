@@ -5,7 +5,7 @@ logging.basicConfig(level=logging.INFO)
 from microbots import LogAnalysisBot
 
 my_bot = LogAnalysisBot(
-    model="azure-openai/gpt-5-swe-agent",
+    model="azure-openai/gpt-5-agent",
     folder_to_mount="code",
 )
 
