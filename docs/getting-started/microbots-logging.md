@@ -29,7 +29,9 @@ Microbots supports two practical logging levels:
 
 Excerpts below are from a real Microbots run, with host paths, container IDs, ports, and endpoint URLs replaced by placeholders like `<container-id>`, `<host-port>`, and `<your-endpoint>`.
 
-### Environment setup
+The excerpts are grouped to match the phases of the [execution flow diagram](microbots-execution-flow.md#what-just-happened) you saw in the previous article — **SETUP**, **LOOP**, and **RESULT** — so each block of logs lines up with a specific part of the picture.
+
+### SETUP — environment setup
 
 Working directory creation, the host-to-container volume mapping, container startup, and the read-only overlay mount.
 
@@ -41,7 +43,7 @@ INFO:microbots.environment.local_docker.LocalDockerEnvironment:🔒 Set up overl
 INFO:microbots.environment.local_docker.LocalDockerEnvironment:✅ Successfully copied /home/user/microbots-introduction/code/build.log to container:/var/log
 ```
 
-### Task lifecycle and per-step activity
+### LOOP — task lifecycle and per-step activity
 
 `TASK STARTED`, numbered execution steps (`Step-1`, `Step-2`, …), the LLM's thoughts, the tool call, the command output, and finally `TASK COMPLETED`.
 
@@ -60,7 +62,7 @@ dpkg.log
 INFO: MicroBot :🔚 TASK COMPLETED : 
 ```
 
-### LLM API activity
+### LOOP — LLM API activity
 
 One-line `HTTP 200 OK` markers for each request to the model, followed by the parsed LLM response.
 
@@ -69,7 +71,7 @@ INFO:httpx:HTTP Request: POST https://<your-endpoint>.openai.azure.com/openai/v1
 INFO:microbots.llm.llm:The llm response is {'task_done': False, 'thoughts': 'Start by listing the contents of /var/log to identify the relevant log file to analyze.', 'command': 'ls -1 /var/log'}
 ```
 
-### Teardown
+### RESULT — teardown and cleanup
 
 Overlay unmount and cleanup of the working directory once the run completes.
 
@@ -83,10 +85,11 @@ INFO:microbots.environment.local_docker.LocalDockerEnvironment:🗑️  Removed 
 
 This view is usually enough to follow what the bot is doing and why. Switch to `DEBUG` only when you need to inspect Docker API calls, raw LLM request/response bodies, or low-level container execution details.
 
+With logging enabled, every Microbots run is no longer a black box — you can see the exact steps, decisions, and commands behind each result. From here, you can build your own bots with confidence, knowing exactly what's happening under the hood.
+
 ## Further Reading
 
 Now that you can read what Microbots is doing, dive deeper into how it's built:
 
-- [Microbots : Safety First Agentic Workflow](../blog/microbots-safety-first-ai-agent.md) — the safety architecture behind every run (read-only mounts, OverlayFS, container isolation).
 - [Microbots Customizability](../blog/microbots-customizability.md) — how to tailor bots, tools, and environments to your own use cases.
 - [RBAC & Authentication](../blog/rbac-authentication.md) — using Azure managed identity and role-based access control with Microbots.

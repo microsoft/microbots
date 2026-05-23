@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" role="img" aria-label="Microbots RESULT — teardown and return" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .ink      { fill: #1F2937; }
+    .ink-soft { fill: #4B5563; }
+
+    .title { font-size: 22px; font-weight: 700; }
+    .sub   { font-size: 15px; }
+    .icon  { font-size: 30px; }
+    .label { font-size: 16px; font-weight: 600; }
+
+    .box-tear   { fill: #64748B; fill-opacity: 0.18; stroke: #64748B; stroke-width: 2; }
+    .box-result { fill: #E11D48; fill-opacity: 0.18; stroke: #E11D48; stroke-width: 2; }
+    .box-print  { fill: #6B7280; fill-opacity: 0.18; stroke: #6B7280; stroke-width: 2; }
+    .badge-safe { fill: #16A34A; fill-opacity: 0.18; stroke: #16A34A; stroke-width: 2; }
+
+    .edge { stroke: #6B7280; stroke-width: 4; fill: none; stroke-linecap: round; }
+
+    @media (prefers-color-scheme: dark) {
+      .ink      { fill: #F3F4F6; }
+      .ink-soft { fill: #D1D5DB; }
+      .edge     { stroke: #9CA3AF; }
+      .box-tear, .box-result, .box-print, .badge-safe { fill-opacity: 0.28; }
+    }
+  </style>
+
+  <defs>
+    <marker id="a" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M0,1 L11,6 L0,11 L2,6 z" fill="context-stroke"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="40" y="40" class="ink title">🏁 Teardown and return</text>
+  <text x="40" y="66" class="ink-soft sub">after the loop ends, the sandbox is cleaned up and the answer comes back to your script</text>
+
+  <!-- Container Teardown -->
+  <rect x="40" y="110" width="280" height="160" rx="14" class="box-tear"/>
+  <text x="180" y="155" text-anchor="middle" class="ink icon">🧹</text>
+  <text x="180" y="195" text-anchor="middle" class="ink title">Container Teardown</text>
+  <text x="180" y="222" text-anchor="middle" class="ink-soft sub">unmount overlay</text>
+  <text x="180" y="244" text-anchor="middle" class="ink-soft sub">remove temp dir · stop container</text>
+
+  <!-- Arrow → -->
+  <line x1="324" y1="190" x2="354" y2="190" class="edge" marker-end="url(#a)"/>
+
+  <!-- BotRunResult -->
+  <rect x="360" y="110" width="280" height="160" rx="14" class="box-result"/>
+  <text x="500" y="155" text-anchor="middle" class="ink icon">📊</text>
+  <text x="500" y="195" text-anchor="middle" class="ink title">BotRunResult</text>
+  <text x="500" y="222" text-anchor="middle" class="ink-soft sub">wraps the model's</text>
+  <text x="500" y="244" text-anchor="middle" class="ink-soft sub">final root-cause analysis</text>
+
+  <!-- Arrow → -->
+  <line x1="644" y1="190" x2="674" y2="190" class="edge" marker-end="url(#a)"/>
+
+  <!-- print(result.result) -->
+  <rect x="680" y="110" width="280" height="160" rx="14" class="box-print"/>
+  <text x="820" y="155" text-anchor="middle" class="ink icon">🖨️</text>
+  <text x="820" y="195" text-anchor="middle" class="ink title">print(result.result)</text>
+  <text x="820" y="222" text-anchor="middle" class="ink-soft sub">the answer you saw</text>
+  <text x="820" y="244" text-anchor="middle" class="ink-soft sub">in your terminal</text>
+
+  <!-- Safety badge -->
+  <rect x="280" y="310" width="440" height="44" rx="12" class="badge-safe"/>
+  <text x="500" y="338" text-anchor="middle" class="ink label">🛡 cleanup always runs — even on error or timeout</text>
+</svg>
