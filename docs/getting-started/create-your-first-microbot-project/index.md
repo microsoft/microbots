@@ -64,17 +64,47 @@ Create `log_analysis_bot.py` at the project root:
 
 The script imports [`LogAnalysisBot`](../../api-reference/microbots/bot/LogAnalysisBot.md), instantiates it, and invokes its `run()` method on the build log.
 
-**Constructing the bot** — [`LogAnalysisBot(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md):
+#### Constructing the bot
 
-- **`model`** — the LLM that powers the bot, in `<provider>/<deployment-or-model-name>` format. Here, `azure-openai/gpt-5-agent` points to a deployment named `gpt-5-agent` on the Azure OpenAI resource configured in `.env` For other providers, see the [Authentication Setup](../../advanced/authentication.md) guide.
-- **`folder_to_mount`** — a path on your host that the bot can read inside its Docker sandbox. The folder is mounted **read-only** at `/workdir/<folder-name>/` inside the container, so the bot can inspect your source code but cannot modify it. Here, `"code"` mounts the local `code/` folder to `/workdir/code/` of the container.
+```python linenums="7"
+my_bot = LogAnalysisBot(
+    model="azure-openai/gpt-5-agent",
+    folder_to_mount="code",
+)
+```
 
-**Running the bot** — [`my_bot.run(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md):
+[`LogAnalysisBot(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md) takes the following arguments:
 
-- **`file_name`** — path to the log file to analyze. The file is copied into the container at `/var/log/` and the bot is instructed to identify the root cause of any failures it contains. Here, `"code/build.log"` is the gcc build log produced in Step 2.
-- **`timeout_in_seconds`** — maximum time the bot is allowed to run before being terminated. Here, `600` gives the bot up to 10 minutes to finish its analysis.
+- **`model`** — the LLM powering the bot, in `<provider>/<deployment-or-model-name>` format. For other providers, see the [Authentication Setup](../../advanced/authentication.md) guide.
+- **`folder_to_mount`** — host folder the bot can access inside its Docker sandbox. Mounted **read-only** at `/workdir/<folder-name>/`.
 
-The call returns a [`BotRunResult`](../../api-reference/microbots/MicroBot.md); `result.result` holds the final root-cause analysis produced by the bot.
+#### Running the bot
+
+```python linenums="12"
+result = my_bot.run(
+    file_name="code/build.log",
+    timeout_in_seconds=600,
+)
+```
+
+[`my_bot.run(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md) takes the following arguments:
+
+- **`file_name`** — path to the log file to analyze. The file is copied into the container at `/var/log/` for the bot to inspect.
+- **`timeout_in_seconds`** — maximum time the bot may run before being terminated. `600` allows up to 10 minutes.
+
+#### Reading the result
+
+```python linenums="16"
+print(result.result)
+```
+
+The `my_bot.run()` method returns a [`BotRunResult`](../../api-reference/microbots/MicroBot.md#microbots.MicroBot.BotRunResult) object with the following fields:
+
+- **`status`** (`bool`) — `True` if the bot completed its task successfully, `False` otherwise.
+- **`result`** (`str | None`) — the bot's final output (root-cause analysis here). `None` when the run fails before producing a result.
+- **`error`** (`str | None`) — error details when `status` is `False`; `None` on success.
+
+In this example, `print(result.result)` prints the root-cause analysis returned by the bot.
 
 ## Step 4 — Run the Bot
 
