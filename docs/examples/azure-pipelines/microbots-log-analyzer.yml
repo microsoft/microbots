@@ -25,5 +25,6 @@ jobs:
       apiVersion: 2025-03-01-preview
       codebasePath: $(Build.SourcesDirectory)
       logFilePath: logs/build.log
+      outputFilePath: $(Build.ArtifactStagingDirectory)/microbots-log-analysis.md
       timeoutSeconds: 600
       maxIterations: 20

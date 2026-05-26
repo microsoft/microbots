@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import textwrap
@@ -10,21 +11,49 @@ def is_docker_access_error(error):
     return "docker" in type(error).__module__.lower() or "docker" in str(error).lower()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run Microbots LogAnalysisBot.")
+    parser.add_argument("--codebase-path", required=True)
+    parser.add_argument("--log-file-path", required=True)
+    parser.add_argument("--timeout-seconds", required=True, type=int)
+    parser.add_argument("--output-file")
+    parser.add_argument("--max-iterations", type=int)
+    return parser.parse_args()
+
+
+def log(message, *, file=sys.stdout):
+    print(message, file=file, flush=True)
+
+
+def safe_analysis_line(message):
+    if message.startswith("##vso[") or message.startswith("##["):
+        return " " + message
+    return message
+
+
+def write_text_file(file_path, content):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as output_file:
+        output_file.write(content)
+
+
 def main():
-    codebase_path = os.path.abspath(sys.argv[1])
-    log_file_path = sys.argv[2]
-    timeout_seconds = int(sys.argv[3])
-    max_iterations = int(sys.argv[4]) if len(sys.argv) > 4 else None
+    args = parse_args()
+    codebase_path = os.path.abspath(args.codebase_path)
+    log_file_path = args.log_file_path
+    timeout_seconds = args.timeout_seconds
+    max_iterations = args.max_iterations
 
     os.chdir(codebase_path)
-    print(
+    log(
         f"MicrobotsLogAnalyzer: analyzing {log_file_path} with deployment "
-        f"{os.environ['AZURE_OPENAI_DEPLOYMENT_NAME']}",
-        flush=True,
+        f"{os.environ['AZURE_OPENAI_DEPLOYMENT_NAME']}"
     )
-    print(f"MicrobotsLogAnalyzer: timeout is {timeout_seconds} seconds", flush=True)
+    log(f"MicrobotsLogAnalyzer: timeout is {timeout_seconds} seconds")
     if max_iterations is not None:
-        print(f"MicrobotsLogAnalyzer: max iterations is {max_iterations}", flush=True)
+        log(f"MicrobotsLogAnalyzer: max iterations is {max_iterations}")
+    if args.output_file:
+        log(f"MicrobotsLogAnalyzer: analysis output file is {args.output_file}")
 
     token_provider = get_bearer_token_provider(
         AzureCliCredential(),
@@ -47,23 +76,30 @@ def main():
     except Exception as error:
         if not is_docker_access_error(error):
             raise
-        print(
+        log(
             "MicrobotsLogAnalyzer: Docker-compatible daemon was not accessible "
             "while starting the Microbots sandbox.",
             file=sys.stderr,
         )
-        print(f"Details: {error}", file=sys.stderr)
+        log(f"Details: {error}", file=sys.stderr)
         return 1
 
     message = result.result or result.error or ""
+    if args.output_file:
+        write_text_file(args.output_file, str(message))
+        log(f"MicrobotsLogAnalyzer: wrote analysis output to {args.output_file}")
 
-    print("##[section]MicrobotsLogAnalyzer: LLM analysis")
-    print("============================================================")
-    print("MICROBOTS LOG ANALYSIS")
-    print("============================================================")
+    log("##[section]MicrobotsLogAnalyzer: LLM analysis")
+    log("============================================================")
+    log("MICROBOTS LOG ANALYSIS")
+    log("============================================================")
     for paragraph in str(message).splitlines() or [""]:
-        print(textwrap.fill(paragraph, width=125) if paragraph.strip() else "")
-    print("============================================================")
+        if paragraph.strip():
+            for line in textwrap.wrap(paragraph, width=125) or [""]:
+                log(safe_analysis_line(line))
+        else:
+            log("")
+    log("============================================================")
 
     return 0 if result.status else 1
 

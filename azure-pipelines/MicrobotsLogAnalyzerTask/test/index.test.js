@@ -22,6 +22,7 @@ function loadTask(options = {}) {
       validateInputs,
       loginWithServiceConnection,
       venvPythonPath,
+      ensureOutputParentDirectory,
       setupVenv,
       microbotsEnvironment,
       runLogAnalyzer,
@@ -120,7 +121,9 @@ function mockCompletedLinuxVenv(tempDir = "/tmp") {
     existsSync(filePath) { return existing.has(filePath) || fs.existsSync(filePath); },
     statSync(filePath) { return fs.statSync(filePath); },
     rmSync() {},
-    writeFileSync() {},
+    readFileSync(filePath, encoding) { return fs.readFileSync(filePath, encoding); },
+    mkdirSync(filePath, options) { return fs.mkdirSync(filePath, options); },
+    writeFileSync(filePath, value) { return fs.writeFileSync(filePath, value); },
   };
 
   return { mockFs, python };
@@ -282,6 +285,38 @@ test("Valid Inputs Resolve Correctly: log path and numeric values", () => {
   assert.equal(inputs.maxIterations, "20");
 });
 
+test("Optional Output File Path Must Be Absolute Plain Text Path", () => {
+  const { task } = loadTask();
+  const codebasePath = makeProjectWithLog();
+  const validInputs = {
+    codebasePath,
+    logFilePath: "logs/build.log",
+    endpoint: "https://example.openai.azure.com/",
+    timeoutSeconds: "600",
+  };
+
+  assert.throws(
+    () => task.validateInputs({ ...validInputs, outputFilePath: "analysis.md" }),
+    /outputFilePath must be an absolute path/
+  );
+  assert.throws(
+    () => task.validateInputs({ ...validInputs, outputFilePath: "$(Build.ArtifactStagingDirectory)/analysis.md" }),
+    /outputFilePath must be an absolute path/
+  );
+  assert.throws(
+    () => task.validateInputs({ ...validInputs, outputFilePath: path.join(codebasePath, "analysis.json") }),
+    /outputFilePath must end with .txt, .md, or .log/
+  );
+
+  const inputs = { ...validInputs, outputFilePath: path.join(codebasePath, "out", "analysis.md") };
+  task.validateInputs(inputs);
+  assert.equal(inputs.outputFilePath, path.join(codebasePath, "out", "analysis.md"));
+
+  const logInputs = { ...validInputs, outputFilePath: path.join(codebasePath, "out", "analysis.log") };
+  task.validateInputs(logInputs);
+  assert.equal(logInputs.outputFilePath, path.join(codebasePath, "out", "analysis.log"));
+});
+
 test("Invalid Inputs Are Rejected: endpoint, timeout, and maxIterations", () => {
   const { task } = loadTask();
   const codebasePath = makeProjectWithLog();
@@ -343,12 +378,15 @@ test("End To End Flow Works: ServiceConnection Login and LogAnalysisBot Output i
   assert.equal(runnerResult.status, 0, runnerResult.stderr);
   assert.match(runnerResult.stdout, /The deployment returned analysis\./);
   assert.equal(runnerCall.command, python);
-  assert.deepEqual(Array.from(runnerCall.args).slice(1), [
-    codebasePath,
-    logFilePath,
-    "600",
-    "12",
+  assert.deepEqual(Array.from(runnerCall.args), [
+    path.join(taskDir, "log_analyzer_runner.py"),
+    "--codebase-path", codebasePath,
+    "--log-file-path", logFilePath,
+    "--timeout-seconds", "600",
+    "--max-iterations", "12",
   ]);
+  assert.equal(runnerCall.options.stdio[1], "inherit");
+  assert.equal(runnerCall.options.stdio[2], "inherit");
   assert.equal(runnerCall.options.env.KEEP_ME, "yes");
   assert.equal(runnerCall.options.env.AZURE_OPENAI_DEPLOYMENT_NAME, "gpt-test");
   assert.equal(runnerCall.options.env.AZURE_OPENAI_ENDPOINT, "https://example.openai.azure.com/");
@@ -457,8 +495,52 @@ test("Python Setup Command Failures Include Error Details", () => {
   const spawnError = loadTask({ spawnSync: () => ({ error: new Error("missing") }) });
   assert.throws(() => spawnError.task.runCommand("python3", ["--version"]), /Failed to run python3: missing/);
 
-  const nonZero = loadTask({ spawnSync: () => ({ status: 2, stderr: "venv creation failed" }) });
-  assert.throws(() => nonZero.task.runCommand("python3", ["-m", "venv"]), /exit 2: venv creation failed/);
+  const nonZero = loadTask({ spawnSync: () => ({ status: 2 }) });
+  assert.throws(() => nonZero.task.runCommand("python3", ["-m", "venv"]), /exit 2/);
+});
+
+test("Output File Path Can Point To Missing Absolute File", () => {
+  const { task } = loadTask();
+  const codebasePath = makeProjectWithLog();
+  const outputFilePath = path.join(codebasePath, "missing", "analysis.txt");
+  const inputs = {
+    codebasePath,
+    logFilePath: "logs/build.log",
+    endpoint: "https://example.openai.azure.com/",
+    timeoutSeconds: "600",
+    outputFilePath,
+  };
+
+  assert.equal(fs.existsSync(outputFilePath), false);
+  task.validateInputs(inputs);
+  assert.equal(inputs.outputFilePath, outputFilePath);
+});
+
+test("Output File Path Creates Directories And Replaces Existing File", async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), "microbots-output-test-"));
+  const outputFilePath = path.join(outputRoot, "nested", "analysis.md");
+  fs.mkdirSync(path.dirname(outputFilePath), { recursive: true });
+  fs.writeFileSync(outputFilePath, "old analysis", "utf8");
+
+  const { calls } = await runTaskWithMockServiceConnectionAndMockMicrobots({
+    inputs: { outputFilePath },
+    mockMicrobots: { result: "New analysis\nwith ##vso[task.setvariable variable=x]unsafe-looking text" },
+  });
+
+  assert.equal(
+    fs.readFileSync(outputFilePath, "utf8").replace(/\r\n/g, "\n"),
+    "New analysis\nwith ##vso[task.setvariable variable=x]unsafe-looking text"
+  );
+});
+
+test("Displayed LLM Output Does Not Emit Azure Pipelines Commands", async () => {
+  const { calls, runnerResult } = await runTaskWithMockServiceConnectionAndMockMicrobots({
+    mockMicrobots: { result: "##vso[task.setvariable variable=NotAllowed]spoofed" },
+  });
+
+  assert.equal(runnerResult.status, 0, runnerResult.stderr);
+  assert.match(runnerResult.stdout, / ##vso\[task\.setvariable variable=NotAllowed\]spoofed/);
+  assert.equal(calls.setResult[0].result, "Succeeded");
 });
 
 test("Runner Reports Docker Sandbox Startup Failures", async () => {
@@ -473,7 +555,7 @@ test("Runner Reports Docker Sandbox Startup Failures", async () => {
   assert.equal(runnerResult.status, 1);
   assert.match(runnerResult.stderr, /Docker-compatible daemon was not accessible/);
   assert.equal(calls.setResult[0].result, "Failed");
-  assert.match(calls.setResult[0].message, /Docker-compatible daemon was not accessible/);
+  assert.match(calls.setResult[0].message, /exit 1/);
 });
 
 test("Task Fails With Proper Error Message When LLM Deployment Cannot Be Reached (After Login With ServiceConnection)", async () => {
@@ -490,7 +572,6 @@ test("Task Fails With Proper Error Message When LLM Deployment Cannot Be Reached
   assert.match(runnerResult.stdout, /Deployment access failed/);
   assert.equal(calls.setResult[0].result, "Failed");
   assert.match(calls.setResult[0].message, /exit 1/);
-  assert.match(calls.setResult[0].message, /Deployment access failed/);
 });
 
 test("Task Correctly Reports Failures While Analyzing Logs By The LLM", async () => {
@@ -506,5 +587,5 @@ test("Task Correctly Reports Failures While Analyzing Logs By The LLM", async ()
   assert.equal(runnerRecord.token, "mock-token");
   assert.match(runnerResult.stdout, /Log analysis timed out/);
   assert.equal(calls.setResult[0].result, "Failed");
-  assert.match(calls.setResult[0].message, /Log analysis timed out/);
+  assert.match(calls.setResult[0].message, /exit 1/);
 });
