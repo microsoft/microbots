@@ -62,9 +62,19 @@ Create `log_analysis_bot.py` at the project root:
 --8<-- "docs/examples/microbots_introduction/log_analysis_bot.py"
 ```
 
-The script mounts `code/` **read-only** inside Docker,     
-Runs `LogAnalysisBot` against `code/build.log` with a 10-minute timeout.  
-Prints the root-cause analysis from `result.result`
+The script imports [`LogAnalysisBot`](../../api-reference/microbots/bot/LogAnalysisBot.md), instantiates it, and invokes its `run()` method on the build log.
+
+**Constructing the bot** — [`LogAnalysisBot(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md):
+
+- **`model`** — the LLM that powers the bot, in `<provider>/<deployment-or-model-name>` format. Here, `azure-openai/gpt-5-agent` points to a deployment named `gpt-5-agent` on the Azure OpenAI resource configured in `.env` For other providers, see the [Authentication Setup](../../advanced/authentication.md) guide.
+- **`folder_to_mount`** — a path on your host that the bot can read inside its Docker sandbox. The folder is mounted **read-only** at `/workdir/<folder-name>/` inside the container, so the bot can inspect your source code but cannot modify it. Here, `"code"` mounts the local `code/` folder to `/workdir/code/` of the container.
+
+**Running the bot** — [`my_bot.run(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md):
+
+- **`file_name`** — path to the log file to analyze. The file is copied into the container at `/var/log/` and the bot is instructed to identify the root cause of any failures it contains. Here, `"code/build.log"` is the gcc build log produced in Step 2.
+- **`timeout_in_seconds`** — maximum time the bot is allowed to run before being terminated. Here, `600` gives the bot up to 10 minutes to finish its analysis.
+
+The call returns a [`BotRunResult`](../../api-reference/microbots/MicroBot.md); `result.result` holds the final root-cause analysis produced by the bot.
 
 ## Step 4 — Run the Bot
 
