@@ -12,25 +12,13 @@ const VENV_READY_MARKER = ".microbots-venv-ready-v1";
 
 function runCommand(command, args, env) {
   const result = spawnSync(command, args, {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "inherit", "inherit"],
     env: env || process.env,
-    encoding: "utf8",
   });
-
-  if (result.stdout) {
-    if (process.stdout && typeof process.stdout.write === "function") process.stdout.write(result.stdout);
-    else console.log(result.stdout.trimEnd());
-  }
-  if (result.stderr) {
-    if (process.stderr && typeof process.stderr.write === "function") process.stderr.write(result.stderr);
-    else console.error(result.stderr.trimEnd());
-  }
 
   if (result.error) throw new Error(`Failed to run ${command}: ${result.error.message}`);
   if (result.status !== 0) {
-    const output = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
-    const details = output ? `: ${output.split(/\r?\n/).slice(-10).join("\n")}` : "";
-    throw new Error(`${command} ${args.join(" ")} -> exit ${result.status}${details}`);
+    throw new Error(`${command} ${args.join(" ")} -> exit ${result.status}`);
   }
 }
 
@@ -59,6 +47,7 @@ function getInputs() {
     apiVersion: input("apiVersion", true),
     codebasePath: tl.getPathInput("codebasePath", true, true),
     logFilePath: input("logFilePath", true),
+    outputFilePath: input("outputFilePath", false),
     timeoutSeconds: input("timeoutSeconds", false) || DEFAULT_TIMEOUT_SECONDS,
     maxIterations: input("maxIterations", false),
   };
@@ -101,6 +90,22 @@ function validateInputs(inputs) {
       throw new Error(`maxIterations must be a positive integer: ${inputs.maxIterations}`);
     }
     inputs.maxIterations = String(maxIterations);
+  }
+
+  if (inputs.outputFilePath) {
+    if (!path.isAbsolute(inputs.outputFilePath)) {
+      throw new Error(`outputFilePath must be an absolute path: ${inputs.outputFilePath}`);
+    }
+
+    inputs.outputFilePath = path.resolve(inputs.outputFilePath);
+    const extension = path.extname(inputs.outputFilePath).toLowerCase();
+    if (extension !== ".txt" && extension !== ".md" && extension !== ".log") {
+      throw new Error(`outputFilePath must end with .txt, .md, or .log: ${inputs.outputFilePath}`);
+    }
+
+    if (fs.existsSync(inputs.outputFilePath) && fs.statSync(inputs.outputFilePath).isDirectory()) {
+      throw new Error(`outputFilePath must be a file path, not a directory: ${inputs.outputFilePath}`);
+    }
   }
 }
 
@@ -168,12 +173,31 @@ function microbotsEnvironment(inputs) {
   });
 }
 
+function ensureOutputParentDirectory(outputFilePath) {
+  if (!outputFilePath) return;
+
+  const outputDirectory = path.dirname(outputFilePath);
+  if (fs.existsSync(outputDirectory) && !fs.statSync(outputDirectory).isDirectory()) {
+    throw new Error(`outputFilePath parent must be a directory: ${outputDirectory}`);
+  }
+
+  fs.mkdirSync(outputDirectory, { recursive: true });
+  console.log(`##[section]MicrobotsLogAnalyzer: analysis output will overwrite ${outputFilePath}`);
+}
+
 function runLogAnalyzer(python, inputs) {
   const scriptPath = path.join(__dirname, "log_analyzer_runner.py");
-  const args = [scriptPath, inputs.codebasePath, inputs.logFilePath, inputs.timeoutSeconds];
+  const args = [
+    scriptPath,
+    "--codebase-path", inputs.codebasePath,
+    "--log-file-path", inputs.logFilePath,
+    "--timeout-seconds", inputs.timeoutSeconds,
+  ];
 
-  if (inputs.maxIterations) args.push(inputs.maxIterations);
+  if (inputs.outputFilePath) args.push("--output-file", inputs.outputFilePath);
+  if (inputs.maxIterations) args.push("--max-iterations", inputs.maxIterations);
 
+  ensureOutputParentDirectory(inputs.outputFilePath);
   runCommand(python, args, microbotsEnvironment(inputs));
 }
 

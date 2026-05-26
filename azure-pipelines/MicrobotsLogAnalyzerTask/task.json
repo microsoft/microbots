@@ -59,6 +59,13 @@
       "helpMarkDown": "Path to the log file. (Both Absolute Path and Relative to Codebase Path are supported.)"
     },
     {
+      "name": "outputFilePath",
+      "type": "string",
+      "label": "Analysis output file path",
+      "required": false,
+      "helpMarkDown": "Optional absolute path to a .txt, .md, or .log file where the LLM analysis result will be written. The file does not need to exist; the task creates missing directories and replaces any existing file contents."
+    },
+    {
       "name": "timeoutSeconds",
       "type": "string",
       "label": "Timeout in seconds",
