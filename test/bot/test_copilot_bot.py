@@ -1713,3 +1713,49 @@ class TestCopilotBotBYOKOpenAIIntegration:
             verify_function(test_repo)
         finally:
             bot.stop()
+
+    def test_byok_openai_simple_task_with_token_provider(self, test_repo, issue_1):
+        """CopilotBot can fix a simple syntax error using OpenAI BYOK credentials."""
+        _restore_real_copilot_modules()
+        from microbots.bot.CopilotBot import CopilotBot
+
+        issue_text = issue_1[0]
+        verify_function = issue_1[1]
+
+        api_key = os.environ["OPEN_AI_KEY"]
+        base_url = os.environ["OPEN_AI_END_POINT"]
+        model = os.getenv(
+            "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
+        )
+
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        def get_token():
+                return credential.get_token(
+                    "https://cognitiveservices.azure.com/.default"
+                ).token
+
+        bot = CopilotBot(
+            model=model,
+            folder_to_mount=str(test_repo),
+            permission="READ_WRITE",
+            api_key=api_key,
+            base_url=base_url,
+            provider_type="openai",
+            token_provider=get_token,
+        )
+
+        try:
+            assert bot._provider_config is not None
+            assert bot._provider_config["type"] == "openai"
+            assert bot.github_token is None
+
+            result = bot.run(
+                issue_text,
+                timeout_in_seconds=300,
+            )
+            assert result.status is True, f"CopilotBot BYOK run failed: {result.error}"
+            verify_function(test_repo)
+        finally:
+            bot.stop()
+

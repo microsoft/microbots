@@ -380,6 +380,7 @@ class CopilotBot:
 
         # ── Connect SDK to in-container CLI ─────────────────────────
         container_ip = self.environment.get_ipv4_address()
+        logger.info("🔌 Connecting Copilot SDK to CLI server at %s:%d", container_ip, _CONTAINER_CLI_PORT)
         self._client = CopilotClient(
             ExternalServerConfig(url=f"{container_ip}:{_CONTAINER_CLI_PORT}")
         )
@@ -555,7 +556,7 @@ class CopilotBot:
         # Start copilot in headless mode in the background
         # Using nohup + & to run it as a background process inside the container's shell
         start_cmd = (
-            f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} "
+            f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} --host 0.0.0.0"
             f"> /var/log/copilot-cli.log 2>&1 &"
         )
         result = self.environment.execute(start_cmd)
@@ -579,13 +580,15 @@ class CopilotBot:
         deadline = time.time() + _CLI_STARTUP_TIMEOUT
         while time.time() < deadline:
             try:
+                self.environment.execute("pgrep -f 'copilot.*--headless' || true")
                 sock = _socket.create_connection(
-                    (container_ip, _CONTAINER_CLI_PORT), timeout=2
+                    (container_ip, _CONTAINER_CLI_PORT), timeout=5
                 )
                 sock.close()
                 return
             except (ConnectionRefusedError, OSError):
                 time.sleep(1)
+        self.environment.execute("cat /var/log/copilot-cli.log || true")
         raise TimeoutError(
             f"copilot-cli did not become ready within {_CLI_STARTUP_TIMEOUT}s "
             f"on {container_ip}:{_CONTAINER_CLI_PORT}"
