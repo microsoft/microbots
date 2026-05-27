@@ -5,36 +5,20 @@
 ## Prerequisites
 
 - Azure DevOps organization where you can install custom extensions.
-- Azure Resource Manager Service Connection with permission to request tokens for the Azure OpenAI resource. The pipeline must be authorized to use this service connection.
+- Azure Resource Manager Service Connection with permission to request tokens for the Azure OpenAI resource. See [Azure managed identity setup](guides/azure-managed-identity-setup.md) for service connection and Azure OpenAI RBAC setup. The pipeline must be authorized to use this service connection.
 - Azure Pipelines agent with `azure-cli`, `python3`, `pip` and `python3 -m venv` support. Microbots uses Docker sandboxing by default, so the agent also needs a reachable Docker-compatible daemon.
 - Azure OpenAI deployment that works with Microbots and is reachable by the service connection.
-- Node.js on the machine where you package and publish the extension.
 
-## Publish The Task
+## Use Azure Marketplace Extension
 
-From a clone of this repository:
+Install the published Marketplace extension into the Azure DevOps organization that owns your pipelines:
 
-```bash
-npm install -g tfx-cli
-
-cd azure-pipelines/MicrobotsLogAnalyzerTask
-npm ci --omit=dev
-
-cd ..
-tfx extension create --manifest-globs vss-extension.json
-tfx extension publish --manifest-globs vss-extension.json --token <AZURE_DEVOPS_PAT> --share-with <AZURE_DEVOPS_ORGANIZATION>
-```
-
-Update the `publisher` value in `vss-extension.json` before running `tfx extension create`. The task folder must contain `node_modules` when the VSIX is created, so run `npm ci --omit=dev` before packaging.
-
-After publishing, install the extension into the Azure DevOps organization that owns your pipelines.
-
-When publishing an update, increment both versions before packaging:
-
-- `azure-pipelines/vss-extension.json` controls the extension version.
-- `azure-pipelines/MicrobotsLogAnalyzerTask/task.json` controls the task version shown to Azure Pipelines.
-
-You can use `tfx extension create --manifest-globs vss-extension.json --rev-version` to increment the extension patch version, but task behavior changes still need a `task.json` version bump.
+1. Open the Marketplace listing:
+   [Microbots Log Analyzer](https://marketplace.visualstudio.com/items?itemName=Microbots-log-analyzer.microbots-log-analyzer)
+2. Select **Get it free**.
+3. Choose the Azure DevOps organization where your pipelines run.
+4. Confirm the extension appears in the organization extension page:
+   `https://dev.azure.com/<organization>/_settings/extensions`. If it appears under the `Shared` section you need to install it to you org (requires Azure DevOps Org Admin Access)
 
 ## Use It In A Pipeline
 
@@ -57,7 +41,7 @@ See the complete sample pipeline at [docs/examples/azure-pipelines/microbots-log
 
 The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFilePath` values are resolved from `codebasePath`; absolute paths are also supported.
 
-  `outputFilePath` is optional. When it is provided, it must be an absolute path ending in `.txt`, `.md`, or `.log`. The file does not need to exist; the task creates missing directories and replaces any existing file content with the latest LLM analysis result. Azure Pipelines variables such as `$(Build.ArtifactStagingDirectory)` are expanded before the task validates the path, so `$(Build.ArtifactStagingDirectory)/microbots-log-analysis.md` is valid when it expands to an absolute agent path.
+`outputFilePath` is optional. When it is provided, it must be an absolute path ending in `.txt`, `.md`, or `.log`. The file does not need to exist; the task creates missing directories and replaces any existing file content with the latest LLM analysis result.
 
 ## Inputs
 
@@ -71,7 +55,7 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 | `logFilePath` | Yes | - | Log file path. Use an absolute path, or a relative path resolved from `codebasePath`. |
 | `outputFilePath` | No | - | Absolute `.txt`, `.md`, or `.log` path where the LLM analysis result is written. Missing directories are created, and existing file contents are replaced. |
 | `timeoutSeconds` | No | `600` | Maximum time for `LogAnalysisBot.run()`. |
-| `maxIterations` | No | LogAnalysisBot default | Maximum number of Microbots iterations. Leave unset to use the default from `LogAnalysisBot.run()`. |
+| `maxIterations` | No | `20` | Maximum number of Microbots iterations. Leave unset to use the default from `LogAnalysisBot.run()`. |
 
 ## How It Works
 

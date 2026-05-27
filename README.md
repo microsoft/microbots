@@ -63,7 +63,7 @@ Each provider has its own set of environment variables (endpoint, API key, deplo
 
 ## Azure Pipelines Log Analyzer
 
-Microbots includes a custom Azure DevOps task, `MicrobotsLogAnalyzer@0`, for analyzing logs with Azure OpenAI models through an Azure Resource Manager Service Connection. See [docs/azure-pipelines-log-analyzer.md](docs/azure-pipelines-log-analyzer.md) to publish and use the task.
+Microbots includes a published Azure DevOps Marketplace task, `MicrobotsLogAnalyzer@0`, for analyzing logs with Azure OpenAI models through an Azure Resource Manager Service Connection. See [docs/azure-pipelines-log-analyzer.md](docs/azure-pipelines-log-analyzer.md) to install and use the task in Azure Pipelines.
 
 ## 📚 Links
 
