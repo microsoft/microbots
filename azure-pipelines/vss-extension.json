@@ -2,8 +2,8 @@
   "manifestVersion": 1,
   "id": "microbots-log-analyzer",
   "name": "Microbots Log Analyzer",
-  "version": "0.1.0",
-  "publisher": "microsoft",
+  "version": "0.2.0",
+  "publisher": "Microbots-log-analyzer",
   "targets": [
     {
       "id": "Microsoft.VisualStudio.Services"
