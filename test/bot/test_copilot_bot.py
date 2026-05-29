@@ -1712,7 +1712,7 @@ class TestCopilotBotBYOKOpenAIIntegration:
             assert bot.github_token is None
 
             result = bot.run(
-                issue_text + "\nFix the error and provide only the corrected code.",
+                issue_text,
                 timeout_in_seconds=300,
             )
             assert result.status is True, f"CopilotBot BYOK run failed: {result.error}"
