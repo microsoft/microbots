@@ -227,6 +227,8 @@ jobs:
                 ollama_local) name="Ollama Tests" ;;
                 slow-browser) name="Slow Browser Tests" ;;
                 slow-other) name="Slow Other Tests" ;;
+                ghcp) name="GitHub Copilot Tests" ;;
+                *) name="$test_type" ;;
               esac
 
               echo "| ${name} | ${status} |" >> $GITHUB_STEP_SUMMARY
