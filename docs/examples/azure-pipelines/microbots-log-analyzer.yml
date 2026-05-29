@@ -26,5 +26,8 @@ jobs:
       codebasePath: $(Build.SourcesDirectory)
       logFilePath: logs/build.log
       outputFilePath: $(Build.ArtifactStagingDirectory)/microbots-log-analysis.md
+      additionalContext: |
+        This build usually fails when package version conflicts occur.
+        Please consider it while analyzing the log.
       timeoutSeconds: 600
       maxIterations: 20

@@ -66,6 +66,13 @@
       "helpMarkDown": "Optional absolute path to a .txt, .md, or .log file where the LLM analysis result will be written. The file does not need to exist; the task creates missing directories and replaces any existing file contents."
     },
     {
+      "name": "additionalContext",
+      "type": "multiLine",
+      "label": "Additional analysis context",
+      "required": false,
+      "helpMarkDown": "Optional extra context appended to the log analysis user prompt. It does not replace or override the Microbots system prompt. Maximum length: 1024 characters."
+    },
+    {
       "name": "timeoutSeconds",
       "type": "string",
       "label": "Timeout in seconds",

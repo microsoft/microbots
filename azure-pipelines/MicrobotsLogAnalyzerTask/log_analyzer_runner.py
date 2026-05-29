@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument("--log-file-path", required=True)
     parser.add_argument("--timeout-seconds", required=True, type=int)
     parser.add_argument("--output-file")
+    parser.add_argument("--user-prompt")
     parser.add_argument("--max-iterations", type=int)
     return parser.parse_args()
 
@@ -54,6 +55,8 @@ def main():
         log(f"MicrobotsLogAnalyzer: max iterations is {max_iterations}")
     if args.output_file:
         log(f"MicrobotsLogAnalyzer: analysis output file is {args.output_file}")
+    if args.user_prompt:
+        log("MicrobotsLogAnalyzer: additional user context was provided")
 
     token_provider = get_bearer_token_provider(
         AzureCliCredential(),
@@ -65,6 +68,8 @@ def main():
     }
     if max_iterations is not None:
         run_kwargs["max_iterations"] = max_iterations
+    if args.user_prompt:
+        run_kwargs["user_prompt"] = args.user_prompt
 
     try:
         bot = LogAnalysisBot(
