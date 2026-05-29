@@ -7,6 +7,7 @@ const tl = require("azure-pipelines-task-lib/task");
 const { loginAzureRM } = require("azure-pipelines-tasks-azure-arm-rest/azCliUtility");
 
 const DEFAULT_TIMEOUT_SECONDS = "600";
+const MAX_USER_PROMPT_LENGTH = 1024;
 const VENV_NAME = "microbots-log-analyzer-venv";
 const VENV_READY_MARKER = ".microbots-venv-ready-v1";
 
@@ -48,6 +49,7 @@ function getInputs() {
     codebasePath: tl.getPathInput("codebasePath", true, true),
     logFilePath: input("logFilePath", true),
     outputFilePath: input("outputFilePath", false),
+    additionalContext: input("additionalContext", false),
     timeoutSeconds: input("timeoutSeconds", false) || DEFAULT_TIMEOUT_SECONDS,
     maxIterations: input("maxIterations", false),
   };
@@ -106,6 +108,10 @@ function validateInputs(inputs) {
     if (fs.existsSync(inputs.outputFilePath) && fs.statSync(inputs.outputFilePath).isDirectory()) {
       throw new Error(`outputFilePath must be a file path, not a directory: ${inputs.outputFilePath}`);
     }
+  }
+
+  if (inputs.additionalContext && inputs.additionalContext.length > MAX_USER_PROMPT_LENGTH) {
+    throw new Error(`additionalContext must be ${MAX_USER_PROMPT_LENGTH} characters or fewer`);
   }
 }
 
@@ -195,6 +201,7 @@ function runLogAnalyzer(python, inputs) {
   ];
 
   if (inputs.outputFilePath) args.push("--output-file", inputs.outputFilePath);
+  if (inputs.additionalContext) args.push("--user-prompt", inputs.additionalContext);
   if (inputs.maxIterations) args.push("--max-iterations", inputs.maxIterations);
 
   ensureOutputParentDirectory(inputs.outputFilePath);

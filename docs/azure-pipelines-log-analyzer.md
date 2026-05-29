@@ -35,6 +35,9 @@ See the complete sample pipeline at [docs/examples/azure-pipelines/microbots-log
     codebasePath: $(Build.SourcesDirectory)
     logFilePath: logs/build.log
     outputFilePath: $(Build.ArtifactStagingDirectory)/microbots-log-analysis.md
+    additionalContext: |
+      This build usually fails when package version conflicts occur.
+      Please consider it while analyzing the log.
     timeoutSeconds: 600
     maxIterations: 20
 ```
@@ -42,6 +45,8 @@ See the complete sample pipeline at [docs/examples/azure-pipelines/microbots-log
 The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFilePath` values are resolved from `codebasePath`; absolute paths are also supported.
 
 `outputFilePath` is optional. When it is provided, it must be an absolute path ending in `.txt`, `.md`, or `.log`. The file does not need to exist; the task creates missing directories and replaces any existing file content with the latest LLM analysis result.
+
+`additionalContext` is optional. When provided, it is appended as extra user context for the log analysis and does not replace or override the Microbots system prompt. Maximum length: 1024 characters.
 
 ## Inputs
 
@@ -54,6 +59,7 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 | `codebasePath` | Yes | - | Repository or source folder Microbots can inspect while analyzing the log. |
 | `logFilePath` | Yes | - | Log file path. Use an absolute path, or a relative path resolved from `codebasePath`. |
 | `outputFilePath` | No | - | Absolute `.txt`, `.md`, or `.log` path where the LLM analysis result is written. Missing directories are created, and existing file contents are replaced. |
+| `additionalContext` | No | - | Additional user context appended to the log analysis prompt. Maximum length: 1024 characters. |
 | `timeoutSeconds` | No | `600` | Maximum time for `LogAnalysisBot.run()`. |
 | `maxIterations` | No | `20` | Maximum number of Microbots iterations. Leave unset to use the default from `LogAnalysisBot.run()`. |
 
@@ -63,7 +69,7 @@ The log file must exist before `MicrobotsLogAnalyzer@0` runs. Relative `logFileP
 2. The task logs in with the supplied Azure Resource Manager Service Connection.
 3. The task creates or reuses a virtual environment (`microbots-log-analyzer-venv`).
 4. The task installs `microbots[azure_ad]` into that virtual environment.
-5. A short Python runner creates `LogAnalysisBot` with `AzureCliCredential`, mounts `codebasePath` as context, passes `logFilePath`, optional `maxIterations`, and `timeoutSeconds` to `LogAnalysisBot.run()`, and prints the analysis result.
+5. A short Python runner creates `LogAnalysisBot` with `AzureCliCredential`, mounts `codebasePath` as context, passes `logFilePath`, optional `additionalContext`, optional `maxIterations`, and `timeoutSeconds` to `LogAnalysisBot.run()`, and prints the analysis result.
 6. If `outputFilePath` is provided, the task writes the LLM analysis result to that file, replacing any existing contents.
 
 The task clears the Azure CLI account at the end of the run. Its task manifest also uses Azure Pipelines command restrictions so analyzed log content cannot run arbitrary logging commands or set pipeline variables.

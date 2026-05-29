@@ -339,6 +339,10 @@ test("Invalid Inputs Are Rejected: endpoint, timeout, and maxIterations", () => 
     () => task.validateInputs({ ...validInputs, maxIterations: "-1" }),
     /maxIterations must be a positive integer/
   );
+  assert.throws(
+    () => task.validateInputs({ ...validInputs, additionalContext: "x".repeat(1025) }),
+    /additionalContext must be 1024 characters or fewer/
+  );
 });
 
 test("End To End Flow Works: ServiceConnection Login and LogAnalysisBot Output is Displayed", async () => {
@@ -403,6 +407,24 @@ test("End To End Flow Works: ServiceConnection Login and LogAnalysisBot Output i
   assert.equal(logoutCall.command, "az");
   assert.deepEqual(Array.from(logoutCall.args), ["account", "clear"]);
   assert.equal(logoutCall.options.stdio, "ignore");
+});
+
+test("Optional Additional Context Is Passed To LogAnalysisBot", async () => {
+  const { calls, runnerRecord } = await runTaskWithMockServiceConnectionAndMockMicrobots({
+    inputs: { additionalContext: "Prefer dependency restore failures as the likely root cause." },
+  });
+
+  const runnerCall = calls.spawnSync.find((call) => (
+    call.args[0] === path.join(taskDir, "log_analyzer_runner.py")
+  ));
+  assert.ok(runnerCall);
+  assert.ok(Array.from(runnerCall.args).includes("--user-prompt"));
+  assert.deepEqual(runnerRecord.run_kwargs, {
+    file_name: path.join(runnerRecord.folder_to_mount, "logs", "build.log"),
+    timeout_in_seconds: 600,
+    max_iterations: 12,
+    user_prompt: "Prefer dependency restore failures as the likely root cause.",
+  });
 });
 
 test("Existing Python Environment Is Reused Only After A Completed Setup", () => {
