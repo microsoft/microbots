@@ -1648,14 +1648,14 @@ class TestCopilotBotIntegration:
 def _byok_openai_available():
     """Check if OpenAI BYOK credentials are configured via env vars."""
     return bool(
-        os.environ.get("OPEN_AI_KEY")
-        and os.environ.get("OPEN_AI_END_POINT")
+        os.environ.get("AZURE_OPENAI_API_KEY")
+        and os.environ.get("AZURE_OPENAI_ENDPOINT")
     )
 
 
 _skip_no_byok_openai = pytest.mark.skipif(
     not _byok_openai_available(),
-    reason="OpenAI BYOK not configured (set OPEN_AI_KEY and OPEN_AI_END_POINT)",
+    reason="OpenAI BYOK not configured (set env variables AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT)",
 )
 
 def _azure_ad_auth_available():
