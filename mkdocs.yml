@@ -80,7 +80,7 @@ nav:
       - CopilotBot: advanced/bots/copilot-bot.md
     - "Authentication Setup": advanced/authentication.md
     - "Azure Managed Identity & Service Connection Setup": advanced/azure-managed-identity-setup.md
-    - Azure Pipelines Log Analyzer: azure-pipelines-log-analyzer.md
+    - "Azure Pipelines Log Analyzer": azure-pipelines-log-analyzer.md
     - Tools:
       - "Custom Tool Integration Walkthrough": advanced/tools/tesseract_ocr_tool_use.md
     - "Technical Writing Guidelines": advanced/technical-writing-guidelines.md

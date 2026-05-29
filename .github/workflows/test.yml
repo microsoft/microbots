@@ -105,6 +105,10 @@ jobs:
         run: |
           pip install "azure-identity>=1.15.0"
 
+      - name: Install Azure Pipelines task dependencies
+        if: matrix.test-type == 'unit'
+        run: npm ci --prefix azure-pipelines/MicrobotsLogAnalyzerTask
+
       - name: Run Azure Pipelines task unit tests
         if: matrix.test-type == 'unit'
         run: npm test --prefix azure-pipelines/MicrobotsLogAnalyzerTask
