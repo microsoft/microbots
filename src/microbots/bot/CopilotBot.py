@@ -515,7 +515,8 @@ class CopilotBot:
             "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1",
             "apt-get install -y -qq nodejs > /dev/null 2>&1",
             # Install copilot-cli globally
-            "npm install -g @github/copilot > /dev/null 2>&1",
+            # NOTE: Pinning to 1.0.39 which is the latest version compatible with the current SDK as of June 2024.
+            "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1",
         ]
 
         for cmd in install_commands:
