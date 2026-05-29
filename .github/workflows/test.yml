@@ -15,7 +15,7 @@ jobs:
       matrix:
         # Installing ollama model in GitHub Actions runner requires significant disk space.
         # It reduces the space available for browser-based tests
-        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other"]
+        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
         include:
           - test-type: "unit"
             pytest-args: "-m 'unit and not ollama_local'"
@@ -27,6 +27,8 @@ jobs:
             pytest-args: "-m 'slow' test/bot/test_browsing_bot.py"
           - test-type: "slow-other"
             pytest-args: "-m 'slow' --ignore=test/bot/test_browsing_bot.py"
+          - test-type: "ghcp"
+            pytest-args: "-m 'ghcp'"
 
 
     steps:
@@ -86,6 +88,11 @@ jobs:
       - name: Install package in development mode
         run: |
           pip install -e .
+
+      - name: Install GitHub Copilot SDK dependencies for GHCP tests
+        if: matrix.test-type == 'ghcp'
+        run: |
+          pip install "github-copilot-sdk==0.3.0"
 
       - name: Build Docker images for integration tests
         if: matrix.test-type != 'unit'
@@ -195,19 +202,19 @@ jobs:
           echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Test Type | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          
+
           # Check each test result file and parse for failures
           for test_type in unit integration ollama_local slow-browser slow-other; do
             if [ -f "test-results-${test_type}.xml" ]; then
               failures=$(grep -oP 'failures="\K[0-9]+' "test-results-${test_type}.xml" | head -1)
               errors=$(grep -oP 'errors="\K[0-9]+' "test-results-${test_type}.xml" | head -1)
-              
+
               if [ "${failures:-0}" -eq 0 ] && [ "${errors:-0}" -eq 0 ]; then
                 status="✅ Passed"
               else
                 status="❌ Failed"
               fi
-              
+
               # Format test type name nicely
               case $test_type in
                 unit) name="Unit Tests" ;;
@@ -216,7 +223,7 @@ jobs:
                 slow-browser) name="Slow Browser Tests" ;;
                 slow-other) name="Slow Other Tests" ;;
               esac
-              
+
               echo "| ${name} | ${status} |" >> $GITHUB_STEP_SUMMARY
             fi
           done

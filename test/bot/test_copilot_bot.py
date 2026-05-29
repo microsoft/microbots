@@ -147,10 +147,6 @@ def _swap_copilot_sdk_layout(*, session_has_handler: bool, types_has_handler: bo
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _copilot_cli_available():
-    return shutil.which("copilot") is not None
-
-
 def _copilot_sdk_installed():
     try:
         from importlib.metadata import version
@@ -1599,13 +1595,8 @@ class TestCopilotBotSDKLayoutIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — require real Docker + copilot-cli + auth
+# Integration tests — require real Docker + copilot-SDK + auth
 # ---------------------------------------------------------------------------
-
-_skip_no_copilot_cli = pytest.mark.skipif(
-    not _copilot_cli_available(),
-    reason="GitHub Copilot CLI not installed (copilot not in PATH)",
-)
 
 _skip_no_copilot_sdk = pytest.mark.skipif(
     not _copilot_sdk_installed(),
@@ -1618,11 +1609,10 @@ _skip_no_copilot_auth = pytest.mark.skipif(
 )
 
 
-@_skip_no_copilot_cli
 @_skip_no_copilot_sdk
-@_skip_no_copilot_auth
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.ghcp
 class TestCopilotBotIntegration:
     """End-to-end integration tests with real Copilot SDK."""
 
@@ -1631,7 +1621,7 @@ class TestCopilotBotIntegration:
         _restore_real_copilot_modules()
         from microbots.bot.CopilotBot import CopilotBot
 
-        issue_text = issue_1[0]
+        issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
         bot = CopilotBot(
@@ -1668,12 +1658,28 @@ _skip_no_byok_openai = pytest.mark.skipif(
     reason="OpenAI BYOK not configured (set OPEN_AI_KEY and OPEN_AI_END_POINT)",
 )
 
+def _azure_ad_auth_available():
+    """Check if Azure AD auth is available via DefaultAzureCredential."""
+    try:
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        # Attempt to get a token to verify credentials are working
+        credential.get_token("https://cognitiveservices.azure.com/.default")
+        return True
+    except Exception:
+        return False
 
-@_skip_no_copilot_cli
+_skip_no_azure_ad_auth = pytest.mark.skipif(
+    not _azure_ad_auth_available(),
+    reason="Azure AD auth not available (set up DefaultAzureCredential)",
+)
+
+
 @_skip_no_copilot_sdk
 @_skip_no_byok_openai
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.ghcp
 class TestCopilotBotBYOKOpenAIIntegration:
     """End-to-end integration tests for CopilotBot with OpenAI BYOK."""
 
@@ -1682,7 +1688,7 @@ class TestCopilotBotBYOKOpenAIIntegration:
         _restore_real_copilot_modules()
         from microbots.bot.CopilotBot import CopilotBot
 
-        issue_text = issue_1[0]
+        issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
         api_key = os.environ["OPEN_AI_KEY"]
@@ -1706,7 +1712,7 @@ class TestCopilotBotBYOKOpenAIIntegration:
             assert bot.github_token is None
 
             result = bot.run(
-                issue_text,
+                issue_text + "\nFix the error and provide only the corrected code.",
                 timeout_in_seconds=300,
             )
             assert result.status is True, f"CopilotBot BYOK run failed: {result.error}"
@@ -1714,6 +1720,7 @@ class TestCopilotBotBYOKOpenAIIntegration:
         finally:
             bot.stop()
 
+    @_skip_no_azure_ad_auth
     def test_byok_openai_simple_task_with_token_provider(self, test_repo, issue_1):
         """CopilotBot can fix a simple syntax error using OpenAI BYOK credentials."""
         _restore_real_copilot_modules()
