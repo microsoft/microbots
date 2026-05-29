@@ -15,8 +15,10 @@ jobs:
       matrix:
         # Installing ollama model in GitHub Actions runner requires significant disk space.
         # It reduces the space available for browser-based tests
-        test-type: ["integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
+        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
         include:
+          - test-type: "unit"
+            pytest-args: "-m 'unit and not ollama_local'"
           - test-type: "integration"
             pytest-args: "-m 'integration and not ollama_local and not slow'"
           - test-type: "ollama_local"
@@ -87,15 +89,6 @@ jobs:
         run: |
           pip install -e .
 
-      - name: Run unit tests
-        run: |
-          python -m pytest -m 'unit and not ollama_local' \
-            -n auto \
-            --dist loadgroup \
-            --reruns 1 \
-            --reruns-delay 5 \
-            -v
-
       - name: Install GitHub Copilot SDK dependencies for GHCP tests
         if: matrix.test-type == 'ghcp'
         run: |
@@ -152,13 +145,13 @@ jobs:
           #Local Model Configuration
           LOCAL_MODEL_NAME: "qwen2.5-coder:latest"
           LOCAL_MODEL_PORT: 11434
-          # CopilotBot Configuration
-          COPILOT_BYOK_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          COPILOT_BYOK_BASE_URL: ${{ vars.OPENAI_ENDPOINT }}
-          COPILOT_BYOK_PROVIDER_TYPE: "azure"
-          COPILOT_BYOK_MODEL: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
-          COPILOT_BYOK_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
-          COPILOT_BYOK_WIRE_API: "openai"
+          # CopilotBot Configuration (only populated for ghcp tests)
+          COPILOT_BYOK_API_KEY: ${{ matrix.test-type == 'ghcp' && secrets.AZURE_OPENAI_API_KEY || '' }}
+          COPILOT_BYOK_BASE_URL: ${{ matrix.test-type == 'ghcp' && vars.OPENAI_ENDPOINT || '' }}
+          COPILOT_BYOK_PROVIDER_TYPE: ${{ matrix.test-type == 'ghcp' && 'azure' || '' }}
+          COPILOT_BYOK_MODEL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_DEPLOYMENT_NAME || '' }}
+          COPILOT_BYOK_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
+          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'openai' || '' }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \
@@ -218,7 +211,7 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
 
           # Check each test result file and parse for failures
-          for test_type in integration ollama_local slow-browser slow-other ghcp; do
+          for test_type in unit integration ollama_local slow-browser slow-other ghcp; do
             if [ -f "test-results-${test_type}.xml" ]; then
               failures=$(grep -oP 'failures="\K[0-9]+' "test-results-${test_type}.xml" | head -1)
               errors=$(grep -oP 'errors="\K[0-9]+' "test-results-${test_type}.xml" | head -1)
