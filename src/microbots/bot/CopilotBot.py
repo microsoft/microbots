@@ -557,7 +557,7 @@ class CopilotBot:
         # Start copilot in headless mode in the background
         # Using nohup + & to run it as a background process inside the container's shell
         start_cmd = (
-            f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} --host 0.0.0.0"
+            f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} --host 0.0.0.0 "
             f"> /var/log/copilot-cli.log 2>&1 &"
         )
         result = self.environment.execute(start_cmd)
