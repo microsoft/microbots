@@ -152,6 +152,8 @@ jobs:
           COPILOT_BYOK_MODEL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_DEPLOYMENT_NAME || '' }}
           COPILOT_BYOK_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
           COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'openai' || '' }}
+          # Passing BYOK as arguement. Test: TestCopilotBotBYOKOpenAIIntegration::test_byok_openai_simple_task
+          OPENAI_ENDPOINT: ${{ matrix.test-type == 'ghcp' && vars.OPENAI_ENDPOINT || '' }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \
