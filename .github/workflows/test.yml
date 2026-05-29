@@ -146,11 +146,12 @@ jobs:
           LOCAL_MODEL_NAME: "qwen2.5-coder:latest"
           LOCAL_MODEL_PORT: 11434
           # CopilotBot Configuration
-          _BYOK_ENV_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          _BYOK_ENV_BASE_URL: ${{ vars.OPENAI_ENDPOINT }}
-          _BYOK_ENV_PROVIDER_TYPE: "azure"
-          _BYOK_ENV_MODEL: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
-          _BYOK_ENV_AZURE_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+          COPILOT_BYOK_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          COPILOT_BYOK_BASE_URL: ${{ vars.OPENAI_ENDPOINT }}
+          COPILOT_BYOK_PROVIDER_TYPE: "azure"
+          COPILOT_BYOK_MODEL: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
+          COPILOT_BYOK_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+          COPILOT_BYOK_WIRE_API: "openai"
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \

@@ -1692,7 +1692,7 @@ class TestCopilotBotBYOKOpenAIIntegration:
         verify_function = issue_1[1]
 
         api_key = os.environ["AZURE_OPENAI_API_KEY"]
-        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
+        base_url = os.environ["OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
         )
