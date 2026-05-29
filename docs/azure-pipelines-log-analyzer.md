@@ -18,7 +18,7 @@ Install the published Marketplace extension into the Azure DevOps organization t
 2. Select **Get it free**.
 3. Choose the Azure DevOps organization where your pipelines run.
 4. Confirm the extension appears in the organization extension page:
-   `https://dev.azure.com/<organization>/_settings/extensions`. If it appears under the `Shared` section you need to install it to you org (requires Azure DevOps Org Admin Access)
+   `https://dev.azure.com/<organization>/_settings/extensions`. If it appears under the `Shared` section you need to install it to your org (requires Azure DevOps Org Admin Access)
 
 ## Use It In A Pipeline
 
