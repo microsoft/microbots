@@ -148,7 +148,7 @@ jobs:
           # CopilotBot Configuration
           _BYOK_ENV_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           _BYOK_ENV_BASE_URL: ${{ vars.OPENAI_ENDPOINT }}
-          _BYOK_ENV_PROVIDER_TYPE: "azure-openai"
+          _BYOK_ENV_PROVIDER_TYPE: "azure"
           _BYOK_ENV_MODEL: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
