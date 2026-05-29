@@ -1691,8 +1691,8 @@ class TestCopilotBotBYOKOpenAIIntegration:
         issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
-        api_key = os.environ["OPEN_AI_KEY"]
-        base_url = os.environ["OPEN_AI_END_POINT"]
+        api_key = os.environ["AZURE_OPENAI_API_KEY"]
+        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
         )
@@ -1729,8 +1729,8 @@ class TestCopilotBotBYOKOpenAIIntegration:
         issue_text = issue_1[0]
         verify_function = issue_1[1]
 
-        api_key = os.environ["OPEN_AI_KEY"]
-        base_url = os.environ["OPEN_AI_END_POINT"]
+        api_key = os.environ["AZURE_OPENAI_API_KEY"]
+        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
         )
