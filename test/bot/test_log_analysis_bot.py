@@ -109,7 +109,7 @@ class TestLogAnalysisBotUnit:
 
         task_prompt = run_mock.call_args.kwargs["task"]
         assert "Analyze the log file" in task_prompt
-        assert "Additional user context" in task_prompt
+        assert "Additional user-provided context" in task_prompt
         assert "Prefer package restore failures as the primary suspect." in task_prompt
         assert bot.system_prompt == original_system_prompt
         assert "Prefer package restore failures as the primary suspect." not in bot.system_prompt
