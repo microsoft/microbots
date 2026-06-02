@@ -49,6 +49,7 @@ Project layout:
 microbots-introduction/
 ├── .venv
 ├── .env
+├── log_analysis_bot.py
 └── code/
     ├── app.c
     └── build.log
