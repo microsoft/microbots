@@ -14,7 +14,7 @@ Install
 Microbots requires **Python 3.10 or later, but below 3.13**.
 
 !!! info
-    Python 3.13 compatibility issue is in progress — this page will be updated once it lands.
+    Python 3.13 compatibility issue fix is in progress — we will update the page once we fix the issue.
 
 Pick your OS:
 
