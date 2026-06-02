@@ -1,11 +1,15 @@
 # Create Your First Microbot Project
 
-Create a sample C project with a deliberate compile error.
-Generate a build log. Run a `LogAnalysisBot` against it.
+In this short walkthrough, you'll build your first Microbot end-to-end. You'll:
 
-**Requires:** `gcc` (preinstalled on most Linux distributions, or `sudo apt install build-essential`).
+1. Create a tiny C program with a deliberate bug.
+2. Compile it and capture the build error in a log file.
+3. Run a `LogAnalysisBot` that reads the log and explains the root cause for you.
 
-The sample C project files and `LogAnalysisBot` script used in this guide are available in the Microbots examples directory at `examples/microbots_introduction/`. Clone or download the Microbots repository and use those files to follow along.
+By the end, you'll have a working Microbot script you can adapt to your own logs.
+
+!!! note "Before you begin"
+    You'll need `gcc` to compile the sample C file. It's preinstalled on most Linux distributions — if not, run `sudo apt install build-essential`.
 
 ## Step 1 — Create the Sample Project
 
@@ -15,15 +19,17 @@ From the root of your `microbots-introduction` project, create a `code/` folder:
 mkdir code
 ```
 
-Add a C file with a deliberate syntax error:
+Next, add a small C file with a deliberate syntax error — this is what we'll ask the bot to analyze:
 
 ```c title="code/app.c" linenums="1"
 --8<-- "docs/examples/microbots_introduction/code/app.c"
 ```
 
-Line 5 is missing the trailing `;` after `return a + b`, so `gcc` will fail.
+Notice line 5: it's missing the trailing `;` after `return a + b`. That's the bug — `gcc` will refuse to compile it, and we'll capture that error in the next step.
 
 ## Step 2 — Generate the Build Log
+
+Now let's compile the file and redirect both standard output and standard error into a log file the bot can read:
 
 ```bash title="Terminal"
 cd code
@@ -31,7 +37,7 @@ gcc app.c > build.log 2>&1
 cd ..
 ```
 
-`code/build.log` should contain:
+The compilation will fail (as expected), and `code/build.log` will contain the compiler's complaint:
 
 ```log title="code/build.log" linenums="1"
 app.c: In function ‘add’:
@@ -43,7 +49,7 @@ app.c:5:17: error: expected ‘;’ before ‘}’ token
       | ~ 
 ```
 
-Project layout:
+Once you complete the next step, your project layout will look like this:
 
 ```text title="Project layout"
 microbots-introduction/
@@ -57,13 +63,13 @@ microbots-introduction/
 
 ## Step 3 — Write the Bot Script
 
-Create `log_analysis_bot.py` at the project root:
+Time to wire up the bot. Create `log_analysis_bot.py` at the project root:
 
 ```python title="log_analysis_bot.py" linenums="1"
 --8<-- "docs/examples/microbots_introduction/log_analysis_bot.py"
 ```
 
-The script imports [`LogAnalysisBot`](../../api-reference/microbots/bot/LogAnalysisBot.md), instantiates it, and invokes its `run()` method on the build log.
+This short script does three things: it imports [`LogAnalysisBot`](../../api-reference/microbots/bot/LogAnalysisBot.md), creates an instance of it, and invokes its `run()` method on the build log. Let's walk through each piece.
 
 #### Constructing the bot
 
@@ -74,10 +80,10 @@ my_bot = LogAnalysisBot(
 )
 ```
 
-[`LogAnalysisBot(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md) takes the following arguments:
+Here, [`LogAnalysisBot(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md) takes two arguments:
 
-- **`model`** — the LLM powering the bot, in `<provider>/<deployment-or-model-name>` format. For other providers, see the [Authentication Setup](../../advanced/authentication.md) guide.
-- **`folder_to_mount`** — host folder the bot can access inside its Docker sandbox. Mounted **read-only** at `/workdir/<folder-name>/`.
+- **`model`** — the LLM that powers the bot, in `<provider>/<deployment-or-model-name>` format. Using a different provider? See the [Authentication Setup](../../advanced/authentication.md) guide.
+- **`folder_to_mount`** — the host folder the bot can access from inside its Docker sandbox. It's mounted **read-only** at `/workdir/<folder-name>/`, so the bot can inspect your source code but can't change it.
 
 #### Running the bot
 
@@ -88,10 +94,10 @@ result = my_bot.run(
 )
 ```
 
-[`my_bot.run(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md) takes the following arguments:
+[`my_bot.run(...)`](../../api-reference/microbots/bot/LogAnalysisBot.md) takes two arguments:
 
-- **`file_name`** — path to the log file to analyze. The file is copied into the container at `/var/log/` for the bot to inspect.
-- **`timeout_in_seconds`** — maximum time the bot may run before being terminated. `600` allows up to 10 minutes.
+- **`file_name`** — path to the log file you want analyzed. The file is copied into the container at `/var/log/` so the bot can read it.
+- **`timeout_in_seconds`** — a safety net: the maximum time the bot is allowed to run before being terminated. `600` gives it up to 10 minutes.
 
 #### Reading the result
 
@@ -99,23 +105,23 @@ result = my_bot.run(
 print(result.result)
 ```
 
-The `my_bot.run()` method returns a [`BotRunResult`](../../api-reference/microbots/MicroBot.md#microbots.MicroBot.BotRunResult) object with the following fields:
+`my_bot.run()` returns a [`BotRunResult`](../../api-reference/microbots/MicroBot.md#microbots.MicroBot.BotRunResult) object with three fields:
 
 - **`status`** (`bool`) — `True` if the bot completed its task successfully, `False` otherwise.
-- **`result`** (`str | None`) — the bot's final output (root-cause analysis here). `None` when the run fails before producing a result.
+- **`result`** (`str | None`) — the bot's final output (the root-cause analysis, in our case). `None` if the run fails before producing a result.
 - **`error`** (`str | None`) — error details when `status` is `False`; `None` on success.
 
-In this example, `print(result.result)` prints the root-cause analysis returned by the bot.
+So `print(result.result)` simply prints the root-cause analysis the bot came up with.
 
 ## Step 4 — Run the Bot
 
-From the project root, with your virtual environment activated:
+You're all set. From the project root, with your virtual environment activated, run:
 
 ```bash title="Terminal"
 python3 log_analysis_bot.py
 ```
 
-`print(result.result)` outputs the root-cause analysis:
+Give it a few seconds — the bot spins up its sandbox, inspects the log and the source, and then prints its analysis. You should see something like this:
 
 ```text title="Output"
 Root cause identified: The build failed due to a syntax error in 
@@ -125,6 +131,6 @@ This matches the compiler error in /var/log/build.log: "error:
 expected ';' before '}' token". Fix by adding a semicolon: `return a + b;`.
 ```
 
-In this walkthrough, we created buggy code and successfully analyzed it with Microbots. Based on the analysis output, `LogAnalysisBot` correctly identified the bug in the code and explained the fix as well.
+And that's it — you've just run your first Microbot. With only a handful of lines of code, `LogAnalysisBot` pinpointed the bug in our C file and even suggested the fix.
 
-Please read the next article to understand what happens behind the scenes and how to debug Microbots code with logs. Continue with [Microbots Execution Flow](../microbots-execution-flow.md).
+Curious about what happened under the hood? The next article walks through the execution flow and shows you how to use logs to debug your own Microbots. Continue with [Microbots Execution Flow](../microbots-execution-flow.md).
