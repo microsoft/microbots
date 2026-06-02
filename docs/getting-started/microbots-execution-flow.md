@@ -1,6 +1,6 @@
 # Microbots Execution Flow
 
-You ran your first Microbots example — a `LogAnalysisBot` against a sample C application with a deliberate error — and got a root-cause analysis without ever modifying your host filesystem.
+You ran your first Microbots example — a [`LogAnalysisBot`](../api-reference/microbots/bot/LogAnalysisBot.md) against a sample C application with a deliberate error — and got a root-cause analysis without ever modifying your host filesystem.
 
 ## What Just Happened
 
@@ -8,9 +8,9 @@ When you ran `python3 log_analysis_bot.py`, Microbots quietly orchestrated a san
 
 ![Microbots execution flow](assets/microbots-execution-flow.svg){ loading=lazy }
 
-- **SETUP** *(top row)* — your script calls `LogAnalysisBot.run()`, which provisions a Docker container with your `code/` directory mounted read-only via OverlayFS, and sends your task plus a system prompt down to the LLM.
+- **SETUP** *(top row)* — your script calls [`LogAnalysisBot.run()`](../api-reference/microbots/bot/LogAnalysisBot.md), which provisions a Docker container with your `code/` directory mounted read-only via OverlayFS, and sends your task plus a system prompt down to the LLM.
 - **LOOP** *(middle row)* — the LLM and `Container exec` exchange messages back and forth: each turn the LLM picks a shell command, the container runs it, and the output is fed back. The loop exits when the model signals `task_done = true`, and is bounded by your timeout.
-- **RESULT** *(bottom row)* — the container is torn down (overlay unmounted, working directory removed), the model's analysis is wrapped in a `BotRunResult`, and `print(result.result)` produces the output you saw in your terminal.
+- **RESULT** *(bottom row)* — the container is torn down (overlay unmounted, working directory removed), the model's analysis is wrapped in a [`BotRunResult`](../api-reference/microbots/MicroBot.md#microbots.MicroBot.BotRunResult), and `print(result.result)` produces the output you saw in your terminal.
 
 Each phase is explained in detail below, with a focused diagram for the parts that need one.
 
@@ -28,8 +28,8 @@ The diagram has two halves. The **left half** shows how your code is sandboxed; 
 
 **Right — the first request to the LLM:**
 
-- **Your task** *(top box)* — the natural-language instruction you passed to `.run(...)`.
-- **System prompt** *(bottom box)* — the `LogAnalysisBot` role definition that only exposes read-only tools and enforces guardrails.
+- **Your task** *(top box)* — the natural-language instruction you passed to [`.run(...)`](../api-reference/microbots/bot/LogAnalysisBot.md).
+- **System prompt** *(bottom box)* — the [`LogAnalysisBot`](../api-reference/microbots/bot/LogAnalysisBot.md) role definition that only exposes read-only tools and enforces guardrails.
 - Both are **packaged together** and sent to your **configured LLM provider** as the very first message.
 
 ### LOOP — the agentic tool-use cycle
