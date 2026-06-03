@@ -1,0 +1,1 @@
+# auto_memory — iterative agent loop with memory feedback
