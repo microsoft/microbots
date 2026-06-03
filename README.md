@@ -1,97 +1,80 @@
 # 🤖 Microbots
 
-MicroBots is a lightweight, extensible AI agent for code comprehension and controlled file edits. It integrates cleanly
-into automation pipelines, mounting a target directory with explicit read-only or read/write modes so LLMs can safely
-inspect, refactor, or generate files with least‑privilege access.
+MicroBots is a lightweight, extensible AI agent for code comprehension and controlled file edits. It integrates cleanly into automation pipelines, mounting a target directory with explicit read-only or read/write modes so LLMs can safely inspect, refactor, or generate files with least-privilege access.
 
-
-```py
-from microbots import WritingBot
-
-myWritingBot = WritingBot(
-    model="azure-openai/my-gpt5", # model format : <provider/deployment_model_name>
-    folder_to_mount=str("myReactApp"),
-)
-
-data = myWritingBot.run("""when doing npm run build, I get an error.
-Fix the error and make sure the build is successful.""", timeout_in_seconds=600)
-print(data.results)
-```
-
-## 🚀 How to install
+## 🚀 Quick Start
 
 ### Pre-requisites
 
 - Docker
 - AI LLM Provider and API Key
 
-### Install Microbots
+### Install
 
 ```bash
 pip install microbots
 ```
 
+### Example
 
-## ✨LLM Support
-
-Azure OpenAI Models - Add the below environment variables in a `.env` file in the root of your application
-
-```env
-AZURE_OPENAI_ENDPOINT=XXXXXXXXXXXXXXXXXXXXXXXXXX
-AZURE_OPENAI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-AZURE_OPENAI_API_VERSION=2025-03-01-preview
-```
-
-## 🤖 Bots & Usage Examples
-
-Pre-requisite for the below example code of Bots:
-From the root of your application, Create a folder called  `code` inside which clone the repo `https://github.com/swe-agent/test-repo/`. Now run the code
-
-
-### 📖 ReadingBot
-
-
-```py
-from microbots import ReadingBot
-
-myBot = ReadingBot(
-    model="azure-openai/my-gpt5",
-    folder_to_mount="code"
-)
-
-runResult = myBot.run("When I am running missing_colon.py I am getting SyntaxError: invalid syntax. Find the error and explain me what is the error", timeout_in_seconds=600)
-print(runResult)
-
-```
-
-The `ReadingBot` will read the files inside `code` folder and will extract information based on specific instructions given to the bot.
-
-
-### ✍️ WritingBot
-
-Pre-requisite for the example code:
-From the root the application, Create a folder called  `code` inside which clone the repo `https://github.com/swe-agent/test-repo/`. Now run the code
-
-```py
+```python
 from microbots import WritingBot
 
-myBot = WritingBot(
+myWritingBot = WritingBot(
     model="azure-openai/my-gpt5",
-    folder_to_mount="code"
+    folder_to_mount=str("myReactApp"),
 )
 
-myBot.run("When I am running missing_colon.py I am getting SyntaxError: invalid syntax. Fix the error and make sure the code runs without any errors.", timeout_in_seconds=600)
+data = myWritingBot.run(
+    "Fix the build error and make sure the build is successful.",
+    timeout_in_seconds=600,
+)
+print(data.results)
 ```
 
-The `WritingBot` will read and write the files inside `code` folder based on specific instructions given to the bot.
+## 🤖 Available Bots
+
+| Bot                | Description                                                            |
+| ------------------ | ---------------------------------------------------------------------- |
+| **ReadingBot**     | Reads files and extracts information based on instructions (read-only) |
+| **WritingBot**     | Reads and writes files based on instructions (read/write)              |
+| **BrowsingBot**    | Browses the web to gather information                                  |
+| **LogAnalysisBot** | Analyzes logs for debugging                                            |
+| **AgentBoss**      | Orchestrates multiple bots for complex tasks                           |
 
 ## ⚙️ How it works
 
+![Overall Architecture](https://raw.githubusercontent.com/microsoft/microbots/main/docs/images/overall_architecture.png)
 
-![Overall Architecture Image](./docs/images/overall_architecture.png)
+MicroBots creates a containerized environment and mounts the specified directory, restricting permissions to read-only or read/write based on the Bot used. This ensures AI agents operate within defined boundaries, enhancing security and control over code modifications while protecting the local environment.
 
-The MicroBots create a containerized environment and mount the specified directory with restricting the permissions to read-only or read/write based on Bot used. It ensures that the AI agents operate within defined boundaries which enhances security and control over code modifications as well as protecting the local environment.
+## ✨ LLM Support
 
-#Legal Notice
+Microbots supports multiple LLM providers — pick whichever fits your stack:
 
-Trademarks This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies.
+| Provider string | Description                                                |
+| --------------- | ---------------------------------------------------------- |
+| `openai`        | OpenAI or Azure OpenAI via the OpenAI SDK (API key)        |
+| `azure-openai`  | Azure OpenAI via the Azure SDK (API key or Azure AD token) |
+| `anthropic`     | Anthropic models, direct or via Azure AI Foundry           |
+| `ollama-local`  | Local models via [Ollama](https://ollama.com/)             |
+
+Each provider has its own set of environment variables (endpoint, API key, deployment name, etc.). See the [Authentication guide](https://microsoft.github.io/microbots/advanced/authentication/) for the exact `.env` variables required for each provider and for Azure AD / managed identity setup.
+
+## 📚 Links
+
+- [GitHub Repository](https://github.com/microsoft/microbots)
+- [Contributing Guide](https://github.com/microsoft/microbots/blob/main/CONTRIBUTING.md)
+- [Code of Conduct](https://github.com/microsoft/microbots/blob/main/CODE_OF_CONDUCT.md)
+
+---
+
+## 🎯 Getting Started
+
+Ready to build your first Microbot project? Follow the step-by-step onboarding guide:
+
+➡️ **[Get Started with Microbots](https://microsoft.github.io/microbots/getting-started/prerequisites/)**
+
+## Legal Notice
+
+Trademarks: this project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft's Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.

@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 980" role="img" aria-label="Microbots execution flow diagram" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    /* Light mode (default) */
+    .ink      { fill: #1F2937; }
+    .ink-soft { fill: #4B5563; }
+    .stroke-soft { stroke: #6B7280; }
+
+    .title    { font-size: 26px; font-weight: 700; }
+    .sub      { font-size: 17px; }
+    .icon     { font-size: 36px; }
+    .edge-label { font-size: 18px; font-weight: 600; }
+    .phase-label { font-size: 24px; font-weight: 700; letter-spacing: 3px; fill: #9CA3AF; }
+
+    .box-script { fill: #F59E0B; fill-opacity: 0.18; stroke: #F59E0B; stroke-width: 2; }
+    .box-bot    { fill: #2563EB; fill-opacity: 0.18; stroke: #2563EB; stroke-width: 2; }
+    .box-docker { fill: #0EA5E9; fill-opacity: 0.18; stroke: #0EA5E9; stroke-width: 2; }
+    .box-llm    { fill: #7C3AED; fill-opacity: 0.18; stroke: #7C3AED; stroke-width: 2; }
+    .box-exec   { fill: #16A34A; fill-opacity: 0.18; stroke: #16A34A; stroke-width: 2; }
+    .box-tear   { fill: #64748B; fill-opacity: 0.18; stroke: #64748B; stroke-width: 2; }
+    .box-result { fill: #E11D48; fill-opacity: 0.18; stroke: #E11D48; stroke-width: 2; }
+    .box-print  { fill: #6B7280; fill-opacity: 0.18; stroke: #6B7280; stroke-width: 2; }
+
+    .label-bg { fill: #FFFFFF; fill-opacity: 0.85; stroke: #9CA3AF; stroke-width: 1.2; }
+
+    .edge { stroke: #6B7280; stroke-width: 4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+    @media (prefers-color-scheme: dark) {
+      .ink      { fill: #F3F4F6; }
+      .ink-soft { fill: #D1D5DB; }
+      .stroke-soft { stroke: #9CA3AF; }
+      .edge        { stroke: #9CA3AF; }
+      .phase-label { fill: #9CA3AF; }
+      .label-bg    { fill: #111827; fill-opacity: 0.85; stroke: #9CA3AF; }
+      .box-script, .box-bot, .box-docker, .box-llm,
+      .box-exec, .box-tear, .box-result, .box-print { fill-opacity: 0.28; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M0,1 L11,6 L0,11 L2,6 z" fill="context-stroke"/>
+    </marker>
+  </defs>
+
+  <!-- Phase labels on the left rail -->
+  <text x="40" y="155" class="phase-label">SETUP</text>
+  <text x="40" y="495" class="phase-label">LOOP</text>
+  <text x="40" y="835" class="phase-label">RESULT</text>
+
+  <!-- ============== Row 1 : SETUP (y 70-220) ============== -->
+  <!-- A: Your Script -->
+  <rect x="380" y="70" width="300" height="150" rx="16" class="box-script"/>
+  <text x="530" y="115" text-anchor="middle" class="ink icon">🐍</text>
+  <text x="530" y="158" text-anchor="middle" class="ink title">Your Script</text>
+  <text x="530" y="188" text-anchor="middle" class="ink-soft sub">log_analysis_bot.py</text>
+
+  <!-- B: LogAnalysisBot.run() -->
+  <rect x="780" y="70" width="300" height="150" rx="16" class="box-bot"/>
+  <text x="930" y="115" text-anchor="middle" class="ink icon">🤖</text>
+  <text x="930" y="158" text-anchor="middle" class="ink title">LogAnalysisBot.run()</text>
+  <text x="930" y="188" text-anchor="middle" class="ink-soft sub">task • timeout</text>
+
+  <!-- C: Docker Container -->
+  <rect x="1180" y="70" width="300" height="150" rx="16" class="box-docker"/>
+  <text x="1330" y="115" text-anchor="middle" class="ink icon">🐳</text>
+  <text x="1330" y="158" text-anchor="middle" class="ink title">Docker Container</text>
+  <text x="1330" y="188" text-anchor="middle" class="ink-soft sub">code/ read-only • OverlayFS</text>
+
+  <!-- ============== Row 2 : LOOP (y 410-560) ============== -->
+  <!-- D: LLM -->
+  <rect x="530" y="410" width="300" height="150" rx="16" class="box-llm"/>
+  <text x="680" y="455" text-anchor="middle" class="ink icon">🧠</text>
+  <text x="680" y="498" text-anchor="middle" class="ink title">LLM</text>
+  <text x="680" y="528" text-anchor="middle" class="ink-soft sub">decides next tool call</text>
+
+  <!-- E: Container exec -->
+  <rect x="1030" y="410" width="300" height="150" rx="16" class="box-exec"/>
+  <text x="1180" y="455" text-anchor="middle" class="ink icon">📦</text>
+  <text x="1180" y="498" text-anchor="middle" class="ink title">Container exec</text>
+  <text x="1180" y="528" text-anchor="middle" class="ink-soft sub">ls • cat • nl • …</text>
+
+  <!-- ============== Row 3 : RESULT (y 750-900) ============== -->
+  <!-- F: Container Teardown -->
+  <rect x="380" y="750" width="300" height="150" rx="16" class="box-tear"/>
+  <text x="530" y="795" text-anchor="middle" class="ink icon">🧹</text>
+  <text x="530" y="838" text-anchor="middle" class="ink title">Container Teardown</text>
+  <text x="530" y="868" text-anchor="middle" class="ink-soft sub">unmount • remove</text>
+
+  <!-- G: BotRunResult -->
+  <rect x="780" y="750" width="300" height="150" rx="16" class="box-result"/>
+  <text x="930" y="795" text-anchor="middle" class="ink icon">📊</text>
+  <text x="930" y="838" text-anchor="middle" class="ink title">BotRunResult</text>
+  <text x="930" y="868" text-anchor="middle" class="ink-soft sub">root-cause analysis</text>
+
+  <!-- H: print -->
+  <rect x="1180" y="750" width="300" height="150" rx="16" class="box-print"/>
+  <text x="1330" y="795" text-anchor="middle" class="ink icon">🖨️</text>
+  <text x="1330" y="838" text-anchor="middle" class="ink title">print(result.result)</text>
+  <text x="1330" y="868" text-anchor="middle" class="ink-soft sub">your terminal</text>
+
+  <!-- ============== Arrows ============== -->
+  <!-- Row 1 horizontal -->
+  <line x1="684" y1="145" x2="774"  y2="145" class="edge" marker-end="url(#arrow)"/>
+  <line x1="1084" y1="145" x2="1174" y2="145" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- C → D : drop then sweep left -->
+  <path d="M1330,224 L1330,320 L680,320 L680,404" class="edge" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="860" y="300" width="300" height="36" rx="10" class="label-bg"/>
+    <text x="1010" y="324" text-anchor="middle" class="ink edge-label">task + system prompt</text>
+  </g>
+
+  <!-- D ⇄ E loop -->
+  <path d="M836,462 L1024,462" class="edge" marker-end="url(#arrow)"/>
+  <path d="M1024,508 L836,508" class="edge" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="810" y="600" width="260" height="38" rx="10" class="label-bg"/>
+    <text x="940" y="625" text-anchor="middle" class="ink edge-label">⚡ tool-use loop</text>
+  </g>
+  <g>
+    <rect x="800" y="644" width="280" height="34" rx="10" class="label-bg"/>
+    <text x="940" y="668" text-anchor="middle" class="ink edge-label" font-size="16">bounded by timeout</text>
+  </g>
+
+  <!-- D → F : straight vertical drop -->
+  <line x1="530" y1="560" x2="530" y2="744" class="edge" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="390" y="636" width="280" height="38" rx="10" class="label-bg"/>
+    <text x="530" y="661" text-anchor="middle" class="ink edge-label">task_done = true</text>
+  </g>
+
+  <!-- Row 3 horizontal -->
+  <line x1="684" y1="825" x2="774" y2="825" class="edge" marker-end="url(#arrow)"/>
+  <line x1="1084" y1="825" x2="1174" y2="825" class="edge" marker-end="url(#arrow)"/>
+</svg>

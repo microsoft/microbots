@@ -259,5 +259,5 @@ One identity, one service connection, many Microbots pipelines.
 ## Next Steps
 
 - **Conceptual background** → [Understanding RBAC & Authentication](../blog/rbac-authentication.md)
-- **All authentication options** → [Authentication Setup](../authentication.md)
+- **All authentication options** → [Authentication Setup](authentication.md)
 - **Why secret-less matters** → [Microbots: Safety First Agentic Workflow](../blog/microbots-safety-first-ai-agent.md)

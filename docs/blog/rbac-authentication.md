@@ -2,7 +2,7 @@
 
 Microbots supports both API Key and Azure AD authentication for LLM providers. This guide breaks down how each method works, what Azure RBAC is, and which one to use for your setup.
 
-For setup instructions, see the [Authentication setup guide](../authentication.md).
+For setup instructions, see the [Authentication setup guide](../advanced/authentication.md).
 
 ---
 
@@ -166,6 +166,6 @@ az role assignment create \
 
 ## Next Steps
 
-- **Set up API Key auth** → [Authentication Guide: API Key](../authentication.md#1-api-key-authentication-default)
-- **Set up Azure AD auth** → [Authentication Guide: Azure AD](../authentication.md#2-azure-ad-token-authentication)
+- **Set up API Key auth** → [Authentication Guide: API Key](../advanced/authentication.md#1-api-key-authentication-default)
+- **Set up Azure AD auth** → [Authentication Guide: Azure AD](../advanced/authentication.md#2-azure-ad-token-authentication)
 - **Understand the safety model** → [Safety-First Agentic Workflow](../blog/microbots-safety-first-ai-agent.md)

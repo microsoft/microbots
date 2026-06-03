@@ -169,3 +169,59 @@
 .doc.doc-heading code {
   cursor: pointer;
 }
+
+/* Navigation cards for Previous / Next / Prerequisite links */
+.nav-cards {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0;
+}
+
+.nav-card {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  background: var(--md-code-bg-color);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.nav-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  border-color: var(--md-accent-fg-color, #526cfe);
+  text-decoration: none;
+  color: inherit;
+}
+
+.nav-card-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.3rem;
+}
+
+.nav-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--md-accent-fg-color, #526cfe);
+}
+
+.nav-card--prev {
+  text-align: left;
+}
+
+.nav-card--next {
+  text-align: right;
+}
+
+.nav-card--prereq {
+  border-left: 3px solid var(--md-accent-fg-color, #526cfe);
+}

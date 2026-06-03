@@ -59,7 +59,7 @@ uninstall_commands:
 No Python code. No changes to MicroBot. Tools can be `internal` (runs inside the Docker sandbox) or `external` (runs on the host — useful for sub-agents or host-side logic).
 
 > **Want to build one end-to-end?**
-> Walk through [Custom Tool Integration: Tesseract OCR](../blog/guides/tesseract_ocr_tool_use.md) — it builds a production-ready OCR tool from scratch and uses it to extract form fields from scanned documents.
+> Walk through [Custom Tool Integration: Tesseract OCR](../advanced/tools/tesseract_ocr_tool_use.md) — it builds a production-ready OCR tool from scratch and uses it to extract form fields from scanned documents.
 
 ---
 

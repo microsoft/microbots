@@ -51,25 +51,40 @@ markdown_extensions:
       permalink: true
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
-  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets:
+      base_path: ['.', 'docs']
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
   - admonition
+  - pymdownx.details
   - tables
   - attr_list
+  - md_in_html
 
 nav:
+  - Introduction: index.md
   - Getting Started:
-    - Home: index.md
-  - Guides:
-    - CopilotBot: copilot-bot.md
-    - "Authentication Setup": authentication.md
-    - "Azure Managed Identity & Service Connection Setup": guides/azure-managed-identity-setup.md
+    - "Pre-requisites": getting-started/prerequisites.md
+    - "Project Setup and Microbots Installation": getting-started/project-setup-and-installation.md
+    - "Create Your First Microbot Project": getting-started/create-your-first-microbot-project/index.md
+    - "Microbots Execution Flow": getting-started/microbots-execution-flow.md
+    - "Configure Logging in Microbots": getting-started/microbots-logging.md
+  - Advanced:
+    - Bots:
+      - CopilotBot: advanced/bots/copilot-bot.md
+    - "Authentication Setup": advanced/authentication.md
+    - "Azure Managed Identity & Service Connection Setup": advanced/azure-managed-identity-setup.md
     - Tools:
-      - "Custom Tool Integration Walkthrough": blog/guides/tesseract_ocr_tool_use.md
-  - Blogs:
-    - blog/index.md
+      - "Custom Tool Integration Walkthrough": advanced/tools/tesseract_ocr_tool_use.md
+    - "Technical Writing Guidelines": advanced/technical-writing-guidelines.md
+  - Blog:
+    - "Blog Posts": blog/index.md
     - "Microbots : Safety First Agentic Workflow": blog/microbots-safety-first-ai-agent.md
     - "Microbots : Customizability at Every Layer": blog/microbots-customizability.md
     - "Understanding RBAC & Authentication": blog/rbac-authentication.md
