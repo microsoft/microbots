@@ -116,7 +116,7 @@ class TestLogAnalysisBot:
         model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
         log_analysis_bot = LogAnalysisBot(
             model=model,
-            folder_to_mount=str(test_repo),
+            folder_to_mount=str(test_repo)
         )
 
         yield log_analysis_bot

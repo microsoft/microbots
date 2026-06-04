@@ -26,7 +26,7 @@ def test_reading_bot(test_repo, issue_1):
     model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
     readingBot = ReadingBot(
         model=model,
-        folder_to_mount=str(test_repo),
+        folder_to_mount=str(test_repo)
     )
 
     response: BotRunResult = readingBot.run(
