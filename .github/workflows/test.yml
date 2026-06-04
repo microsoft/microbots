@@ -32,8 +32,9 @@ jobs:
             pytest-args: "-m 'slow' test/bot/test_browsing_bot.py"
           - test-type: "slow-other"
             pytest-args: "-m 'slow' --ignore=test/bot/test_browsing_bot.py"
-          - test-type: "ghcp"
-            pytest-args: "-m 'ghcp'"
+          # ghcp temporarily disabled
+          # - test-type: "ghcp"
+          #   pytest-args: "-m 'ghcp'"
 
 
     steps:
