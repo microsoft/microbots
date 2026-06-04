@@ -17,6 +17,7 @@ sys.path.insert(
 import logging
 logging.basicConfig(level=logging.INFO)
 
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from microbots import ReadingBot, BotRunResult
 
 @pytest.mark.integration
@@ -24,9 +25,13 @@ from microbots import ReadingBot, BotRunResult
 def test_reading_bot(test_repo, issue_1):
     issue_text = issue_1[0] + "\n\nPlease suggest a fix for this issue. When you suggest a fix, you must set the `task_done` field to true and set `thoughts` field with fix suggestion."
     model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+    )
     readingBot = ReadingBot(
         model=model,
-        folder_to_mount=str(test_repo)
+        folder_to_mount=str(test_repo),
+        token_provider=token_provider,
     )
 
     response: BotRunResult = readingBot.run(

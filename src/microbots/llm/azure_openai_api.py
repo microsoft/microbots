@@ -3,7 +3,6 @@ import os
 from collections.abc import Callable
 from dataclasses import asdict
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 from microbots.llm.llm import LLMAskResponse, LLMInterface
@@ -35,19 +34,27 @@ class AzureOpenAIApi(LLMInterface):
             )
 
         if not token_provider and not api_key:
-            _credential = DefaultAzureCredential()
-            token_provider = get_bearer_token_provider(
-                _credential, "https://cognitiveservices.azure.com/.default"
+            raise ValueError(
+                "No authentication configured for Azure OpenAI. Either set the AZURE_OPENAI_API_KEY "
+                "environment variable or provide a token_provider (e.g. AzureTokenProvider)."
             )
-            self.token_provider = token_provider
 
         if token_provider:
+            if not callable(token_provider):
+                raise ValueError("token_provider must be a callable that returns a string token.")
+            try:
+                token = token_provider()
+            except Exception as e:
+                raise ValueError(f"token_provider failed during validation: {e}") from e
+            if not isinstance(token, str) or not token:
+                raise ValueError("token_provider must return a non-empty string token.")
             self.ai_client = AzureOpenAI(
                 azure_endpoint=endpoint,
                 azure_ad_token_provider=token_provider,
                 api_version=api_version,
             )
         else:
+            # Azure OpenAI with API key
             self.ai_client = AzureOpenAI(
                 azure_endpoint=endpoint,
                 api_key=api_key,
@@ -57,6 +64,7 @@ class AzureOpenAIApi(LLMInterface):
         self.system_prompt = system_prompt
         self.messages = [{"role": "system", "content": system_prompt}]
 
+        # Set these values here. This logic will be handled in the parent class.
         self.max_retries = max_retries
         self.retries = 0
 

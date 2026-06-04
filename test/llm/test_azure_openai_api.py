@@ -91,17 +91,11 @@ class TestAzureOpenAIApiInitialization:
             with pytest.raises(ValueError, match="AZURE_OPENAI_API_VERSION environment variable is required"):
                 AzureOpenAIApi(system_prompt="test")
 
-    def test_init_uses_default_azure_credential_when_no_key(self):
-        """When no api_key or token_provider is given, DefaultAzureCredential is used."""
-        with patch('microbots.llm.azure_openai_api.api_key', None), \
-             patch('microbots.llm.azure_openai_api.DefaultAzureCredential') as mock_cred, \
-             patch('microbots.llm.azure_openai_api.get_bearer_token_provider') as mock_gbt:
-            mock_gbt.return_value = Mock(return_value="token")
-            api = AzureOpenAIApi(system_prompt="test", token_provider=None)
-
-        mock_cred.assert_called_once()
-        mock_gbt.assert_called_once()
-        assert api.token_provider is not None
+    def test_init_raises_when_no_auth_configured(self):
+        """ValueError is raised when neither api_key nor token_provider is supplied."""
+        with patch('microbots.llm.azure_openai_api.api_key', None):
+            with pytest.raises(ValueError, match="No authentication configured for Azure OpenAI"):
+                AzureOpenAIApi(system_prompt="test", token_provider=None)
 
     def test_init_with_token_provider_creates_azure_client(self):
         """When token_provider is given, AzureOpenAI is used instead of OpenAI."""
@@ -114,6 +108,32 @@ class TestAzureOpenAIApiInitialization:
         mock_azure.assert_called_once()
         assert mock_azure.call_args.kwargs['azure_ad_token_provider'] is mock_provider
         assert api.token_provider is mock_provider
+
+    def test_init_raises_when_token_provider_not_callable(self):
+        """ValueError is raised when token_provider is not callable."""
+        with patch('microbots.llm.azure_openai_api.api_key', None):
+            with pytest.raises(ValueError, match="token_provider must be a callable"):
+                AzureOpenAIApi(system_prompt="test", token_provider="not-a-callable")
+
+    def test_init_raises_when_token_provider_raises(self):
+        """ValueError is raised when token_provider raises an exception during validation."""
+        failing_provider = Mock(side_effect=RuntimeError("credential error"))
+        with patch('microbots.llm.azure_openai_api.api_key', None):
+            with pytest.raises(ValueError, match="token_provider failed during validation"):
+                AzureOpenAIApi(system_prompt="test", token_provider=failing_provider)
+
+    def test_init_raises_when_token_provider_returns_empty_string(self):
+        """ValueError is raised when token_provider returns an empty string."""
+        with patch('microbots.llm.azure_openai_api.api_key', None):
+            with pytest.raises(ValueError, match="token_provider must return a non-empty string token"):
+                AzureOpenAIApi(system_prompt="test", token_provider=lambda: "")
+
+    def test_init_raises_when_token_provider_returns_non_string(self):
+        """ValueError is raised when token_provider returns a non-string."""
+        with patch('microbots.llm.azure_openai_api.api_key', None):
+            with pytest.raises(ValueError, match="token_provider must return a non-empty string token"):
+                AzureOpenAIApi(system_prompt="test", token_provider=lambda: 12345)
+
 class TestAzureOpenAIApiAsk:
     """Tests for AzureOpenAIApi.ask method"""
 
