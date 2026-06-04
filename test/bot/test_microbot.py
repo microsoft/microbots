@@ -1087,16 +1087,11 @@ Put your final answer in the `thoughts` field. The answer MUST include:
 2. Which function(s) call `add_numbers`
 """
 
-        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-        _credential = DefaultAzureCredential()
-        token_provider = get_bearer_token_provider(_credential, "https://cognitiveservices.azure.com/.default")
-
         bot = MicroBot(
             model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}",
             system_prompt=cscope_system_prompt,
             folder_to_mount=c_repo_mount,
             additional_tools=[cscope_tool],
-            token_provider=token_provider,
         )
 
         try:

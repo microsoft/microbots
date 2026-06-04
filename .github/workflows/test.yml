@@ -153,6 +153,8 @@ jobs:
           AZURE_OPENAI_DEPLOYMENT_NAME: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+          # Enable DefaultAzureCredential auto-detection for all non-unit test types
+          AZURE_AUTH_METHOD: ${{ matrix.test-type != 'unit' && 'azure_ad' || '' }}
           BROWSER_USE_LLM_MODEL: "gpt-5"
           BROWSER_USE_LLM_TEMPERATURE: 1
           #Anthrpic API Configuration

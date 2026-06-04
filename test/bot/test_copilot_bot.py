@@ -761,6 +761,8 @@ class TestResolveAuthConfig:
         assert gh_token == "ghp_native"
 
 
+@pytest.mark.unit
+class TestCopilotBotBYOKInit:
     """Tests for CopilotBot initialisation with BYOK parameters."""
 
     def test_byok_api_key_sets_provider_config(self, mock_environment, mock_copilot_client):

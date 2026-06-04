@@ -113,15 +113,10 @@ class TestLogAnalysisBot:
 
     @pytest.fixture(scope="function")
     def log_analysis_bot(self, test_repo):
-        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
         model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
-        token_provider = get_bearer_token_provider(
-            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-        )
         log_analysis_bot = LogAnalysisBot(
             model=model,
             folder_to_mount=str(test_repo),
-            token_provider=token_provider,
         )
 
         yield log_analysis_bot

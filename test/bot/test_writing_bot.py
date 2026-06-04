@@ -31,7 +31,6 @@ sys.path.insert(
 import logging
 logging.basicConfig(level=logging.INFO)
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from microbots import WritingBot, BotRunResult
 
 @pytest.mark.integration
@@ -41,13 +40,9 @@ def test_writing_bot_azure(test_repo, issue_1):
     issue_text = issue_1[0]
     verify_function = issue_1[1]
     model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-    )
     writingBot = WritingBot(
         model=model,
         folder_to_mount=str(test_repo),
-        token_provider=token_provider,
     )
 
     response: BotRunResult = writingBot.run(
