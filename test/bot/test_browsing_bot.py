@@ -139,8 +139,11 @@ class TestBrowsingBot:
     @pytest.fixture(scope="function")
     def browsing_bot(self):
         """Create a BrowsingBot instance for testing."""
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
         model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
-        bot = BrowsingBot(model=model)
+        credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(credential, "https://cognitiveservices.azure.com/.default")
+        bot = BrowsingBot(model=model, token_provider=token_provider)
         yield bot
         # Cleanup: stop the environment
         if hasattr(bot, 'environment') and bot.environment:
