@@ -1691,31 +1691,35 @@ class TestCopilotBotBYOKOpenAIIntegration:
     """End-to-end integration tests for CopilotBot with OpenAI BYOK."""
 
     def test_byok_openai_simple_task(self, test_repo, issue_1):
-        """CopilotBot can fix a simple syntax error using OpenAI BYOK credentials."""
+        """CopilotBot can fix a simple syntax error using Azure AD keyless BYOK credentials."""
         _restore_real_copilot_modules()
         from microbots.bot.CopilotBot import CopilotBot
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
-        api_key = os.environ["AZURE_OPENAI_API_KEY"]
-        base_url = os.environ["OPENAI_ENDPOINT"]
+        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
+        )
+        credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
         )
 
         bot = CopilotBot(
             model=model,
             folder_to_mount=str(test_repo),
             permission="READ_WRITE",
-            api_key=api_key,
             base_url=base_url,
-            provider_type="openai",
+            provider_type="azure",
+            token_provider=token_provider,
         )
 
         try:
             assert bot._provider_config is not None
-            assert bot._provider_config["type"] == "openai"
+            assert bot._provider_config["type"] == "azure"
             assert bot.github_token is None
 
             result = bot.run(
@@ -1736,32 +1740,29 @@ class TestCopilotBotBYOKOpenAIIntegration:
         issue_text = issue_1[0]
         verify_function = issue_1[1]
 
-        api_key = os.environ["AZURE_OPENAI_API_KEY"]
         base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
         )
 
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
         credential = DefaultAzureCredential()
-        def get_token():
-                return credential.get_token(
-                    "https://cognitiveservices.azure.com/.default"
-                ).token
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
+        )
 
         bot = CopilotBot(
             model=model,
             folder_to_mount=str(test_repo),
             permission="READ_WRITE",
-            api_key=api_key,
             base_url=base_url,
-            provider_type="openai",
-            token_provider=get_token,
+            provider_type="azure",
+            token_provider=token_provider,
         )
 
         try:
             assert bot._provider_config is not None
-            assert bot._provider_config["type"] == "openai"
+            assert bot._provider_config["type"] == "azure"
             assert bot.github_token is None
 
             result = bot.run(
