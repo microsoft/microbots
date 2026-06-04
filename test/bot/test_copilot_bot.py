@@ -1489,7 +1489,7 @@ class TestCopilotBotMountAdditional:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 class TestCopilotBotSDKLayoutIntegration:
     """Integration-level tests that drive a full ``run()`` against each
     supported SDK module layout."""
@@ -1646,7 +1646,14 @@ class TestCopilotBotIntegration:
 # ---------------------------------------------------------------------------
 
 def _byok_openai_available():
-    """Check if OpenAI BYOK credentials are configured via env vars."""
+    """Check if OpenAI BYOK credentials are configured.
+
+    Accepts either:
+    - Explicit key: AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT
+    - Keyless OIDC: COPILOT_BYOK_BASE_URL set (DefaultAzureCredential handles auth)
+    """
+    if os.environ.get("COPILOT_BYOK_BASE_URL"):
+        return True
     return bool(
         os.environ.get("AZURE_OPENAI_API_KEY")
         and os.environ.get("AZURE_OPENAI_ENDPOINT")
@@ -1655,7 +1662,7 @@ def _byok_openai_available():
 
 _skip_no_byok_openai = pytest.mark.skipif(
     not _byok_openai_available(),
-    reason="OpenAI BYOK not configured (set env variables AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT)",
+    reason="OpenAI BYOK not configured (set COPILOT_BYOK_BASE_URL or AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)",
 )
 
 def _azure_ad_auth_available():

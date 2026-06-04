@@ -171,6 +171,28 @@ def resolve_auth_config(
         logger.info("🔑 BYOK auth resolved via environment variables (type=%s)", provider["type"])
         return env_model, None, provider
 
+    # ── 2.5. BYOK base_url set but no key/bearer → auto-detect via DefaultAzureCredential ──
+    if env_base_url and not (env_api_key or env_bearer_token):
+        try:
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+            _credential = DefaultAzureCredential()
+            _token_fn = get_bearer_token_provider(
+                _credential, "https://cognitiveservices.azure.com/.default"
+            )
+            _token = _token_fn()
+            env_model = os.environ.get(_BYOK_ENV_MODEL, model)
+            provider = _build_provider_config(
+                provider_type=os.environ.get(_BYOK_ENV_PROVIDER_TYPE, "openai"),
+                base_url=env_base_url,
+                bearer_token=_token,
+                wire_api=os.environ.get(_BYOK_ENV_WIRE_API),
+                azure_api_version=os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
+            )
+            logger.info("🔑 BYOK auth resolved via DefaultAzureCredential (type=%s)", provider["type"])
+            return env_model, None, provider
+        except Exception as e:
+            logger.debug("DefaultAzureCredential not available for BYOK: %s", e)
+
     # ── 3. Token provider (e.g. Azure AD) ────────────────────────────
     if token_provider:
         if not callable(token_provider):

@@ -18,9 +18,7 @@ jobs:
       matrix:
         # Installing ollama model in GitHub Actions runner requires significant disk space.
         # It reduces the space available for browser-based tests
-        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other"]
-        # ghcp temporarily disabled: skip until OIDC keyless auth is fully wired up
-        # test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
+        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
         include:
           - test-type: "unit"
             pytest-args: "-m 'unit and not ollama_local'"
@@ -32,9 +30,8 @@ jobs:
             pytest-args: "-m 'slow' test/bot/test_browsing_bot.py"
           - test-type: "slow-other"
             pytest-args: "-m 'slow' --ignore=test/bot/test_browsing_bot.py"
-          # ghcp temporarily disabled
-          # - test-type: "ghcp"
-          #   pytest-args: "-m 'ghcp'"
+          - test-type: "ghcp"
+            pytest-args: "-m 'ghcp'"
 
 
     steps:
@@ -161,15 +158,12 @@ jobs:
           #Local Model Configuration
           LOCAL_MODEL_NAME: "qwen2.5-coder:latest"
           LOCAL_MODEL_PORT: 11434
-          # CopilotBot Configuration (only populated for ghcp tests)
-          COPILOT_BYOK_API_KEY: ${{ matrix.test-type == 'ghcp' && secrets.AZURE_OPENAI_API_KEY || '' }}
-          COPILOT_BYOK_BASE_URL: ${{ matrix.test-type == 'ghcp' && vars.OPENAI_ENDPOINT || '' }}
+          # CopilotBot Configuration (keyless OIDC — only populated for ghcp tests)
+          COPILOT_BYOK_BASE_URL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_ENDPOINT || '' }}
           COPILOT_BYOK_PROVIDER_TYPE: ${{ matrix.test-type == 'ghcp' && 'azure' || '' }}
           COPILOT_BYOK_MODEL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_DEPLOYMENT_NAME || '' }}
-          COPILOT_BYOK_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
+          COPILOT_BYOK_AZURE_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
           COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'openai' || '' }}
-          # Passing BYOK as arguement. Test: TestCopilotBotBYOKOpenAIIntegration::test_byok_openai_simple_task
-          OPENAI_ENDPOINT: ${{ matrix.test-type == 'ghcp' && vars.OPENAI_ENDPOINT || '' }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \
