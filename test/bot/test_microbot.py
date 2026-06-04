@@ -820,6 +820,7 @@ class TestMicrobotUnit:
         # Ensure an api key is present so DefaultAzureCredential is not attempted
         env_without_azure['AZURE_OPENAI_API_KEY'] = 'test-key'
         with patch.dict('os.environ', env_without_azure, clear=True), \
+             patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
              patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",

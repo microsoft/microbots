@@ -133,7 +133,6 @@ class TestAzureOpenAIApiInitialization:
         with patch('microbots.llm.azure_openai_api.api_key', None):
             with pytest.raises(ValueError, match="token_provider must return a non-empty string token"):
                 AzureOpenAIApi(system_prompt="test", token_provider=lambda: 12345)
-
 class TestAzureOpenAIApiAsk:
     """Tests for AzureOpenAIApi.ask method"""
 
