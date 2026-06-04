@@ -18,7 +18,9 @@ jobs:
       matrix:
         # Installing ollama model in GitHub Actions runner requires significant disk space.
         # It reduces the space available for browser-based tests
-        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
+        test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other"]
+        # ghcp temporarily disabled: skip until OIDC keyless auth is fully wired up
+        # test-type: ["unit", "integration", "ollama_local", "slow-browser", "slow-other", "ghcp"]
         include:
           - test-type: "unit"
             pytest-args: "-m 'unit and not ollama_local'"
