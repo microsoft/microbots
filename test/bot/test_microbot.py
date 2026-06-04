@@ -502,7 +502,8 @@ class TestMicrobotUnit:
         mock_env.execute.return_value = Mock(return_code=0, stdout="", stderr="")
 
         # Mock the environment and LLM creation to avoid actual Docker/API calls
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             # Create a MicroBot with the mock tool
             bot = MicroBot(
                 model="azure-openai/test-model",
@@ -599,7 +600,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=json.dumps(json_content), stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -634,7 +636,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=raw_stdout, stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -668,7 +671,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=raw_stdout, stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -702,7 +706,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=raw_stdout, stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",

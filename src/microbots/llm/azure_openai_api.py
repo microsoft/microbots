@@ -3,6 +3,7 @@ import os
 from collections.abc import Callable
 from dataclasses import asdict
 
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 from microbots.llm.llm import LLMAskResponse, LLMInterface
@@ -21,11 +22,10 @@ class AzureOpenAIApi(LLMInterface):
                  token_provider: Callable[[], str] | None = None):
         self.token_provider = token_provider
 
-        # Re-read at instantiation time so that env vars set after module import
-        # (e.g. monkeypatched in tests, or set by azure/login in CI) are picked up.
-        _endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or endpoint
-        _api_version = os.getenv("AZURE_OPENAI_API_VERSION") or api_version
-        _api_key = os.getenv("AZURE_OPENAI_API_KEY") or api_key
+        # Use module-level vars — set from env at module load, patchable in tests.
+        _endpoint = endpoint
+        _api_version = api_version
+        _api_key = api_key
 
         if not _endpoint:
             raise ValueError(
@@ -39,25 +39,14 @@ class AzureOpenAIApi(LLMInterface):
                 "Set it to a valid API version (e.g. '2024-12-01-preview')."
             )
 
-        # Auto-detect DefaultAzureCredential when no key or token_provider supplied.
-        # Works with managed identity, GitHub Actions OIDC (azure/login), and az login.
         if not token_provider and not _api_key:
-            try:
-                from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-                _credential = DefaultAzureCredential()
-                token_provider = get_bearer_token_provider(
-                    _credential, "https://cognitiveservices.azure.com/.default"
-                )
-                self.token_provider = token_provider
-            except Exception:
-                raise ValueError(
-                    "No authentication configured for Azure OpenAI. Either set the AZURE_OPENAI_API_KEY "
-                    "environment variable or provide a token_provider (e.g. AzureTokenProvider)."
-                )
+            _credential = DefaultAzureCredential()
+            token_provider = get_bearer_token_provider(
+                _credential, "https://cognitiveservices.azure.com/.default"
+            )
+            self.token_provider = token_provider
 
         if token_provider:
-            if not callable(token_provider):
-                raise ValueError("token_provider must be a callable that returns a string token.")
             self.ai_client = AzureOpenAI(
                 azure_endpoint=_endpoint,
                 azure_ad_token_provider=token_provider,
