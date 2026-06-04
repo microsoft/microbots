@@ -163,7 +163,7 @@ jobs:
           COPILOT_BYOK_PROVIDER_TYPE: ${{ matrix.test-type == 'ghcp' && 'azure' || '' }}
           COPILOT_BYOK_MODEL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_DEPLOYMENT_NAME || '' }}
           COPILOT_BYOK_AZURE_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
-          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'openai' || '' }}
+          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'completions' || '' }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \

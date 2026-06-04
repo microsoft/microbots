@@ -71,7 +71,7 @@ _BYOK_ENV_PROVIDER_TYPE = "COPILOT_BYOK_PROVIDER_TYPE"
 _BYOK_ENV_BASE_URL = "COPILOT_BYOK_BASE_URL"
 _BYOK_ENV_API_KEY = "COPILOT_BYOK_API_KEY"
 _BYOK_ENV_BEARER_TOKEN = "COPILOT_BYOK_BEARER_TOKEN"
-_BYOK_ENV_WIRE_API = "COPILOT_BYOK_WIRE_API" # openai / responses
+_BYOK_ENV_WIRE_API = "COPILOT_BYOK_WIRE_API" # completions / responses
 _BYOK_ENV_AZURE_API_VERSION = "COPILOT_BYOK_AZURE_API_VERSION"
 _BYOK_ENV_MODEL = "COPILOT_BYOK_MODEL"
 
@@ -172,8 +172,10 @@ def resolve_auth_config(
         return env_model, None, provider
 
     # ── 2.5. BYOK base_url set but no key/bearer → auto-detect via DefaultAzureCredential ──
-    # Build a token_provider callable and fall through to step 3.
-    if env_base_url and not (env_api_key or env_bearer_token) and not token_provider:
+    # Only fires when COPILOT_BYOK_PROVIDER_TYPE is also set (explicit BYOK intent).
+    # Without it, a bare COPILOT_BYOK_BASE_URL would hijack tests that expect native Copilot auth.
+    env_provider_type = os.environ.get(_BYOK_ENV_PROVIDER_TYPE)
+    if env_base_url and env_provider_type and not (env_api_key or env_bearer_token) and not token_provider:
         try:
             from azure.identity import DefaultAzureCredential, get_bearer_token_provider
             _credential = DefaultAzureCredential()
@@ -209,7 +211,7 @@ def resolve_auth_config(
             azure_api_version=azure_api_version or os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
         )
         logger.info("🔑 BYOK auth resolved via token_provider (type=%s)", provider["type"])
-        return model, None, provider
+        return os.environ.get(_BYOK_ENV_MODEL, model), None, provider
 
     # ── 4. Native GitHub Copilot auth ────────────────────────────────
     resolved_github_token = (

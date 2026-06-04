@@ -723,11 +723,12 @@ class TestResolveAuthConfig:
         assert provider["type"] == "anthropic"
 
     def test_env_base_url_only_credential_fails_falls_through_to_github(self, monkeypatch):
-        """Step 2.5: when COPILOT_BYOK_BASE_URL is set but DefaultAzureCredential raises,
-        resolve_auth_config should fall through to native GitHub Copilot auth."""
+        """Step 2.5: COPILOT_BYOK_BASE_URL + PROVIDER_TYPE set but DefaultAzureCredential raises
+        → falls through to native GitHub Copilot auth."""
         from microbots.bot.CopilotBot import resolve_auth_config
 
         monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        monkeypatch.setenv("COPILOT_BYOK_PROVIDER_TYPE", "azure")
         # No COPILOT_BYOK_API_KEY, no COPILOT_BYOK_BEARER_TOKEN
 
         with patch("azure.identity.DefaultAzureCredential", side_effect=Exception("no credential")), \
@@ -740,6 +741,24 @@ class TestResolveAuthConfig:
         mock_gbt.assert_not_called()
         assert provider is None
         assert gh_token == "ghp_fallback"
+
+    def test_env_base_url_without_provider_type_skips_step25(self, monkeypatch):
+        """Step 2.5 does NOT fire when COPILOT_BYOK_PROVIDER_TYPE is absent —
+        falls through to native GitHub Copilot auth without touching DefaultAzureCredential."""
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        # No COPILOT_BYOK_PROVIDER_TYPE — step 2.5 should be skipped
+
+        with patch("azure.identity.DefaultAzureCredential") as mock_cred:
+            model, gh_token, provider = resolve_auth_config(
+                model="gpt-4.1",
+                github_token="ghp_native",
+            )
+
+        mock_cred.assert_not_called()
+        assert provider is None
+        assert gh_token == "ghp_native"
 
 
     """Tests for CopilotBot initialisation with BYOK parameters."""
