@@ -101,6 +101,11 @@ jobs:
         run: |
           pip install "github-copilot-sdk==0.3.0"
 
+      - name: Install Azure AD / keyless auth dependencies
+        if: matrix.test-type == 'ghcp' || matrix.test-type == 'integration' || matrix.test-type == 'slow-browser' || matrix.test-type == 'slow-other'
+        run: |
+          pip install "azure-identity>=1.15.0"
+
       - name: Build Docker images for integration tests
         if: matrix.test-type != 'unit'
         run: |

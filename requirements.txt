@@ -46,7 +46,6 @@ Pygments==2.19.2
 pytest==8.4.2
 pytest-cov==7.0.0
 python-dateutil==2.9.0.post0
-azure-identity>=1.15.0
 python-dotenv==1.1.1
 python-multipart==0.0.20
 PyYAML==6.0.2
