@@ -11,6 +11,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for Entra OIDC authentication
+      contents: read
     strategy:
       matrix:
         # Installing ollama model in GitHub Actions runner requires significant disk space.
@@ -44,6 +47,10 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
+
+      - name: Reinstall Azure CLI (removed by disk cleanup)
+        if: matrix.test-type == 'slow-browser' || matrix.test-type == 'slow-other' || matrix.test-type == 'ollama_local'
+        run: sudo apt-get install -y azure-cli
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -94,6 +101,10 @@ jobs:
         run: |
           pip install "github-copilot-sdk==0.3.0"
 
+      - name: Install Azure AD / keyless auth dependencies
+        run: |
+          pip install "azure-identity>=1.15.0"
+
       - name: Build Docker images for integration tests
         if: matrix.test-type != 'unit'
         run: |
@@ -129,13 +140,21 @@ jobs:
         env:
           response: ${{ steps.model.outputs.response }}
 
+      - name: Azure Login (Entra OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Run ${{ matrix.test-type }} tests
         env:
-          # Azure OpenAI API Configuration
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          # Azure OpenAI API Configuration (key-free via Entra OIDC)
           AZURE_OPENAI_DEPLOYMENT_NAME: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+          # Enable DefaultAzureCredential auto-detection for all non-unit test types
+          AZURE_AUTH_METHOD: ${{ matrix.test-type != 'unit' && 'azure_ad' || '' }}
           BROWSER_USE_LLM_MODEL: "gpt-5"
           BROWSER_USE_LLM_TEMPERATURE: 1
           #Anthrpic API Configuration
@@ -145,15 +164,12 @@ jobs:
           #Local Model Configuration
           LOCAL_MODEL_NAME: "qwen2.5-coder:latest"
           LOCAL_MODEL_PORT: 11434
-          # CopilotBot Configuration (only populated for ghcp tests)
-          COPILOT_BYOK_API_KEY: ${{ matrix.test-type == 'ghcp' && secrets.AZURE_OPENAI_API_KEY || '' }}
-          COPILOT_BYOK_BASE_URL: ${{ matrix.test-type == 'ghcp' && vars.OPENAI_ENDPOINT || '' }}
+          # CopilotBot Configuration (keyless OIDC — only populated for ghcp tests)
+          COPILOT_BYOK_BASE_URL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_ENDPOINT || '' }}
           COPILOT_BYOK_PROVIDER_TYPE: ${{ matrix.test-type == 'ghcp' && 'azure' || '' }}
           COPILOT_BYOK_MODEL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_DEPLOYMENT_NAME || '' }}
-          COPILOT_BYOK_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
-          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'openai' || '' }}
-          # Passing BYOK as arguement. Test: TestCopilotBotBYOKOpenAIIntegration::test_byok_openai_simple_task
-          OPENAI_ENDPOINT: ${{ matrix.test-type == 'ghcp' && vars.OPENAI_ENDPOINT || '' }}
+          COPILOT_BYOK_AZURE_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
+          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'completions' || '' }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \

@@ -722,6 +722,44 @@ class TestResolveAuthConfig:
         )
         assert provider["type"] == "anthropic"
 
+    def test_env_base_url_only_credential_fails_falls_through_to_github(self, monkeypatch):
+        """Step 2.5: COPILOT_BYOK_BASE_URL + PROVIDER_TYPE set but DefaultAzureCredential raises
+        → falls through to native GitHub Copilot auth."""
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        monkeypatch.setenv("COPILOT_BYOK_PROVIDER_TYPE", "azure")
+        # No COPILOT_BYOK_API_KEY, no COPILOT_BYOK_BEARER_TOKEN
+
+        with patch("azure.identity.DefaultAzureCredential", side_effect=Exception("no credential")), \
+             patch("azure.identity.get_bearer_token_provider") as mock_gbt:
+            model, gh_token, provider = resolve_auth_config(
+                model="gpt-4.1",
+                github_token="ghp_fallback",
+            )
+
+        mock_gbt.assert_not_called()
+        assert provider is None
+        assert gh_token == "ghp_fallback"
+
+    def test_env_base_url_without_provider_type_skips_step25(self, monkeypatch):
+        """Step 2.5 does NOT fire when COPILOT_BYOK_PROVIDER_TYPE is absent —
+        falls through to native GitHub Copilot auth without touching DefaultAzureCredential."""
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        # No COPILOT_BYOK_PROVIDER_TYPE — step 2.5 should be skipped
+
+        with patch("azure.identity.DefaultAzureCredential") as mock_cred:
+            model, gh_token, provider = resolve_auth_config(
+                model="gpt-4.1",
+                github_token="ghp_native",
+            )
+
+        mock_cred.assert_not_called()
+        assert provider is None
+        assert gh_token == "ghp_native"
+
 
 @pytest.mark.unit
 class TestCopilotBotBYOKInit:
@@ -1489,7 +1527,7 @@ class TestCopilotBotMountAdditional:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 class TestCopilotBotSDKLayoutIntegration:
     """Integration-level tests that drive a full ``run()`` against each
     supported SDK module layout."""
@@ -1646,7 +1684,14 @@ class TestCopilotBotIntegration:
 # ---------------------------------------------------------------------------
 
 def _byok_openai_available():
-    """Check if OpenAI BYOK credentials are configured via env vars."""
+    """Check if OpenAI BYOK credentials are configured.
+
+    Accepts either:
+    - Explicit key: AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT
+    - Keyless OIDC: COPILOT_BYOK_BASE_URL set (DefaultAzureCredential handles auth)
+    """
+    if os.environ.get("COPILOT_BYOK_BASE_URL"):
+        return True
     return bool(
         os.environ.get("AZURE_OPENAI_API_KEY")
         and os.environ.get("AZURE_OPENAI_ENDPOINT")
@@ -1655,7 +1700,7 @@ def _byok_openai_available():
 
 _skip_no_byok_openai = pytest.mark.skipif(
     not _byok_openai_available(),
-    reason="OpenAI BYOK not configured (set env variables AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT)",
+    reason="OpenAI BYOK not configured (set COPILOT_BYOK_BASE_URL or AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)",
 )
 
 def _azure_ad_auth_available():
@@ -1684,31 +1729,35 @@ class TestCopilotBotBYOKOpenAIIntegration:
     """End-to-end integration tests for CopilotBot with OpenAI BYOK."""
 
     def test_byok_openai_simple_task(self, test_repo, issue_1):
-        """CopilotBot can fix a simple syntax error using OpenAI BYOK credentials."""
+        """CopilotBot can fix a simple syntax error using Azure AD keyless BYOK credentials."""
         _restore_real_copilot_modules()
         from microbots.bot.CopilotBot import CopilotBot
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
-        api_key = os.environ["AZURE_OPENAI_API_KEY"]
-        base_url = os.environ["OPENAI_ENDPOINT"]
+        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
+        )
+        credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
         )
 
         bot = CopilotBot(
             model=model,
             folder_to_mount=str(test_repo),
             permission="READ_WRITE",
-            api_key=api_key,
             base_url=base_url,
-            provider_type="openai",
+            provider_type="azure",
+            token_provider=token_provider,
         )
 
         try:
             assert bot._provider_config is not None
-            assert bot._provider_config["type"] == "openai"
+            assert bot._provider_config["type"] == "azure"
             assert bot.github_token is None
 
             result = bot.run(
@@ -1729,32 +1778,29 @@ class TestCopilotBotBYOKOpenAIIntegration:
         issue_text = issue_1[0]
         verify_function = issue_1[1]
 
-        api_key = os.environ["AZURE_OPENAI_API_KEY"]
         base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
         )
 
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
         credential = DefaultAzureCredential()
-        def get_token():
-                return credential.get_token(
-                    "https://cognitiveservices.azure.com/.default"
-                ).token
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
+        )
 
         bot = CopilotBot(
             model=model,
             folder_to_mount=str(test_repo),
             permission="READ_WRITE",
-            api_key=api_key,
             base_url=base_url,
-            provider_type="openai",
-            token_provider=get_token,
+            provider_type="azure",
+            token_provider=token_provider,
         )
 
         try:
             assert bot._provider_config is not None
-            assert bot._provider_config["type"] == "openai"
+            assert bot._provider_config["type"] == "azure"
             assert bot.github_token is None
 
             result = bot.run(

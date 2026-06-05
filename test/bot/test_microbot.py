@@ -502,7 +502,8 @@ class TestMicrobotUnit:
         mock_env.execute.return_value = Mock(return_code=0, stdout="", stderr="")
 
         # Mock the environment and LLM creation to avoid actual Docker/API calls
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             # Create a MicroBot with the mock tool
             bot = MicroBot(
                 model="azure-openai/test-model",
@@ -599,7 +600,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=json.dumps(json_content), stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -634,7 +636,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=raw_stdout, stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -668,7 +671,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=raw_stdout, stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -702,7 +706,8 @@ class TestMicrobotUnit:
             return_code=0, stdout=raw_stdout, stderr=""
         )
 
-        with patch('microbots.llm.azure_openai_api.AzureOpenAI'):
+        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
+             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
                 system_prompt="test prompt",
@@ -807,12 +812,15 @@ class TestMicrobotUnit:
                 )
 
     def test_no_azure_ad_env_leaves_token_provider_none(self):
-        """When AZURE_AUTH_METHOD is not set, token_provider defaults to None."""
+        """When AZURE_AUTH_METHOD is not set, token_provider is None if api key is present."""
         mock_env = Mock()
         mock_env.execute.return_value = Mock(return_code=0, stdout="", stderr="")
 
         env_without_azure = {k: v for k, v in os.environ.items() if k != 'AZURE_AUTH_METHOD'}
+        # Ensure an api key is present so DefaultAzureCredential is not attempted
+        env_without_azure['AZURE_OPENAI_API_KEY'] = 'test-key'
         with patch.dict('os.environ', env_without_azure, clear=True), \
+             patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
              patch('microbots.llm.azure_openai_api.AzureOpenAI'):
             bot = MicroBot(
                 model="azure-openai/test-model",
