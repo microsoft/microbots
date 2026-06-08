@@ -2,11 +2,10 @@ import logging
 import os
 from typing import Optional
 
-from microbots.constants import (DOCKER_WORKING_DIR, LOG_FILE_DIR,
-                                 PermissionLabels)
-from microbots.extras.mount import Mount, MountType
+from microbots.constants import DOCKER_WORKING_DIR, LOG_FILE_DIR, PermissionLabels
 from microbots.MicroBot import BotType, MicroBot, system_prompt_common
 from microbots.tools.tool import ToolAbstract
+from microbots.extras.mount import Mount, MountType
 
 logger = logging.getLogger(__name__)
 
