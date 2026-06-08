@@ -498,7 +498,7 @@ class CopilotBot:
         if self.environment:
             self.environment.stop()
             self.environment = None
-        logger.info("🛑 CopilotBot stopped")
+        logger.info("CopilotBot stopped")
 
     def __del__(self):
         try:
