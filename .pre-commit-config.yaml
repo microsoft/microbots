@@ -1,0 +1,14 @@
+# Pre-commit hooks for the Microbots project.
+#
+# Install once per clone:   pre-commit install
+# Run on demand:            pre-commit run --all-files
+#
+# The numpydoc-validation hook enforces the NumPy docstring style documented in
+# docs/api-reference-guide.md. Its rules are configured in pyproject.toml under
+# [tool.numpydoc_validation].
+repos:
+  - repo: https://github.com/numpy/numpydoc
+    rev: v1.8.0
+    hooks:
+      - id: numpydoc-validation
+        files: ^src/microbots/.*\.py$

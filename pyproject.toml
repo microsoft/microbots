@@ -37,3 +37,26 @@ where = ["src"]
 [project.urls]
 "Source Repo" = "https://github.com/microsoft/minions"
 Issues = "https://github.com/microsoft/minions/issues"
+
+[tool.numpydoc_validation]
+# Validates NumPy-style docstrings as described in docs/api-reference-guide.md.
+# Start with "all" checks enabled, then deselect the noisy/optional ones so the
+# gate focuses on correctness (sections present, params match the signature).
+checks = [
+    "all",   # report everything ...
+    "ES01",  # ... except: no extended summary required
+    "EX01",  # no examples section required
+    "SA01",  # no "See Also" section required
+    "SS06",  # allow multi-line summaries
+    "GL01",  # allow summary on the first docstring line
+    "GL02",  # allow closing quotes on the same line as text
+    "GL03",  # allow flexible blank-line usage
+]
+# Symbols whose names match these regexes are skipped entirely.
+exclude = [
+    '\.__repr__$',
+    '\.__str__$',
+    '\.__eq__$',
+    '\.__hash__$',
+    '\.__len__$',
+]
