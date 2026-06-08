@@ -27,7 +27,14 @@ jobs:
       - name: Install pre-commit
         run: |
           python -m pip install --upgrade pip
-          pip install pre-commit
+          pip install pre-commit numpydoc
+
+      - name: Compute docstring coverage
+        id: coverage
+        # Computes NumPy-docstring coverage over the same objects numpydoc
+        # inspects (rules from [tool.numpydoc_validation] in pyproject.toml) and
+        # exposes percent/passing/total/failing as step outputs.
+        run: python scripts/docstring_coverage.py
 
       - name: Validate NumPy docstrings
         id: numpydoc
@@ -44,7 +51,7 @@ jobs:
           echo "$output"
           echo "status=$status" >> "$GITHUB_OUTPUT"
           {
-            echo "## NumPy docstring validation"
+            echo "## NumPy docstring guide coverage: ${{ steps.coverage.outputs.percent }}% (${{ steps.coverage.outputs.passing }}/${{ steps.coverage.outputs.total }})"
             if [ "$status" -eq 0 ]; then
               echo "All docstrings follow the NumPy guide. :white_check_mark:"
             else
@@ -66,10 +73,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: NumPy docstring guide
-          conclusion: ${{ steps.numpydoc.outputs.status == '0' && 'success' || 'neutral' }}
+          conclusion: ${{ steps.coverage.outputs.failing == '0' && 'success' || 'neutral' }}
           output: |
             {
-              "title": "${{ steps.numpydoc.outputs.status == '0' && 'All docstrings follow the NumPy guide' || 'Docstring guide not fully met - safe to merge' }}",
+              "title": "Numpy Docstring guide Coverage - ${{ steps.coverage.outputs.percent }}%(${{ steps.coverage.outputs.passing }}/${{ steps.coverage.outputs.total }}) - Configure to Merge As of Now",
               "summary": "This check is informational and does not block merging. See the job summary and the 'Validate NumPy docstrings' step log for the full list of issues."
             }
 
