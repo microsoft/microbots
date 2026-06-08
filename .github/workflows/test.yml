@@ -35,17 +35,29 @@ jobs:
         # from [tool.numpydoc_validation] in pyproject.toml. The step always
         # exits 0; the published check below carries the real status so docstring
         # issues show as a neutral (informational) result rather than a failure.
+        # The full report is written to the job summary (markdown, no JSON
+        # escaping needed) to avoid invalid control characters in the check output.
         run: |
           set +e
           output=$(pre-commit run numpydoc-validation --all-files 2>&1)
           status=$?
           echo "$output"
-          {
-            echo "report<<EOF"
-            echo "$output" | tail -n 60
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
           echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "## NumPy docstring validation"
+            if [ "$status" -eq 0 ]; then
+              echo "All docstrings follow the NumPy guide. :white_check_mark:"
+            else
+              echo "_Informational only — this does **not** block merging._"
+              echo ""
+              echo "Some docstrings don't yet follow the NumPy guide "
+              echo "(see \`docs/api-reference-guide.md\`). Please fix them when you can."
+              echo ""
+              echo '```'
+              echo "$output" | tail -n 200
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
       - name: Publish docstring check (neutral if issues found)
@@ -57,8 +69,8 @@ jobs:
           conclusion: ${{ steps.numpydoc.outputs.status == '0' && 'success' || 'neutral' }}
           output: |
             {
-              "title": "${{ steps.numpydoc.outputs.status == '0' && 'All docstrings follow the NumPy guide' || 'Docstring guide not fully met — safe to merge' }}",
-              "summary": "This check is **informational** and does **not block merging**.\n\nSome docstrings don't yet follow the NumPy guide (see docs/api-reference-guide.md). Please fix the items below when you can.\n\n```\n${{ steps.numpydoc.outputs.report }}\n```"
+              "title": "${{ steps.numpydoc.outputs.status == '0' && 'All docstrings follow the NumPy guide' || 'Docstring guide not fully met - safe to merge' }}",
+              "summary": "This check is informational and does not block merging. See the job summary and the 'Validate NumPy docstrings' step log for the full list of issues."
             }
 
   test:
