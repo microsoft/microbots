@@ -24,6 +24,7 @@ requires-python = ">=3.11"
 [project.optional-dependencies]
 ghcp = ["github-copilot-sdk==0.3.0"]
 azure_ad = ["azure-identity>=1.15.0"]
+dev = ["pre-commit>=3.7", "numpydoc>=1.8"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
