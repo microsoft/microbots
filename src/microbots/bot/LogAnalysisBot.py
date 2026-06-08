@@ -108,7 +108,7 @@ Only when you have run all necessary commands and identified the root cause, you
             token_provider=token_provider,
         )
 
-    def run(self, file_name: str, max_iterations: int = 20, timeout_in_seconds: int = 300) -> any:
+def run(self, file_name: str, max_iterations: int = 20, timeout_in_seconds: int = 300) -> BotRunResult:
         """
         Analyze a log file and identify the root cause of any failures.
 
