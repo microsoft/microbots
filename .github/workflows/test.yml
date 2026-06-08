@@ -76,7 +76,7 @@ jobs:
           conclusion: ${{ steps.coverage.outputs.failing == '0' && 'success' || 'neutral' }}
           output: |
             {
-              "title": "Numpy Docstring guide Coverage - ${{ steps.coverage.outputs.percent }}%(${{ steps.coverage.outputs.passing }}/${{ steps.coverage.outputs.total }}) - Configure to Merge As of Now",
+              "title": "Coverage - ${{ steps.coverage.outputs.percent }}%(${{ steps.coverage.outputs.passing }}/${{ steps.coverage.outputs.total }}) - Non Blocking",
               "summary": "This check is informational and does not block merging. See the job summary and the 'Validate NumPy docstrings' step log for the full list of issues."
             }
 
