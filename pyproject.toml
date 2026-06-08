@@ -36,7 +36,7 @@ where = ["src"]
 
 [project.urls]
 "Source Repo" = "https://github.com/microsoft/minions"
-Issues = "https://github.com/microsoft/minions/issues"
+Issues = "https://github.com/microsoft/microbots/issues"
 
 [tool.numpydoc_validation]
 # Validates NumPy-style docstrings as described in docs/api-reference-guide.md.
