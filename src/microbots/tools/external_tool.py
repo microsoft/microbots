@@ -8,7 +8,7 @@ from pydantic.dataclasses import dataclass, Field
 from microbots.tools.tool import TOOLTYPE, ToolAbstract, EnvFileCopies
 from microbots.environment.Environment import Environment
 
-logger = logging.getLogger(" 🔧 ExternalTool")
+logger = logging.getLogger("  ExternalTool")
 
 
 @dataclass
@@ -62,13 +62,13 @@ class ExternalTool(ToolAbstract):
                 f"Missing required environment variable(s) for tool "
                 f"'{self.name}': {', '.join(missing)}"
             )
-            logger.error("❌ %s", msg)
+            logger.error(" %s", msg)
             raise EnvironmentError(msg)
 
         for var in self.env_variables or []:
-            logger.info("✅ Environment variable %s is present on the host", var)
+            logger.info(" Environment variable %s is present on the host", var)
         logger.info(
-            "✅ Environment variable verification complete for tool: %s",
+            " Environment variable verification complete for tool: %s",
             self.name,
         )
 
@@ -80,7 +80,7 @@ class ExternalTool(ToolAbstract):
             dest = Path(file_copy.dest)
 
             if not src.exists():
-                logger.error("❌ Source file %s not found on host", src)
+                logger.error(" Source file %s not found on host", src)
                 raise ValueError(f"File to copy {src} not found on host")
 
             # Ensure parent directory exists on the host
@@ -88,20 +88,20 @@ class ExternalTool(ToolAbstract):
 
             shutil.copy2(str(src), str(dest))
 
-            # Set permissions — single octal digit applied as owner+group, no others
+            # Set permissions  single octal digit applied as owner+group, no others
             if not (0 <= file_copy.permissions <= 7):
                 raise ValueError(
                     f"Invalid permissions {file_copy.permissions} for "
-                    f"file copy {src} → {dest}"
+                    f"file copy {src}  {dest}"
                 )
             octal_mode = (file_copy.permissions << 6) | (file_copy.permissions << 3)
             os.chmod(str(dest), octal_mode)
 
-            logger.info("✅ Copied file on host: %s → %s", src, dest)
+            logger.info(" Copied file on host: %s  %s", src, dest)
 
         for fc in self.files_to_copy or []:
             _copy_single_file(fc)
-        logger.info("✅ Successfully copied all files for tool: %s", self.name)
+        logger.info(" Successfully copied all files for tool: %s", self.name)
 
     # --------------------------------------------------------------------- #
     # Public interface (ToolAbstract)
@@ -114,7 +114,7 @@ class ExternalTool(ToolAbstract):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
-                    "❌ Host install command failed for tool %s: %s\n"
+                    " Host install command failed for tool %s: %s\n"
                     "stdout: %s\nstderr: %s",
                     self.name, command, result.stdout, result.stderr,
                 )
@@ -122,7 +122,7 @@ class ExternalTool(ToolAbstract):
                     f"Failed to install external tool {self.name} with "
                     f"command '{command}'. stderr: {result.stderr}"
                 )
-        logger.info("✅ Successfully installed external tool: %s", self.name)
+        logger.info(" Successfully installed external tool: %s", self.name)
         self._copy_files()
 
     def verify_tool_installation(self, env: Environment):
@@ -132,7 +132,7 @@ class ExternalTool(ToolAbstract):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
-                    "❌ Host verify command failed for tool %s: %s\n"
+                    " Host verify command failed for tool %s: %s\n"
                     "stdout: %s\nstderr: %s",
                     self.name, command, result.stdout, result.stderr,
                 )
@@ -140,7 +140,7 @@ class ExternalTool(ToolAbstract):
                     f"Failed to verify external tool {self.name} with "
                     f"command '{command}'. stderr: {result.stderr}"
                 )
-        logger.info("✅ Successfully verified external tool: %s", self.name)
+        logger.info(" Successfully verified external tool: %s", self.name)
 
     def setup_tool(self, env: Environment):
         """Prepare the tool for use on the host.
@@ -154,7 +154,7 @@ class ExternalTool(ToolAbstract):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
-                    "❌ Host setup command failed for tool %s: %s\n"
+                    " Host setup command failed for tool %s: %s\n"
                     "stdout: %s\nstderr: %s",
                     self.name, command, result.stdout, result.stderr,
                 )
@@ -162,7 +162,7 @@ class ExternalTool(ToolAbstract):
                     f"Failed to setup external tool {self.name} with "
                     f"command '{command}'. stderr: {result.stderr}"
                 )
-        logger.info("✅ Successfully set up external tool: %s", self.name)
+        logger.info(" Successfully set up external tool: %s", self.name)
 
     def uninstall_tool(self, env: Environment):
         """Tear down the tool from the host.
@@ -174,10 +174,10 @@ class ExternalTool(ToolAbstract):
             dest = Path(fc.dest)
             if dest.exists():
                 dest.unlink()
-                logger.info("✅ Removed file from host: %s", dest)
+                logger.info(" Removed file from host: %s", dest)
             else:
                 logger.warning(
-                    "⚠️  File %s not found on host during uninstall of tool: %s",
+                    "  File %s not found on host during uninstall of tool: %s",
                     dest, self.name,
                 )
 
@@ -185,7 +185,7 @@ class ExternalTool(ToolAbstract):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
-                    "❌ Host uninstall command failed for tool %s: %s\n"
+                    " Host uninstall command failed for tool %s: %s\n"
                     "stdout: %s\nstderr: %s",
                     self.name, command, result.stdout, result.stderr,
                 )
@@ -193,4 +193,4 @@ class ExternalTool(ToolAbstract):
                     f"Failed to uninstall external tool {self.name} with "
                     f"command '{command}'. stderr: {result.stderr}"
                 )
-        logger.info("✅ Successfully uninstalled external tool: %s", self.name)
+        logger.info(" Successfully uninstalled external tool: %s", self.name)

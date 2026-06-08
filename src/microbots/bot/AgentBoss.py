@@ -63,7 +63,7 @@ class AgentBoss(MicroBot):
         system_prompt = f"""
 {system_prompt_common}
 
-You are an **Agent Boss** — a senior technical lead responsible for solving a complex task by breaking it down into smaller, focused subtasks and delegating each one to a sub-agent.
+You are an **Agent Boss**  a senior technical lead responsible for solving a complex task by breaking it down into smaller, focused subtasks and delegating each one to a sub-agent.
 
 ## Your environment
 - The repository is mounted at `{folder_mount_info.sandbox_path}`.
@@ -90,7 +90,7 @@ microbot_sub --task "<task description>" --iterations <max_iterations> --timeout
 - Run only ONE `microbot_sub` command at a time. Wait for the output before issuing the next one.
 - Each `microbot_sub` call should be focused on a single, well-defined subtask. Avoid vague or multi-part instructions.
 - Don't use sub-agents to do menial work like reading a file content or simple git commands. Use them for substantial subtasks that require reasoning and multiple steps.
-- Keep subtasks focused and small — each sub-agent should do one thing well.
+- Keep subtasks focused and small  each sub-agent should do one thing well.
 """
 
         super().__init__(
@@ -115,7 +115,7 @@ microbot_sub --task "<task description>" --iterations <max_iterations> --timeout
         task : str
             High-level task description.
         max_iterations : int
-            Maximum LLM ↔ shell round-trips (default 50 — higher than a
+            Maximum LLM  shell round-trips (default 50  higher than a
             regular bot because the lead orchestrates multiple sub-agents).
         timeout_in_seconds : int
             Wall-clock timeout in seconds (default 1200 = 20 min).

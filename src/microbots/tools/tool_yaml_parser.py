@@ -5,7 +5,7 @@ from microbots.tools.tool import TOOLTYPE, ToolAbstract
 from microbots.tools.internal_tool import Tool
 from microbots.tools.external_tool import ExternalTool
 
-logger = logging.getLogger(" 🔧 ToolYamlParser")
+logger = logging.getLogger("  ToolYamlParser")
 
 def parse_tool_definition(yaml_path: str) -> ToolAbstract:
     """

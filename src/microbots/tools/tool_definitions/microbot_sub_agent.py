@@ -8,7 +8,7 @@ from microbots.tools.external_tool import ExternalTool
 from microbots.MicroBot import system_prompt_common, MicroBot, BotRunResult
 from microbots.environment.Environment import CmdReturn
 
-logger = logging.getLogger(" 🤖 MicroBot-Sub")
+logger = logging.getLogger("  MicroBot-Sub")
 
 
 class _NoExitArgumentParser(argparse.ArgumentParser):
@@ -62,7 +62,7 @@ class MicrobotSubAgent(ExternalTool):
         """Parse the command, spawn a child MicroBot, and return a ``CmdReturn``.
 
         The MicroBot run-loop expects ``invoke`` to return a ``CmdReturn``
-        (with ``.return_code``, ``.stdout``, ``.stderr``) — the same type
+        (with ``.return_code``, ``.stdout``, ``.stderr``)  the same type
         returned by ``Environment.execute``.
         """
         # Parse arguments with argparse so flag-like text inside --task values

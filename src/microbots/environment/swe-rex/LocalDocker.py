@@ -57,8 +57,8 @@ class LocalDocker(Environment):
             target_path = f"{LocalDocker.BASE_PATH}/{os.path.basename(sanitized)}"
             mode = "ro" if permission == Permission.READ_ONLY else "rw"
             mount_args = f"-v {sanitized}:{target_path}:{mode}"
-            logger.info("🥪 Volume mapping: %s -> %s (%s)", sanitized, target_path, mode)
-            logger.debug("🗻 Mount args: %r", mount_args)
+            logger.info(" Volume mapping: %s -> %s (%s)", sanitized, target_path, mode)
+            logger.debug(" Mount args: %r", mount_args)
         return mount_args
 
     def _get_docker_args(self, mount_args: str = "") -> list[str]:
@@ -86,7 +86,7 @@ class LocalDocker(Environment):
         self.deployment = DockerDeployment(image=image, docker_args=docker_args)
         asyncio.run(self.deployment.start())
         self.start()
-        logger.info("🚀 LocalDocker environment initialized successfully")
+        logger.info(" LocalDocker environment initialized successfully")
 
     def start(self):  # type: ignore[override]
         # Acquire runtime and open a bash session.
@@ -106,15 +106,15 @@ class LocalDocker(Environment):
 
         We pass the command through bash -lc to support shell features (globbing, env vars, pipelines).
         """
-        logger.debug("🔧 Executing command: %s", command)
+        logger.debug(" Executing command: %s", command)
         try:
             output: Observation = await asyncio.wait_for(
                 self.runtime.run_in_session(BashAction(command=command)), timeout
             )
-            logger.debug("📋 Command '%s' completed:", command)
-            logger.debug("   ├─ 📤 Exit code: %s", output.exit_code)
-            logger.debug("   ├─ 📝 Output: %s", output.output[:100] + "..." if len(output.output) > 100 else output.output)
-            logger.debug("   └─ ⚠️ Error: %s", output.failure_reason if output.failure_reason else "(none)")
+            logger.debug(" Command '%s' completed:", command)
+            logger.debug("     Exit code: %s", output.exit_code)
+            logger.debug("     Output: %s", output.output[:100] + "..." if len(output.output) > 100 else output.output)
+            logger.debug("     Error: %s", output.failure_reason if output.failure_reason else "(none)")
             return CmdReturn(
                 stdout=output.output,
                 return_code=output.exit_code,
@@ -122,14 +122,14 @@ class LocalDocker(Environment):
             )
         except asyncio.TimeoutError:
             # TODO: Consider killing the process if it exceeds timeout. Because session might be unusable after timeout.
-            logger.error("⏱️ Command timed out after %s seconds: '%s'", timeout, command)
+            logger.error(" Command timed out after %s seconds: '%s'", timeout, command)
             return CmdReturn(
             stdout="",
             stderr=f"Command timed out after {timeout} seconds",
             return_code=124,  # Standard timeout exit code
             )
         except Exception as e:
-            logger.error("❌ Error occurred while executing command '%s': %s", command, e)
+            logger.error(" Error occurred while executing command '%s': %s", command, e)
             return CmdReturn(
             stdout="",
             stderr=str(e),

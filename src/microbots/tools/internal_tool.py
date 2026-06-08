@@ -5,7 +5,7 @@ from pydantic.dataclasses import dataclass, Field
 from microbots.tools.tool import TOOLTYPE, ToolAbstract, EnvFileCopies
 from microbots.environment.Environment import Environment
 
-logger = logging.getLogger(" 🔧 InternalTool")
+logger = logging.getLogger("  InternalTool")
 
 
 @dataclass
@@ -19,7 +19,7 @@ class Tool(ToolAbstract):
         def _copy_env_variable(env: Environment, env_variable: str):
             if env_variable not in os.environ:
                 logger.warning(
-                    "⚠️  Environment variable %s not found in host environment",
+                    "  Environment variable %s not found in host environment",
                     env_variable,
                 )
                 # TODO: Until we have an option to specify optional env variables, we will not raise an error
@@ -31,11 +31,11 @@ class Tool(ToolAbstract):
             env.execute(
                 f'export {env_variable}="{os.environ.get(env_variable)}"'
             )
-            logger.info("✅ Set environment variable %s in the container", env_variable)
+            logger.info(" Set environment variable %s in the container", env_variable)
 
         for env_variable in self.env_variables or []:
             _copy_env_variable(env, env_variable)
-        logger.info("✅ Successfully copied all environment variables for tool: %s", self.name)
+        logger.info(" Successfully copied all environment variables for tool: %s", self.name)
 
 
     def _copy_files(self, env: Environment):
@@ -45,7 +45,7 @@ class Tool(ToolAbstract):
             # Raise exception if permissions is not in the range of 0-7
             if not (0 <= file_copy.permissions <= 7):
                 logger.error(
-                    "❌ Invalid permissions %s for file copy %s to %s. Permissions must be an integer between 0 and 7.",
+                    " Invalid permissions %s for file copy %s to %s. Permissions must be an integer between 0 and 7.",
                     file_copy.permissions,
                     file_copy.src,
                     file_copy.dest,
@@ -60,7 +60,7 @@ class Tool(ToolAbstract):
             output = env.execute(permission_command)
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to set permission for file in container: %s to: %s",
+                    " Failed to set permission for file in container: %s to: %s",
                     file_copy.src,
                     file_copy.dest,
                 )
@@ -73,7 +73,7 @@ class Tool(ToolAbstract):
             # We con't have copy functionality yet. Read source file and write to dest
             if not os.path.exists(file_copy.src):
                 logger.error(
-                    "❌ File to copy %s not found in current environment",
+                    " File to copy %s not found in current environment",
                     file_copy.src,
                 )
                 raise ValueError(
@@ -92,7 +92,7 @@ class Tool(ToolAbstract):
             )
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to copy file to container: %s to: %s",
+                    " Failed to copy file to container: %s to: %s",
                     file_copy.src,
                     dest_path_in_container,
                 )
@@ -100,11 +100,11 @@ class Tool(ToolAbstract):
                     f"Failed to copy file to container {file_copy.dest}. Output: {output}"
                 )
             _setup_file_permission(env, file_copy)
-            logger.info("✅ Copied file to container: %s to: %s", file_copy.src, dest_path_in_container)
+            logger.info(" Copied file to container: %s to: %s", file_copy.src, dest_path_in_container)
 
         for file_to_copy in self.files_to_copy or []:
             _copy_file_to_env(env, file_to_copy)
-        logger.info("✅ Successfully copied all files for tool: %s", self.name)
+        logger.info(" Successfully copied all files for tool: %s", self.name)
 
 
     def install_tool(self, env: Environment):
@@ -113,7 +113,7 @@ class Tool(ToolAbstract):
             output = env.execute(command)
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to install tool: %s with command: %s\nOutput: %s",
+                    " Failed to install tool: %s with command: %s\nOutput: %s",
                     self.name,
                     command,
                     output,
@@ -121,7 +121,7 @@ class Tool(ToolAbstract):
                 raise RuntimeError(
                     f"Failed to install tool {self.name} with command {command}. Output: {output}"
                 )
-        logger.info("✅ Successfully installed tool: %s", self.name)
+        logger.info(" Successfully installed tool: %s", self.name)
 
 
     def verify_tool_installation(self, env: Environment):
@@ -130,7 +130,7 @@ class Tool(ToolAbstract):
             output = env.execute(command)
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to verify installation of tool: %s with command: %s\nOutput: %s",
+                    " Failed to verify installation of tool: %s with command: %s\nOutput: %s",
                     self.name,
                     command,
                     output,
@@ -138,7 +138,7 @@ class Tool(ToolAbstract):
                 raise RuntimeError(
                     f"Failed to verify installation of tool {self.name} with command {command}. Output: {output}"
                 )
-        logger.info("✅ Successfully verified installation of tool: %s", self.name)
+        logger.info(" Successfully verified installation of tool: %s", self.name)
 
 
     def setup_tool(self, env: Environment):
@@ -150,7 +150,7 @@ class Tool(ToolAbstract):
             output = env.execute(command)
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to setup tool: %s with command: %s\nOutput: %s",
+                    " Failed to setup tool: %s with command: %s\nOutput: %s",
                     self.name,
                     command,
                     output,
@@ -158,7 +158,7 @@ class Tool(ToolAbstract):
                 raise RuntimeError(
                     f"Failed to setup tool {self.name} with command {command}. Output: {output}"
                 )
-        logger.info("✅ Successfully setup tool: %s", self.name)
+        logger.info(" Successfully setup tool: %s", self.name)
 
 
     def uninstall_tool(self, env):
@@ -167,7 +167,7 @@ class Tool(ToolAbstract):
             output = env.execute(f"rm -f /{file_copy.dest}")
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to remove copied file in container: %s during uninstallation of tool: %s",
+                    " Failed to remove copied file in container: %s during uninstallation of tool: %s",
                     file_copy.dest,
                     self.name,
                 )
@@ -179,7 +179,7 @@ class Tool(ToolAbstract):
             output = env.execute(command)
             if output.return_code != 0:
                 logger.error(
-                    "❌ Failed to uninstall tool: %s with command: %s\nOutput: %s",
+                    " Failed to uninstall tool: %s with command: %s\nOutput: %s",
                     self.name,
                     command,
                     output,
@@ -187,4 +187,4 @@ class Tool(ToolAbstract):
                 raise RuntimeError(
                     f"Failed to uninstall tool {self.name} with command {command}. Output: {output}"
                 )
-        logger.info("✅ Successfully uninstalled tool: %s", self.name)
+        logger.info(" Successfully uninstalled tool: %s", self.name)

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
-# ─────────────────────────── Data Classes ───────────────────────────
+#  Data Classes 
 
 
 @dataclass
@@ -76,12 +76,12 @@ class TestCase:
     setup: SetupInfo = field(default_factory=SetupInfo)
 
 
-# ─────────────────────────── Log Parsing ───────────────────────────
+#  Log Parsing 
 
 # Format: TIMESTAMP MODULE LEVEL CONTENT
 # e.g. "2026-03-26 12:45:20,277 microbots.environment.local_docker.LocalDockerEnvironment INFO ..."
-# e.g. "2026-03-26 12:46:35,819  MicroBot  INFO  ℹ️  TASK STARTED : ..."
-# e.g. "2026-03-26 12:49:30,653  🤖 MicroBot-Sub INFO Sub-agent completed..."
+# e.g. "2026-03-26 12:46:35,819  MicroBot  INFO    TASK STARTED : ..."
+# e.g. "2026-03-26 12:49:30,653   MicroBot-Sub INFO Sub-agent completed..."
 LOG_LINE_RE = re.compile(
     r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\s+(.*?)\s+(INFO|ERROR|WARNING|DEBUG)\s(.*)$'
 )
@@ -144,7 +144,7 @@ def parse_log_entries(log_path: str) -> List[dict]:
     return entries
 
 
-# ─────────────────────────── Structure Building ───────────────────────────
+#  Structure Building 
 
 
 def extract_task_from_microbot_sub(command: str) -> str:
@@ -214,7 +214,7 @@ def _extract_setup_info(entries: List[dict]) -> SetupInfo:
         # Files copied to container
         m = re.search(r'Successfully copied (.+?) to container:(.+)', content)
         if m:
-            setup.files_copied.append(f"{m.group(1).strip()} → {m.group(2).strip()}")
+            setup.files_copied.append(f"{m.group(1).strip()}  {m.group(2).strip()}")
             continue
 
     return setup
@@ -250,13 +250,13 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
         content = entry['content']
         level = entry['level']
 
-        # ── Skip noise ──
+        #  Skip noise 
         if 'HTTP Request:' in content:
             continue
         if content.startswith('The llm response is'):
             continue
 
-        # ── Test case boundary ──
+        #  Test case boundary 
         test_dir_match = re.search(r'Test directory set up at:\s*\S+/(\S+)', content)
         if test_dir_match:
             finalize_test_case()
@@ -264,7 +264,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_test = TestCase(name=test_name)
             continue
 
-        # ── Task started ──
+        #  Task started 
         if 'TASK STARTED' in content:
             task_text = content.split('TASK STARTED', 1)[1].lstrip(' :').strip()
             new_agent = Agent(task=task_text)
@@ -295,7 +295,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = None
             continue
 
-        # ── Task completed ──
+        #  Task completed 
         if 'TASK COMPLETED' in content:
             agent = current_agent()
             if agent:
@@ -303,7 +303,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = None
             continue
 
-        # ── Sub-agent completed message ──
+        #  Sub-agent completed message 
         if 'Sub-agent completed successfully with output:' in content:
             if len(agent_stack) > 1:
                 agent_stack.pop()
@@ -311,7 +311,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = None
             continue
 
-        # ── Sub-agent failed ──
+        #  Sub-agent failed 
         if level == 'ERROR' and 'Sub-agent failed' in content:
             agent = current_agent()
             if agent and not agent.is_main:
@@ -324,7 +324,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = None
             continue
 
-        # ── Failed to parse sub-agent command ──
+        #  Failed to parse sub-agent command 
         if level == 'ERROR' and 'Failed to parse microbot_sub command' in content:
             if current_step:
                 current_step.is_blocked = True
@@ -333,14 +333,14 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = None
             continue
 
-        # ── Max iterations reached ──
+        #  Max iterations reached 
         if level == 'ERROR' and 'Max iterations' in content:
             agent = current_agent()
             if agent:
                 agent.max_iterations_reached = True
             continue
 
-        # ── Step boundary ──
+        #  Step boundary 
         step_match = re.search(r'-+ Step-(\d+) -+', content)
         if step_match:
             step_num = int(step_match.group(1))
@@ -351,7 +351,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = None
             continue
 
-        # ── LLM final thoughts ──
+        #  LLM final thoughts 
         if 'LLM final thoughts:' in content:
             text = content.split('LLM final thoughts:', 1)[1].strip()
             agent = current_agent()
@@ -360,7 +360,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = 'final_thoughts'
             continue
 
-        # ── LLM thoughts ──
+        #  LLM thoughts 
         if 'LLM thoughts:' in content and 'final' not in content.split('LLM thoughts:')[0].lower():
             text = content.split('LLM thoughts:', 1)[1].strip()
             if current_step:
@@ -368,7 +368,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = 'thought'
             continue
 
-        # ── LLM tool call ──
+        #  LLM tool call 
         if 'LLM tool call' in content and ':' in content.split('LLM tool call')[1]:
             cmd = content.split('LLM tool call', 1)[1].split(':', 1)[1].strip()
             if cmd.startswith('"') and cmd.endswith('"'):
@@ -382,7 +382,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = 'command'
             continue
 
-        # ── Command output ──
+        #  Command output 
         if 'Command output:' in content:
             text = content.split('Command output:', 1)[1].strip()
             if current_step:
@@ -390,7 +390,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = 'output'
             continue
 
-        # ── Dangerous command blocked ──
+        #  Dangerous command blocked 
         if 'Dangerous command detected' in content:
             if current_step:
                 current_step.is_blocked = True
@@ -405,7 +405,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
             current_field = 'blocked'
             continue
 
-        # ── REASON / ALTERNATIVE for blocked commands (separate entries) ──
+        #  REASON / ALTERNATIVE for blocked commands (separate entries) 
         if current_field == 'blocked' and current_step:
             if content.startswith('REASON:'):
                 current_step.blocked_reason = content
@@ -413,15 +413,15 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
                 current_step.blocked_alternative = content
             continue
 
-        # ── Invoking MicroBotSubAgent ──
+        #  Invoking MicroBotSubAgent 
         if 'Invoking MicroBotSubAgent with task:' in content:
             continue
 
-        # ── Memory tool operations ──
+        #  Memory tool operations 
         if 'Memory file created:' in content or 'Memory file updated:' in content:
             continue
 
-        # ── Multi-line continuation for known fields ──
+        #  Multi-line continuation for known fields 
         if current_field == 'output' and current_step:
             if current_step.output:
                 current_step.output += '\n' + content
@@ -456,7 +456,7 @@ def build_test_cases(entries: List[dict]) -> List[TestCase]:
     return test_cases
 
 
-# ─────────────────────────── Markdown Generation ───────────────────────────
+#  Markdown Generation 
 
 
 def truncate_text(text: str, max_lines: int = 200) -> str:
@@ -472,7 +472,7 @@ def generate_setup_md(setup: SetupInfo) -> str:
     if not setup.container_id and not setup.tools_installed:
         return ""
 
-    md = "## 🔧 Environment Setup\n\n"
+    md = "##  Environment Setup\n\n"
 
     if setup.container_id:
         md += f"- **Container:** `{setup.container_id}` (image: `{setup.image}`, port: {setup.host_port})\n"
@@ -496,13 +496,13 @@ def generate_setup_md(setup: SetupInfo) -> str:
 
 def generate_step_md(step: Step, sub_agent_filename: str = "", heading_level: int = 3) -> str:
     """Generate markdown for a single step as a collapsible details section."""
-    status = "🚫 Blocked" if step.is_blocked else ""
+    status = " Blocked" if step.is_blocked else ""
     if step.is_sub_agent_call:
-        status = "🤖 Sub-Agent Call"
+        status = " Sub-Agent Call"
 
     summary = f"Step {step.number}"
     if status:
-        summary += f" — {status}"
+        summary += f"  {status}"
 
     if step.thought:
         first_line = step.thought.split('\n')[0]
@@ -515,11 +515,11 @@ def generate_step_md(step: Step, sub_agent_filename: str = "", heading_level: in
     md = f"<details>\n<summary><strong>{summary}</strong></summary>\n\n"
 
     if step.thought:
-        md += f"{h} 💭 Thought\n\n"
+        md += f"{h}  Thought\n\n"
         md += f"{step.thought}\n\n"
 
     if step.is_blocked:
-        md += f"{h} ⚠️ Command Blocked\n\n"
+        md += f"{h}  Command Blocked\n\n"
         if step.blocked_reason:
             md += f"> {step.blocked_reason}\n"
         if step.blocked_alternative:
@@ -527,11 +527,11 @@ def generate_step_md(step: Step, sub_agent_filename: str = "", heading_level: in
         md += "\n"
 
     if step.command:
-        md += f"{h} ➡️ Command\n\n"
+        md += f"{h}  Command\n\n"
         if step.is_sub_agent_call:
             md += "**Sub-agent invocation:**\n\n"
             if sub_agent_filename:
-                md += f"📎 **[View Sub-Agent Trajectory]({sub_agent_filename})**\n\n"
+                md += f" **[View Sub-Agent Trajectory]({sub_agent_filename})**\n\n"
             if step.sub_agent_task:
                 md += "<details>\n<summary>Sub-agent task description</summary>\n\n"
                 md += f"```\n{step.sub_agent_task}\n```\n\n"
@@ -540,7 +540,7 @@ def generate_step_md(step: Step, sub_agent_filename: str = "", heading_level: in
             md += f"```bash\n{step.command}\n```\n\n"
 
     if step.output:
-        md += f"{h} ⬅️ Output\n\n"
+        md += f"{h}  Output\n\n"
         output_text = truncate_text(step.output)
         md += f"```\n{output_text}\n```\n\n"
 
@@ -550,15 +550,15 @@ def generate_step_md(step: Step, sub_agent_filename: str = "", heading_level: in
 
 def _agent_status_str(agent: Agent) -> str:
     if agent.completed:
-        return "✅ Completed"
+        return " Completed"
     if agent.max_iterations_reached:
-        return "❌ Failed (max iterations / timeout)"
-    return "❓ Unknown"
+        return " Failed (max iterations / timeout)"
+    return " Unknown"
 
 
 def generate_main_agent_md(test_case: TestCase) -> str:
     """Generate the main agent markdown file content."""
-    md = f"# 🤖 Agent Trajectory: {test_case.name}\n\n"
+    md = f"#  Agent Trajectory: {test_case.name}\n\n"
 
     md += generate_setup_md(test_case.setup)
 
@@ -584,15 +584,15 @@ def generate_main_agent_md(test_case: TestCase) -> str:
         md += "---\n\n"
 
         if agent.completed:
-            md += "## ✅ Task Completed\n\n"
+            md += "##  Task Completed\n\n"
             if agent.final_thoughts:
                 md += f"{agent.final_thoughts}\n\n"
         elif agent.max_iterations_reached:
-            md += "## ❌ Max Iterations Reached\n\n"
+            md += "##  Max Iterations Reached\n\n"
             md += "The agent did not complete the task within the maximum allowed iterations.\n\n"
 
         if test_case.sub_agents:
-            md += "## 📋 Sub-Agents\n\n"
+            md += "##  Sub-Agents\n\n"
             md += "| # | Task | Status | Link |\n"
             md += "|---|------|--------|------|\n"
             for i, sub in enumerate(test_case.sub_agents):
@@ -646,11 +646,11 @@ def generate_sub_agent_md(sub_agent: Agent, index: int, test_case_name: str) -> 
     md += "---\n\n"
 
     if sub_agent.completed:
-        md += "## ✅ Task Completed\n\n"
+        md += "##  Task Completed\n\n"
         if sub_agent.final_thoughts:
             md += f"{sub_agent.final_thoughts}\n\n"
     elif sub_agent.max_iterations_reached:
-        md += "## ❌ Max Iterations Reached\n\n"
+        md += "##  Max Iterations Reached\n\n"
         if sub_agent.error_message:
             md += f"> {sub_agent.error_message}\n\n"
         else:
@@ -659,18 +659,18 @@ def generate_sub_agent_md(sub_agent: Agent, index: int, test_case_name: str) -> 
     return md
 
 
-# ─────────────────────────── Single-File Mode ───────────────────────────
+#  Single-File Mode 
 
 
 def generate_single_file_md(test_case: TestCase) -> str:
     """Generate a single markdown file containing the main agent and all sub-agents."""
-    md = f"# 🤖 Agent Trajectory: {test_case.name}\n\n"
+    md = f"#  Agent Trajectory: {test_case.name}\n\n"
 
     md += generate_setup_md(test_case.setup)
 
     # Table of contents
     if test_case.sub_agents:
-        md += "## 📑 Table of Contents\n\n"
+        md += "##  Table of Contents\n\n"
         md += "- [Main Agent](#main-agent)\n"
         for i, sub in enumerate(test_case.sub_agents):
             clean = clean_task_text(sub.task)
@@ -703,15 +703,15 @@ def generate_single_file_md(test_case: TestCase) -> str:
         md += "---\n\n"
 
         if agent.completed:
-            md += "### ✅ Task Completed\n\n"
+            md += "###  Task Completed\n\n"
             if agent.final_thoughts:
                 md += f"{agent.final_thoughts}\n\n"
         elif agent.max_iterations_reached:
-            md += "### ❌ Max Iterations Reached\n\n"
+            md += "###  Max Iterations Reached\n\n"
 
         # Sub-agent summary table
         if test_case.sub_agents:
-            md += "### 📋 Sub-Agents Summary\n\n"
+            md += "###  Sub-Agents Summary\n\n"
             md += "| # | Task | Status |\n"
             md += "|---|------|--------|\n"
             for i, sub in enumerate(test_case.sub_agents):
@@ -746,18 +746,18 @@ def generate_single_file_md(test_case: TestCase) -> str:
         md += "---\n\n"
 
         if sub.completed:
-            md += "### ✅ Task Completed\n\n"
+            md += "###  Task Completed\n\n"
             if sub.final_thoughts:
                 md += f"{sub.final_thoughts}\n\n"
         elif sub.max_iterations_reached:
-            md += "### ❌ Max Iterations Reached\n\n"
+            md += "###  Max Iterations Reached\n\n"
             if sub.error_message:
                 md += f"> {sub.error_message}\n\n"
 
     return md
 
 
-# ─────────────────────────── Main ───────────────────────────
+#  Main 
 
 
 def parse_and_generate(log_path: str, output_base_dir: str = None, single_file: bool = False):

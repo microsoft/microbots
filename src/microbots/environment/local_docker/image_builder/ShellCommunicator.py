@@ -65,7 +65,7 @@ class ShellCommunicator:
         """
         try:
             if self.shell_type not in self.shell_commands:
-                logger.error("🛑 Unsupported shell type: %s", self.shell_type)
+                logger.error(" Unsupported shell type: %s", self.shell_type)
                 return False
 
             cmd = self.shell_commands[self.shell_type]
@@ -99,12 +99,12 @@ class ShellCommunicator:
             self.output_thread.start()
             self.error_thread.start()
 
-            logger.info("🚀 %s session started successfully", self.shell_type.capitalize())
-            logger.debug("🆔 Process ID: %s", self.process.pid)
+            logger.info(" %s session started successfully", self.shell_type.capitalize())
+            logger.debug(" Process ID: %s", self.process.pid)
             return True
 
         except Exception as e:
-            logger.exception("❌ Failed to start shell session: %s", e)
+            logger.exception(" Failed to start shell session: %s", e)
             return False
 
     def _monitor_output(self, stream, output_queue: queue.Queue, stream_type: str):
@@ -157,7 +157,7 @@ class ShellCommunicator:
             CmdReturn object with stdout, stderr, and return code
         """
         if not self.is_running or not self.process:
-            logger.warning("⚠️ No active shell session")
+            logger.warning(" No active shell session")
             return CmdReturn(stdout="", stderr="No active shell session", return_code=1)
 
         try:
@@ -167,7 +167,7 @@ class ShellCommunicator:
                 # Send the command without marker for async execution
                 self.process.stdin.write(command + "\n")
                 self.process.stdin.flush()
-                logger.debug("➡️ Sent async command: %s", command)
+                logger.debug(" Sent async command: %s", command)
                 return CmdReturn(stdout="ASYNC: Not waiting for completion", stderr="", return_code=0)
 
             # Generate a unique command completion marker
@@ -179,8 +179,8 @@ class ShellCommunicator:
             self.process.stdin.write(f"echo '{marker}' $?\n")
             self.process.stdin.flush()
 
-            logger.debug("➡️ Sent command: %s", command)
-            logger.debug("🔖 Waiting for marker: %s", marker)
+            logger.debug(" Sent command: %s", command)
+            logger.debug(" Waiting for marker: %s", marker)
 
             # Collect output until marker is found or timeout
             output_lines = []
@@ -193,7 +193,7 @@ class ShellCommunicator:
                 try:
                     # Check for output with a small timeout
                     stream_type, line = self.output_queue.get(timeout=0.1)
-                    logger.debug("⬅️ Received line from %s: %s", stream_type, line)
+                    logger.debug(" Received line from %s: %s", stream_type, line)
 
                     # Check if this is our completion marker
                     if marker in line:
@@ -215,22 +215,22 @@ class ShellCommunicator:
                         except (ValueError, AttributeError, IndexError):
                             # Default to 1 if parsing fails
                             last_exit_code = 1
-                        logger.debug("🔍 Found marker with exit code: %s", last_exit_code)
+                        logger.debug(" Found marker with exit code: %s", last_exit_code)
                         continue
 
                     # Add output to appropriate list
                     if stream_type == "ERROR":
                         error_lines.append(line)
-                        logger.debug("❌ %s", line)
+                        logger.debug(" %s", line)
                     else:
                         output_lines.append(line)
-                        logger.debug("📤 %s", line)
+                        logger.debug(" %s", line)
 
                 except queue.Empty:
                     # No output available, continue waiting
                     continue
                 except Exception as e:
-                    logger.exception("❌ Unexpected error while reading output: %s", e)
+                    logger.exception(" Unexpected error while reading output: %s", e)
                     break
 
             # Check for any remaining error output
@@ -238,7 +238,7 @@ class ShellCommunicator:
                 try:
                     stream_type, line = self.error_queue.get_nowait()
                     error_lines.append(line)
-                    logger.debug("❌ %s", line)
+                    logger.debug(" %s", line)
                 except queue.Empty:
                     break
 
@@ -246,13 +246,13 @@ class ShellCommunicator:
 
             # Handle timeout case
             if not marker_found:
-                logger.warning("⏱️ Command timed out after %s seconds", timeout)
+                logger.warning(" Command timed out after %s seconds", timeout)
                 error_lines.append(f"Command timed out after {timeout} seconds")
                 final_return_code = 124  # Standard timeout exit code
 
                 # Attempt to recover the shell by sending Ctrl+C to interrupt the running command
                 try:
-                    logger.info("🛠️ Attempting to interrupt timed-out command...")
+                    logger.info(" Attempting to interrupt timed-out command...")
                     # Send SIGINT to the shell process to interrupt the running command
                     if self.process and self.process.poll() is None:
                         self.process.send_signal(subprocess.signal.SIGINT)
@@ -274,16 +274,16 @@ class ShellCommunicator:
                                 stream_type, line = self.output_queue.get(timeout=0.1)
                                 if recovery_marker in line:
                                     recovered = True
-                                    logger.info("✅ Shell recovered after timeout")
+                                    logger.info(" Shell recovered after timeout")
                                     break
                             except queue.Empty:
                                 continue
 
                         if not recovered:
-                            logger.warning("⚠️ Shell may still be unresponsive after recovery attempt")
+                            logger.warning(" Shell may still be unresponsive after recovery attempt")
 
                 except Exception as e:
-                    logger.error("❌ Failed to recover shell after timeout: %s", e)
+                    logger.error(" Failed to recover shell after timeout: %s", e)
 
             return CmdReturn(
                 stdout="\n".join(output_lines) if output_lines else "",
@@ -292,7 +292,7 @@ class ShellCommunicator:
             )
 
         except Exception as e:
-            logger.exception("❌ Failed to send command: %s", e)
+            logger.exception(" Failed to send command: %s", e)
             return CmdReturn(stdout="", stderr=str(e), return_code=1)
 
     def _clear_output_queues(self):
@@ -316,7 +316,7 @@ class ShellCommunicator:
             pass
 
         if cleared_count > 0:
-            logger.debug("🧹 Cleared %d stale messages from output queues", cleared_count)
+            logger.debug(" Cleared %d stale messages from output queues", cleared_count)
 
     def is_alive(self) -> bool:
         """
@@ -351,7 +351,7 @@ class ShellCommunicator:
         """
         Close the shell session and cleanup resources.
         """
-        logger.info("🛑 Closing shell session…")
+        logger.info(" Closing shell session")
 
         self.is_running = False
 
@@ -371,10 +371,10 @@ class ShellCommunicator:
                     if self.process.poll() is None:
                         self.process.kill()
 
-                logger.info("✅ Shell session closed")
+                logger.info(" Shell session closed")
 
             except Exception as e:
-                logger.exception("⚠️ Error during cleanup: %s", e)
+                logger.exception(" Error during cleanup: %s", e)
 
         # Wait for threads to finish
         if self.output_thread and self.output_thread.is_alive():

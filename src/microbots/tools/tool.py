@@ -8,7 +8,7 @@ from pathlib import Path
 from microbots.environment.Environment import Environment
 from microbots.constants import TOOL_FILE_BASE_PATH
 
-logger = logging.getLogger(" 🔧 Tool")
+logger = logging.getLogger("  Tool")
 
 
 class TOOLTYPE(str, Enum):
@@ -39,9 +39,9 @@ class ToolAbstract(ABC):
 
     Tool hierarchy:
         ToolAbstract (ABC)
-        ├── Tool (ToolAbstract)   — Docker sandbox tools (install_commands, env_variables, etc.)
-        └── ExternalTool (ToolAbstract)   — LLM-native tools (get_tool_definition, execute)
-                └── AnthropicMemoryTool
+         Tool (ToolAbstract)    Docker sandbox tools (install_commands, env_variables, etc.)
+         ExternalTool (ToolAbstract)    LLM-native tools (get_tool_definition, execute)
+                 AnthropicMemoryTool
     """
     # TODO: Handle different instructions based on the platform (linux flavours, windows, mac)
     # TODO: Add versioning to tools

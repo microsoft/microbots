@@ -11,7 +11,7 @@ from pydantic.dataclasses import dataclass, Field
 from microbots.environment.Environment import CmdReturn
 from microbots.tools.external_tool import ExternalTool
 
-logger = logging.getLogger(" 🧠 MemoryTool")
+logger = logging.getLogger("  MemoryTool")
 
 
 class _NoExitArgumentParser(argparse.ArgumentParser):
@@ -29,7 +29,7 @@ MEMORY PROTOCOL:
    earlier progress.
 2. Record status, findings and intermediate results as you go.
 3. Before completing a task, save your final results to memory.
-4. Keep the memory folder organised — rename or delete stale files.
+4. Keep the memory folder organised  rename or delete stale files.
 
 ## Commands
 
@@ -79,7 +79,7 @@ class MemoryTool(ExternalTool):
     File-backed memory tool that dispatches through the text command loop and
     works consistently across providers.
 
-    Subclass of ``ExternalTool`` — all command lists are empty so
+    Subclass of ``ExternalTool``  all command lists are empty so
     ``install_tool``, ``setup_tool``, ``verify_tool_installation``, and
     ``uninstall_tool`` are all effective no-ops inherited from ``ExternalTool``.
 
@@ -90,7 +90,7 @@ class MemoryTool(ExternalTool):
 
     name: str = Field(default="memory")
     description: str = Field(
-        default="File-backed memory store — view, create, edit, delete files under /memories/."
+        default="File-backed memory store  view, create, edit, delete files under /memories/."
     )
     usage_instructions_to_llm: str = Field(default=INSTRUCTIONS_TO_LLM)
     memory_dir: Optional[str] = Field(default=None)
@@ -141,7 +141,7 @@ class MemoryTool(ExternalTool):
     # ---------------------------------------------------------------------- #
 
     def _resolve(self, path: str) -> Path:
-        """Resolve a /memories/… path to an absolute host path."""
+        """Resolve a /memories/ path to an absolute host path."""
         if not path.startswith("/"):
             raise ValueError(
                 f"Invalid memory path: {path!r}. Paths must start with /memories/."
@@ -206,7 +206,7 @@ class MemoryTool(ExternalTool):
                 return self._clear()
             return dispatch[args.subcommand](args)
         except (OSError, ValueError, RuntimeError, UnicodeDecodeError) as exc:
-            logger.error("🧠 MemoryTool error: %s", exc)
+            logger.error(" MemoryTool error: %s", exc)
             return CmdReturn(stdout="", stderr=str(exc), return_code=1)
 
     # ---------------------------------------------------------------------- #
@@ -245,7 +245,7 @@ class MemoryTool(ExternalTool):
         resolved = self._resolve(args.path)
         resolved.parent.mkdir(parents=True, exist_ok=True)
         resolved.write_text(content, encoding="utf-8")
-        logger.info("🧠 Memory file created: %s", args.path)
+        logger.info(" Memory file created: %s", args.path)
         return CmdReturn(stdout=f"File created: {args.path}", stderr="", return_code=0)
 
     def _str_replace(self, args: argparse.Namespace) -> CmdReturn:
@@ -278,11 +278,11 @@ class MemoryTool(ExternalTool):
             return CmdReturn(stdout="", stderr="Cannot delete the /memories root directory", return_code=1)
         if resolved.is_file():
             resolved.unlink()
-            logger.info("🧠 Memory file deleted: %s", args.path)
+            logger.info(" Memory file deleted: %s", args.path)
             return CmdReturn(stdout=f"Deleted: {args.path}", stderr="", return_code=0)
         if resolved.is_dir():
             shutil.rmtree(resolved)
-            logger.info("🧠 Memory directory deleted: %s", args.path)
+            logger.info(" Memory directory deleted: %s", args.path)
             return CmdReturn(stdout=f"Deleted directory: {args.path}", stderr="", return_code=0)
         return CmdReturn(stdout="", stderr=f"Path not found: {args.path!r}", return_code=1)
 
@@ -300,12 +300,12 @@ class MemoryTool(ExternalTool):
             return CmdReturn(stdout="", stderr=f"Destination already exists: {args.new_path!r}", return_code=1)
         new_resolved.parent.mkdir(parents=True, exist_ok=True)
         old_resolved.rename(new_resolved)
-        logger.info("🧠 Memory renamed: %s → %s", args.old_path, args.new_path)
+        logger.info(" Memory renamed: %s  %s", args.old_path, args.new_path)
         return CmdReturn(stdout=f"Renamed {args.old_path} to {args.new_path}.", stderr="", return_code=0)
 
     def _clear(self) -> CmdReturn:
         if self._memory_dir.exists():
             shutil.rmtree(self._memory_dir)
             self._memory_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("🧠 Memory cleared.")
+        logger.info(" Memory cleared.")
         return CmdReturn(stdout="Memory cleared.", stderr="", return_code=0)

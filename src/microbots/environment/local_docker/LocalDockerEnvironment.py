@@ -45,9 +45,9 @@ class LocalDockerEnvironment(Environment):
         if not os.path.exists(working_dir):
             os.makedirs(working_dir)
             self.working_dir = working_dir
-            logger.info("🗂️  Created working directory at %s", self.working_dir)
+            logger.info("  Created working directory at %s", self.working_dir)
         else:
-            logger.info("🗂️  Working directory already exists at %s. Retrying with a new path...", working_dir)
+            logger.info("  Working directory already exists at %s. Retrying with a new path...", working_dir)
             if retries > 0:
                 time.sleep(delay)
                 self._create_working_dir(retries - 1, delay * 2)
@@ -64,7 +64,7 @@ class LocalDockerEnvironment(Environment):
                     "mode": mode_map[self.folder_to_mount.permission],
                 }
                 logger.info(
-                    "📦 Volume mapping: %s → /ro/%s",
+                    " Volume mapping: %s  /ro/%s",
                     self.folder_to_mount.host_path_info.abs_path,
                     os.path.basename(self.folder_to_mount.sandbox_path),
                 )
@@ -74,7 +74,7 @@ class LocalDockerEnvironment(Environment):
                     "mode": mode_map[self.folder_to_mount.permission],
                 }
                 logger.debug(
-                    "📦 Volume mapping: %s → %s",
+                    " Volume mapping: %s  %s",
                     self.folder_to_mount.host_path_info.abs_path,
                     self.folder_to_mount.sandbox_path,
                 )
@@ -92,7 +92,7 @@ class LocalDockerEnvironment(Environment):
             environment={"BOT_PORT": str(self.container_port)},
         )
         logger.info(
-            "🚀 Started container %s with image %s on host port %s",
+            " Started container %s with image %s on host port %s",
             self.container.id[:12],
             self.image,
             self.port,
@@ -118,7 +118,7 @@ class LocalDockerEnvironment(Environment):
         )
         self.execute(mount_command)
         logger.info(
-            f"🔒 Set up overlay mount for read-only directory at {DOCKER_WORKING_DIR}/{path_name}"
+            f" Set up overlay mount for read-only directory at {DOCKER_WORKING_DIR}/{path_name}"
         )
         self.overlay_mount = True
 
@@ -126,16 +126,16 @@ class LocalDockerEnvironment(Environment):
         path_name = os.path.basename(os.path.abspath(self.folder_to_mount.sandbox_path))
 
         try:
-            logger.info("🛠️  Tearing down overlay mount for %s", path_name)
+            logger.info("  Tearing down overlay mount for %s", path_name)
             unmount_command = f"umount -l {self.folder_to_mount.sandbox_path}"
             ret: CmdReturn = self.execute(unmount_command)
             if ret.return_code != 0:
-                logger.error("❌  Failed to unmount overlay: %s", ret.stderr)
+                logger.error("  Failed to unmount overlay: %s", ret.stderr)
             else:
-                logger.info("✅  Unmounted overlay for %s", path_name)
+                logger.info("  Unmounted overlay for %s", path_name)
 
             logger.info(
-                f"🛑  Removing overlay dirs at {self.folder_to_mount.sandbox_path} and {DOCKER_WORKING_DIR}/overlay/"
+                f"  Removing overlay dirs at {self.folder_to_mount.sandbox_path} and {DOCKER_WORKING_DIR}/overlay/"
             )
             remove_dir_command = (
                 f"rm -rf {self.folder_to_mount.sandbox_path} && "
@@ -144,14 +144,14 @@ class LocalDockerEnvironment(Environment):
             ret: CmdReturn = self.execute(remove_dir_command)
             if ret.return_code != 0:
                 logger.error(
-                    "❌  Failed to remove overlay directories: %s", ret.stderr
+                    "  Failed to remove overlay directories: %s", ret.stderr
                 )
             else:
                 logger.info(
-                    "🗑️  Removed overlay directories for %s", path_name
+                    "  Removed overlay directories for %s", path_name
                 )
         except Exception as e:
-            logger.error("❌  Failed to teardown overlay mount: %s", e)
+            logger.error("  Failed to teardown overlay mount: %s", e)
 
     def get_ipv4_address(self) -> str:
         """Return the container's IPv4 address on the Docker bridge network."""
@@ -181,9 +181,9 @@ class LocalDockerEnvironment(Environment):
                 import shutil
 
                 shutil.rmtree(self.working_dir)
-                logger.info("🗑️  Removed working directory at %s", self.working_dir)
+                logger.info("  Removed working directory at %s", self.working_dir)
             except Exception as e:
-                logger.error("❌  Failed to remove working directory: %s", e)
+                logger.error("  Failed to remove working directory: %s", e)
 
         self.deleted = True
 
@@ -197,7 +197,7 @@ class LocalDockerEnvironment(Environment):
     def execute(
         self, command: str, timeout: Optional[int] = 300, sensitive: bool = False
     ) -> CmdReturn:  # TODO: Need proper return value
-        logger.debug("➡️  Executing command in container: %s", "<redacted>" if sensitive else command)
+        logger.debug("  Executing command in container: %s", "<redacted>" if sensitive else command)
         # command = self._escape(command)
         start_time = time.perf_counter()
         # command = self._escape(command)
@@ -215,7 +215,7 @@ class LocalDockerEnvironment(Environment):
             )
 
             output = response.json().get("output", "")
-            logger.debug("⬅️  Return Code: %d,\nStdout:\n%s\nStderr:\n%s",
+            logger.debug("  Return Code: %d,\nStdout:\n%s\nStderr:\n%s",
                          output.get("return_code", 0),
                          output.get("stdout", ""),
                          output.get("stderr", ""))
@@ -230,13 +230,13 @@ class LocalDockerEnvironment(Environment):
         except requests.exceptions.ConnectTimeout:
             elapsed = time.perf_counter() - start_time
             msg = f"Connection timeout after {elapsed:.1f}s (port {self.port})"
-            logger.error("❌ %s", msg)
+            logger.error(" %s", msg)
             return CmdReturn(stdout="", stderr=msg, return_code=124)
 
         except requests.exceptions.ReadTimeout:
             elapsed = time.perf_counter() - start_time
             msg = f"Read timeout after {elapsed:.1f}s while waiting for command output"
-            logger.error("❌ %s", msg)
+            logger.error(" %s", msg)
 
             # Attempt to recover the shell by sending a simple command
             self._attempt_shell_recovery()
@@ -246,7 +246,7 @@ class LocalDockerEnvironment(Environment):
         except requests.exceptions.RequestException as e:
             elapsed = time.perf_counter() - start_time
             logger.exception(
-                "❌ Request failed after %.2fs while executing command: %s",
+                " Request failed after %.2fs while executing command: %s",
                 elapsed,
                 e,
             )
@@ -254,7 +254,7 @@ class LocalDockerEnvironment(Environment):
         except Exception as e:
             elapsed = time.perf_counter() - start_time
             logger.exception(
-                "❌ Unexpected error after %.2fs while executing command: %s",
+                " Unexpected error after %.2fs while executing command: %s",
                 elapsed,
                 e,
             )
@@ -266,7 +266,7 @@ class LocalDockerEnvironment(Environment):
         This helps clear any stuck state in the shell communicator.
         """
         try:
-            logger.info("🛠️  Attempting to recover shell after timeout...")
+            logger.info("  Attempting to recover shell after timeout...")
             # Send a simple command to trigger shell-level recovery
             # Shell recovery needs ~2s (SIGINT + queue clear + marker check), so allow 5s total
             response = requests.post(
@@ -276,13 +276,13 @@ class LocalDockerEnvironment(Environment):
             )
             if response.status_code == 200:
                 output = response.json().get("output", {})
-                logger.info("✅ Shell recovery successful (exit code: %d)", output.get("return_code", 0))
+                logger.info(" Shell recovery successful (exit code: %d)", output.get("return_code", 0))
             else:
-                logger.warning("⚠️  Shell recovery returned status %d", response.status_code)
+                logger.warning("  Shell recovery returned status %d", response.status_code)
         except requests.exceptions.Timeout:
-            logger.warning("⚠️  Shell recovery timed out - shell may still be unresponsive")
+            logger.warning("  Shell recovery timed out - shell may still be unresponsive")
         except Exception as e:
-            logger.error("❌ Shell recovery failed: %s", e)
+            logger.error(" Shell recovery failed: %s", e)
 
     def copy_to_container(self, src_path: str, dest_path: str) -> bool:
         """
@@ -296,13 +296,13 @@ class LocalDockerEnvironment(Environment):
             bool: True if copy was successful, False otherwise
         """
         if not self.container:
-            logger.error("❌ No active container to copy to")
+            logger.error(" No active container to copy to")
             return False
 
         try:
             # Check if source path exists
             if not os.path.exists(src_path):
-                logger.error("❌ Source path does not exist: %s", src_path)
+                logger.error(" Source path does not exist: %s", src_path)
                 return False
             # Ensure destination directory exists inside container
             dest_dir = os.path.dirname(dest_path)
@@ -312,18 +312,18 @@ class LocalDockerEnvironment(Environment):
                 check_result = self.execute(check_cmd)
 
                 if check_result.return_code != 0:
-                    logger.debug("📁 Creating destination directory inside container: %s", dest_dir)
+                    logger.debug(" Creating destination directory inside container: %s", dest_dir)
                     mkdir_cmd = f"mkdir -p {shlex.quote(dest_dir)}"
                     mkdir_result = self.execute(mkdir_cmd)
 
                     if mkdir_result.return_code != 0:
-                        logger.error("❌ Failed to create destination directory %s: %s",
+                        logger.error(" Failed to create destination directory %s: %s",
                                    dest_dir, mkdir_result.stderr)
                         return False
                     else:
-                        logger.debug("✅ Destination directory created: %s", dest_dir)
+                        logger.debug(" Destination directory created: %s", dest_dir)
                 else:
-                    logger.debug("✅ Destination directory already exists: %s", dest_dir)
+                    logger.debug(" Destination directory already exists: %s", dest_dir)
 
             # Use docker cp command to copy files/folders
             # Escape paths for shell safety
@@ -331,7 +331,7 @@ class LocalDockerEnvironment(Environment):
             # Build docker cp command
             cmd = ["docker", "cp", src_path, f"{self.container.id}:{dest_path}"]
 
-            logger.debug("📁 Copying %s to container:%s", src_path, dest_path)
+            logger.debug(" Copying %s to container:%s", src_path, dest_path)
 
             # Execute the copy command
             result = subprocess.run(
@@ -342,17 +342,17 @@ class LocalDockerEnvironment(Environment):
             )
 
             if result.returncode == 0:
-                logger.info("✅ Successfully copied %s to container:%s", src_path, dest_path)
+                logger.info(" Successfully copied %s to container:%s", src_path, dest_path)
                 return True
             else:
-                logger.error("❌ Failed to copy file. Error: %s", result.stderr)
+                logger.error(" Failed to copy file. Error: %s", result.stderr)
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error("❌ Copy operation timed out after 300 seconds")
+            logger.error(" Copy operation timed out after 300 seconds")
             return False
         except Exception as e:
-            logger.exception("❌ Unexpected error during copy operation: %s", e)
+            logger.exception(" Unexpected error during copy operation: %s", e)
             return False
 
     def copy_from_container(self, src_path: str, dest_path: str) -> bool:
@@ -367,7 +367,7 @@ class LocalDockerEnvironment(Environment):
             bool: True if copy was successful, False otherwise
         """
         if not self.container:
-            logger.error("❌ No active container to copy from")
+            logger.error(" No active container to copy from")
             return False
 
         try:
@@ -376,20 +376,20 @@ class LocalDockerEnvironment(Environment):
             check_result = self.execute(check_cmd)
 
             if check_result.return_code != 0:
-                logger.error("❌ Source path does not exist in container: %s", src_path)
+                logger.error(" Source path does not exist in container: %s", src_path)
                 return False
 
             # Check if destination directory exists on host machine
             dest_dir = os.path.dirname(dest_path)
             if not os.path.exists(dest_dir):
-                logger.error("❌ Destination directory does not exist on host: %s", dest_dir)
+                logger.error(" Destination directory does not exist on host: %s", dest_dir)
                 return False
 
             cmd = ["docker", "cp", f"{self.container.id}:{src_path}", dest_path]
 
             # Build docker cp command
 
-            logger.debug("📁 Copying container:%s to %s", src_path, dest_path)
+            logger.debug(" Copying container:%s to %s", src_path, dest_path)
 
             # Execute the copy command
             result = subprocess.run(
@@ -400,15 +400,15 @@ class LocalDockerEnvironment(Environment):
             )
 
             if result.returncode == 0:
-                logger.info("✅ Successfully copied from container:%s to %s", src_path, dest_path)
+                logger.info(" Successfully copied from container:%s to %s", src_path, dest_path)
                 return True
             else:
-                logger.error("❌ Failed to copy file. Error: %s", result.stderr)
+                logger.error(" Failed to copy file. Error: %s", result.stderr)
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error("❌ Copy operation timed out after 300 seconds")
+            logger.error(" Copy operation timed out after 300 seconds")
             return False
         except Exception as e:
-            logger.exception("❌ Unexpected error during copy operation: %s", e)
+            logger.exception(" Unexpected error during copy operation: %s", e)
             return False
