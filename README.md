@@ -31,6 +31,13 @@ print(data.results)
 pip install microbots
 ```
 
+## 🧑‍💻 Developer Contribution Guidelines
+
+If you want to contribute to Microbots, follow the developer guides below:
+
+- [Contributing Guidelines](./CONTRIBUTING.md)
+- [API Reference Documentation Guide (NumPy docstrings)](./docs/api-reference-guide.md)
+
 
 ## ✨LLM Support
 
