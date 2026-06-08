@@ -1,7 +1,7 @@
 """
-CopilotBot — A wrapper around the GitHub Copilot SDK.
+CopilotBot  A wrapper around the GitHub Copilot SDK.
 
-Unlike MicroBot (which manages its own LLM ↔ shell agent loop), CopilotBot
+Unlike MicroBot (which manages its own LLM  shell agent loop), CopilotBot
 delegates the **entire agent loop to the Copilot runtime**.  Copilot handles
 planning, tool invocation (file edits, shell commands, web requests, etc.)
 and multi-turn reasoning autonomously.
@@ -9,23 +9,23 @@ and multi-turn reasoning autonomously.
 CopilotBot reuses the Microbots infrastructure:
   - Docker sandbox (LocalDockerEnvironment) for isolated execution
   - Mount system for folder access control
-  - ToolAbstract lifecycle (install → verify → setup) for additional tools
+  - ToolAbstract lifecycle (install  verify  setup) for additional tools
   - copilot-cli is installed **inside** the container and run in headless
     server mode; the SDK on the host connects to it via TCP.
 
 Architecture:
 
     Host                          Docker Container
-    ─────                         ────────────────
+                             
     CopilotBot                    copilot-cli --headless --port <P>
-        │                              │
-        ├── Copilot SDK ──TCP──────────┘
-        │   (ExternalServerConfig)
-        │
-        ├── additional tools
-        │   (define_tool → SDK session)
-        │
-        └── BotRunResult
+                                      
+         Copilot SDK TCP
+           (ExternalServerConfig)
+        
+         additional tools
+           (define_tool  SDK session)
+        
+         BotRunResult
 
 Prerequisites:
   - pip install microbots[ghcp]   (github-copilot-sdk)
@@ -93,10 +93,10 @@ def resolve_auth_config(
     Copilot authentication, and builds the appropriate provider config.
 
     Priority order:
-      1. Explicit ``api_key`` or ``bearer_token`` with ``base_url`` → BYOK
-      2. Environment variables (``COPILOT_BYOK_*``) → BYOK
-      3. ``token_provider`` (e.g. Azure AD token provider) → BYOK with bearer token
-      4. GitHub token → native Copilot authentication
+      1. Explicit ``api_key`` or ``bearer_token`` with ``base_url``  BYOK
+      2. Environment variables (``COPILOT_BYOK_*``)  BYOK
+      3. ``token_provider`` (e.g. Azure AD token provider)  BYOK with bearer token
+      4. GitHub token  native Copilot authentication
 
     Parameters
     ----------
@@ -136,7 +136,7 @@ def resolve_auth_config(
         ``token_provider`` is not a valid callable.
     """
 
-    # ── 1. Explicit api_key / bearer_token ───────────────────────────
+    #  1. Explicit api_key / bearer_token 
     if api_key or bearer_token:
         if not base_url:
             raise ValueError(
@@ -150,10 +150,10 @@ def resolve_auth_config(
             wire_api=wire_api,
             azure_api_version=azure_api_version,
         )
-        logger.info("🔑 BYOK auth resolved via explicit credentials (type=%s)", provider["type"])
+        logger.info(" BYOK auth resolved via explicit credentials (type=%s)", provider["type"])
         return model, None, provider
 
-    # ── 2. Environment variables ─────────────────────────────────────
+    #  2. Environment variables 
     env_base_url = os.environ.get(_BYOK_ENV_BASE_URL)
     env_api_key = os.environ.get(_BYOK_ENV_API_KEY)
     env_bearer_token = os.environ.get(_BYOK_ENV_BEARER_TOKEN)
@@ -168,10 +168,10 @@ def resolve_auth_config(
             wire_api=os.environ.get(_BYOK_ENV_WIRE_API),
             azure_api_version=os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
         )
-        logger.info("🔑 BYOK auth resolved via environment variables (type=%s)", provider["type"])
+        logger.info(" BYOK auth resolved via environment variables (type=%s)", provider["type"])
         return env_model, None, provider
 
-    # ── 2.5. BYOK base_url set but no key/bearer → auto-detect via DefaultAzureCredential ──
+    #  2.5. BYOK base_url set but no key/bearer  auto-detect via DefaultAzureCredential 
     # Only fires when COPILOT_BYOK_PROVIDER_TYPE is also set (explicit BYOK intent).
     # Without it, a bare COPILOT_BYOK_BASE_URL would hijack tests that expect native Copilot auth.
     env_provider_type = os.environ.get(_BYOK_ENV_PROVIDER_TYPE)
@@ -182,11 +182,11 @@ def resolve_auth_config(
             token_provider = get_bearer_token_provider(
                 _credential, "https://cognitiveservices.azure.com/.default"
             )
-            logger.debug("DefaultAzureCredential configured for BYOK — falling through to step 3")
+            logger.debug("DefaultAzureCredential configured for BYOK  falling through to step 3")
         except Exception as e:
             logger.debug("DefaultAzureCredential not available for BYOK: %s", e)
 
-    # ── 3. Token provider (e.g. Azure AD) ────────────────────────────
+    #  3. Token provider (e.g. Azure AD) 
     if token_provider:
         if not callable(token_provider):
             raise ValueError("token_provider must be a callable that returns a string token.")
@@ -210,10 +210,10 @@ def resolve_auth_config(
             wire_api=wire_api or os.environ.get(_BYOK_ENV_WIRE_API),
             azure_api_version=azure_api_version or os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
         )
-        logger.info("🔑 BYOK auth resolved via token_provider (type=%s)", provider["type"])
+        logger.info(" BYOK auth resolved via token_provider (type=%s)", provider["type"])
         return os.environ.get(_BYOK_ENV_MODEL, model), None, provider
 
-    # ── 4. Native GitHub Copilot auth ────────────────────────────────
+    #  4. Native GitHub Copilot auth 
     resolved_github_token = (
         github_token
         or os.environ.get("COPILOT_GITHUB_TOKEN")
@@ -221,7 +221,7 @@ def resolve_auth_config(
         or os.environ.get("GH_TOKEN")
         or get_copilot_token()
     )
-    logger.info("🔑 Using native GitHub Copilot authentication")
+    logger.info(" Using native GitHub Copilot authentication")
     return model, resolved_github_token, None
 
 
@@ -269,7 +269,7 @@ class CopilotBot:
     folder_to_mount : str
         Absolute host path to mount into the sandbox.
     permission : PermissionLabels
-        Mount permission — READ_ONLY or READ_WRITE.  Defaults to READ_WRITE.
+        Mount permission  READ_ONLY or READ_WRITE.  Defaults to READ_WRITE.
     environment : Optional[LocalDockerEnvironment]
         Pre-created environment.  One is created automatically when *None*.
     additional_tools : Optional[list[ToolAbstract]]
@@ -344,7 +344,7 @@ class CopilotBot:
 
         self.additional_tools = additional_tools or []
 
-        # ── Resolve auth: BYOK vs native GitHub Copilot ─────────────
+        #  Resolve auth: BYOK vs native GitHub Copilot 
         self.model, self.github_token, self._provider_config = resolve_auth_config(
             model=model,
             github_token=github_token,
@@ -357,20 +357,20 @@ class CopilotBot:
             token_provider=token_provider,
         )
 
-        # ── Mount setup ─────────────────────────────────────────────
+        #  Mount setup 
         self.folder_to_mount: Optional[Mount] = None
         if folder_to_mount:
             sandbox_path = f"/{DOCKER_WORKING_DIR}/{os.path.basename(folder_to_mount)}"
             self.folder_to_mount = Mount(folder_to_mount, sandbox_path, permission)
 
-        # ── Docker environment ──────────────────────────────────────
+        #  Docker environment 
         self.environment = environment
         if not self.environment:
             self._create_environment()
 
-        # ── Validate tools — ExternalTool is not supported ──────────
+        #  Validate tools  ExternalTool is not supported 
         # __ And ___
-        # ── Install additional tools inside the container ───────────
+        #  Install additional tools inside the container 
         for tool in self.additional_tools:
             if isinstance(tool, ExternalTool):
                 raise ValueError(
@@ -379,23 +379,23 @@ class CopilotBot:
                     f"internal (container-side) tools are allowed."
                 )
 
-            logger.info("🔧 Installing additional tool '%s'...", tool.name)
+            logger.info(" Installing additional tool '%s'...", tool.name)
             tool.install_tool(self.environment)
             tool.verify_tool_installation(self.environment)
-            logger.info("✅ Tool '%s' installed and verified", tool.name)
+            logger.info(" Tool '%s' installed and verified", tool.name)
 
-        # ── Install & start copilot-cli inside the container ────────
+        #  Install & start copilot-cli inside the container 
         self._install_copilot_cli()
         self._start_copilot_cli_server()
 
-        # ── Background event loop for async SDK calls ───────────────
+        #  Background event loop for async SDK calls 
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._thread.start()
 
-        # ── Connect SDK to in-container CLI ─────────────────────────
+        #  Connect SDK to in-container CLI 
         container_ip = self.environment.get_ipv4_address()
-        logger.info("🔌 Connecting Copilot SDK to CLI server at %s:%d", container_ip, _CONTAINER_CLI_PORT)
+        logger.info(" Connecting Copilot SDK to CLI server at %s:%d", container_ip, _CONTAINER_CLI_PORT)
         self._client = CopilotClient(
             ExternalServerConfig(url=f"{container_ip}:{_CONTAINER_CLI_PORT}")
         )
@@ -403,15 +403,15 @@ class CopilotBot:
         self._PermissionHandler = PermissionHandler
 
         logger.info(
-            "✅ CopilotBot initialised — model=%s, cli=%s:%d",
+            " CopilotBot initialised  model=%s, cli=%s:%d",
             self.model,
             container_ip,
             _CONTAINER_CLI_PORT,
         )
 
-    # ──────────────────────────────────────────────────────────────────
+    # 
     # Public API
-    # ──────────────────────────────────────────────────────────────────
+    # 
 
     def run(
         self,
@@ -422,7 +422,7 @@ class CopilotBot:
     ) -> BotRunResult:
         """Send *task* to the Copilot agent and wait for completion.
 
-        The Copilot runtime manages the full agent loop autonomously —
+        The Copilot runtime manages the full agent loop autonomously 
         planning, tool invocation, multi-turn reasoning, and file edits
         all happen inside the sandboxed environment.
 
@@ -443,11 +443,11 @@ class CopilotBot:
             status=True on success with the agent's final message in *result*,
             or status=False with an error description.
         """
-        logger.info("🚀 Starting CopilotBot run — task: %.120s...", task)
+        logger.info(" Starting CopilotBot run  task: %.120s...", task)
 
         # Setup additional tools (env vars, files, setup_commands)
         for tool in self.additional_tools:
-            logger.info("⚙️  Setting up tool '%s'", tool.name)
+            logger.info("  Setting up tool '%s'", tool.name)
             tool.setup_tool(self.environment)
 
         # Mount additional folders
@@ -466,10 +466,10 @@ class CopilotBot:
                     streaming=streaming,
                 )
             )
-            logger.info("✅ CopilotBot run completed successfully")
+            logger.info(" CopilotBot run completed successfully")
             return BotRunResult(status=True, result=result_text, error=None)
         except Exception as e:
-            logger.exception("❌ CopilotBot run failed: %s", e)
+            logger.exception(" CopilotBot run failed: %s", e)
             return BotRunResult(status=False, result=None, error=str(e))
 
     def stop(self):
@@ -506,9 +506,9 @@ class CopilotBot:
         except Exception:
             pass
 
-    # ──────────────────────────────────────────────────────────────────
-    # Private — environment & CLI setup
-    # ──────────────────────────────────────────────────────────────────
+    # 
+    # Private  environment & CLI setup
+    # 
 
     def _create_environment(self):
         free_port = get_free_port()
@@ -519,7 +519,7 @@ class CopilotBot:
 
     def _install_copilot_cli(self):
         """Install copilot-cli inside the Docker container."""
-        logger.info("📦 Installing copilot-cli inside container...")
+        logger.info(" Installing copilot-cli inside container...")
 
         # Install Node.js (required for copilot-cli via npm)
         install_commands = [
@@ -548,7 +548,7 @@ class CopilotBot:
             raise RuntimeError(
                 f"copilot-cli installation verification failed: {verify.stderr}"
             )
-        logger.info("✅ copilot-cli installed: %s", verify.stdout.strip())
+        logger.info(" copilot-cli installed: %s", verify.stdout.strip())
 
     def _start_copilot_cli_server(self):
         """Start copilot-cli in headless server mode inside the container.
@@ -560,7 +560,7 @@ class CopilotBot:
         """
         # Inject the GitHub token into the container for native Copilot auth.
         # When BYOK is active, authentication is handled via the provider
-        # config passed to create_session — no container-side token needed.
+        # config passed to create_session  no container-side token needed.
         if self.github_token and not self._provider_config:
             self.environment.execute(
                 f'export GITHUB_TOKEN="{self.github_token}"', sensitive=True
@@ -584,7 +584,7 @@ class CopilotBot:
         # Wait for the server to be ready
         self._wait_for_cli_ready()
         logger.info(
-            "✅ copilot-cli headless server running on container port %d",
+            " copilot-cli headless server running on container port %d",
             _CONTAINER_CLI_PORT,
         )
 
@@ -610,9 +610,9 @@ class CopilotBot:
             f"on {container_ip}:{_CONTAINER_CLI_PORT}"
         )
 
-    # ──────────────────────────────────────────────────────────────────
-    # Private — SDK session & execution
-    # ──────────────────────────────────────────────────────────────────
+    # 
+    # Private  SDK session & execution
+    # 
 
     def _run_async(self, coro):
         """Submit an async coroutine to the background loop and block."""
@@ -645,7 +645,7 @@ class CopilotBot:
         if system_content:
             session_kwargs["system_message"] = {"content": system_content}
 
-        logger.info("📡 Creating Copilot session (model=%s, streaming=%s, byok=%s)", self.model, streaming, self._provider_config is not None)
+        logger.info(" Creating Copilot session (model=%s, streaming=%s, byok=%s)", self.model, streaming, self._provider_config is not None)
         logger.debug("Session kwargs: %s", session_kwargs)
         session = await self._client.create_session(**session_kwargs)
 
@@ -656,26 +656,26 @@ class CopilotBot:
             if event.type == SessionEventType.ASSISTANT_MESSAGE:
                 if event.data and event.data.content:
                     collected_text.append(event.data.content)
-                    logger.info("💬 Assistant message received (%d chars)", len(event.data.content))
+                    logger.info(" Assistant message received (%d chars)", len(event.data.content))
             elif event.type == SessionEventType.ASSISTANT_MESSAGE_DELTA:
                 if event.data and event.data.delta_content:
-                    logger.debug("📝 %s", event.data.delta_content)
+                    logger.debug(" %s", event.data.delta_content)
             elif event.type == SessionEventType.SESSION_IDLE:
-                logger.info("⏹️  Session idle — agent finished processing")
+                logger.info("  Session idle  agent finished processing")
                 done_event.set()
             else:
-                logger.debug("📨 Session event: %s", event.type)
+                logger.debug(" Session event: %s", event.type)
 
         session.on(_on_event)
 
         # Send the task prompt and wait for completion
-        logger.info("📤 Sending task to Copilot agent...")
+        logger.info(" Sending task to Copilot agent...")
         logger.debug("Task content: %s", task)
         response = await session.send_and_wait(task, timeout=float(timeout))
 
         # If send_and_wait returned a full response, use it
         if response and response.data and response.data.content:
-            logger.info("✅ Received response from send_and_wait with %d chars", len(response.data.content))
+            logger.info(" Received response from send_and_wait with %d chars", len(response.data.content))
             logger.info("Response content: %s", response.data.content)
             return response.data.content
 
@@ -684,7 +684,7 @@ class CopilotBot:
             try:
                 await asyncio.wait_for(done_event.wait(), timeout=float(timeout))
             except asyncio.TimeoutError:
-                logger.warning("⏱️  Timed out waiting for session idle after %ds", timeout)
+                logger.warning("  Timed out waiting for session idle after %ds", timeout)
 
         await session.disconnect()
 
@@ -709,19 +709,19 @@ class CopilotBot:
 
         return "\n\n".join(parts)
 
-    # ──────────────────────────────────────────────────────────────────
-    # Private — SDK hooks for tool-use logging
-    # ──────────────────────────────────────────────────────────────────
+    # 
+    # Private  SDK hooks for tool-use logging
+    # 
 
     async def _on_pre_tool_use(self, input_data, invocation):
-        """Hook called before each tool execution — log the call."""
+        """Hook called before each tool execution  log the call."""
         tool_name = input_data.get("toolName", "unknown")
         tool_args = input_data.get("toolArgs", {})
-        logger.info("➡️  Tool call: %s — args: %s", tool_name, tool_args)
+        logger.info("  Tool call: %s  args: %s", tool_name, tool_args)
         return {"permissionDecision": "allow"}
 
     async def _on_post_tool_use(self, input_data, invocation):
-        """Hook called after each tool execution — log the result."""
+        """Hook called after each tool execution  log the result."""
         tool_name = input_data.get("toolName", "unknown")
         result = input_data.get("toolResult", "")
         # Truncate long results for readable logs
@@ -729,12 +729,12 @@ class CopilotBot:
         logger.debug("Tool '%s'\nexecution result: %s", tool_name, result_str)
         if len(result_str) > 500:
             result_str = result_str[:500] + "... (truncated)"
-        logger.info("⬅️  Tool result: %s — output: %s", tool_name, result_str)
+        logger.info("  Tool result: %s  output: %s", tool_name, result_str)
         return {}
 
-    # ──────────────────────────────────────────────────────────────────
-    # Private — mount helpers
-    # ──────────────────────────────────────────────────────────────────
+    # 
+    # Private  mount helpers
+    # 
 
     def _mount_additional(self, mount: Mount):
         """Copy an additional folder into the running container."""
