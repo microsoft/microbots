@@ -487,6 +487,31 @@ test("AzureRM Login Receives ServiceConnection ID", async () => {
   assert.equal(process.env.AZURE_CORE_OUTPUT, "json");
 });
 
+test("Input Validation Failures Do Not Clear Azure CLI Account", async () => {
+  const codebasePath = makeProjectWithLog();
+  const { task, calls } = loadTask({
+    inputs: {
+      azureSubscription: "service-id",
+      deploymentName: "gpt-test",
+      endpoint: "http://example.openai.azure.com/",
+      apiVersion: "2025-03-01-preview",
+      codebasePath,
+      logFilePath: "logs/build.log",
+      timeoutSeconds: "600",
+    },
+  });
+
+  await task.run();
+
+  assert.deepEqual(calls.setResult, [{
+    result: "Failed",
+    message: "endpoint must be a valid HTTPS URL: http://example.openai.azure.com/",
+  }]);
+  assert.equal(calls.spawnSync.some((call) => (
+    call.command === "az" && Array.from(call.args || []).join(" ") === "account clear"
+  )), false);
+});
+
 test("ServiceConnection Login Failures Are Properly Handled And Stop The Analyzer", async () => {
   const codebasePath = makeProjectWithLog();
   const { task, calls } = loadTask({
@@ -511,6 +536,10 @@ test("ServiceConnection Login Failures Are Properly Handled And Stop The Analyze
   assert.equal(calls.spawnSync.some((call) => (
     Array.from(call.args || [])[0] === path.join(taskDir, "log_analyzer_runner.py")
   )), false);
+  const logoutCall = calls.spawnSync.at(-1);
+  assert.equal(logoutCall.command, "az");
+  assert.deepEqual(Array.from(logoutCall.args), ["account", "clear"]);
+  assert.equal(logoutCall.options.stdio, "ignore");
 });
 
 test("Python Setup Command Failures Include Error Details", () => {

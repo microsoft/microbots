@@ -8,7 +8,7 @@
   "author": "Microbots contributors",
   "version": {
     "Major": 0,
-    "Minor": 3,
+    "Minor": 4,
     "Patch": 0
   },
   "instanceNameFormat": "Microbots Log Analyzer: $(logFilePath)",
