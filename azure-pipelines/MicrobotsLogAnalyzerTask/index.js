@@ -209,8 +209,11 @@ function runLogAnalyzer(python, inputs) {
 }
 
 async function run() {
+  let clearAzAccount = false;
+
   try {
     const inputs = getInputs();
+    clearAzAccount = true;
     await loginWithServiceConnection(inputs.serviceConnection);
     const python = setupVenv();
     runLogAnalyzer(python, inputs);
@@ -218,7 +221,9 @@ async function run() {
   } catch (error) {
     tl.setResult(tl.TaskResult.Failed, error.message || String(error));
   } finally {
-    try { spawnSync("az", ["account", "clear"], { stdio: "ignore" }); } catch (_) {}
+    if (clearAzAccount) {
+      try { spawnSync("az", ["account", "clear"], { stdio: "ignore" }); } catch (_) {}
+    }
   }
 }
 
