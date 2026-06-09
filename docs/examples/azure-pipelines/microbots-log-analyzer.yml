@@ -1,0 +1,33 @@
+trigger:
+- none
+
+jobs:
+- job: MicrobotsLogAnalyzer
+  pool:
+    vmImage: ubuntu-latest
+  timeoutInMinutes: 30
+  steps:
+  - checkout: self
+
+  - bash: |
+      set -euo pipefail
+      command -v az >/dev/null 2>&1 || { echo '##[error]azure-cli is required on the agent'; exit 1; }
+      command -v python3 >/dev/null 2>&1 || { echo '##[error]python3 is required on the agent'; exit 1; }
+      python3 -m venv --help >/dev/null 2>&1 || { echo '##[error]python3 venv support is required'; exit 1; }
+    displayName: Check MicrobotsLogAnalyzer prerequisites
+
+  - task: MicrobotsLogAnalyzer@0
+    displayName: Analyze build log
+    inputs:
+      azureSubscription: my-azure-service-connection
+      deploymentName: my-azure-openai-deployment
+      endpoint: https://my-azure-openai-resource.openai.azure.com/
+      apiVersion: 2025-03-01-preview
+      codebasePath: $(Build.SourcesDirectory)
+      logFilePath: logs/build.log
+      outputFilePath: $(Build.ArtifactStagingDirectory)/microbots-log-analysis.md
+      additionalContext: |
+        This build usually fails when package version conflicts occur.
+        Please consider it while analyzing the log.
+      timeoutSeconds: 600
+      maxIterations: 20
