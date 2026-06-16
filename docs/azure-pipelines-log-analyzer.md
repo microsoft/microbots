@@ -14,7 +14,8 @@
 Install the published Marketplace extension into the Azure DevOps organization that owns your pipelines:
 
 1. Open the Marketplace listing:
-   [Microbots Log Analyzer](https://marketplace.visualstudio.com/items?itemName=Microbots-log-analyzer.microbots-log-analyzer)
+   [Microbots Log Analyzer](https://marketplace.visualstudio.com/items?itemName=Microbots-log-analyzer.microbots-log-analyzer).
+   You may be required to sign in to Marketplace to view the extension.
 2. Select **Get it free**.
 3. Choose the Azure DevOps organization where your pipelines run.
 4. Confirm the extension appears in the organization extension page:
