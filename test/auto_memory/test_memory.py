@@ -1,4 +1,6 @@
 import pytest
+from unittest.mock import patch
+from pathlib import Path
 
 from microbots.auto_memory.memory import MemoryStore
 from microbots.auto_memory.data_models import Feedback
@@ -209,3 +211,38 @@ class TestMemoryStoreReadWrite:
         entries = store.read_all()
         assert len(entries) == 1
         assert entries[0].summary == "ok"
+
+
+# ---------------------------------------------------------------------------
+# OSError paths
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestMemoryStoreOSErrors:
+    def test_mount_mkdir_failure_raises(self, tmp_path):
+        store = MemoryStore()
+        with patch.object(Path, "mkdir", side_effect=OSError("disk full")):
+            with pytest.raises(MemoryStoreError, match="Cannot create memory directory"):
+                store.mount(tmp_path / "run")
+
+    def test_append_feedback_open_failure_raises(self, tmp_path):
+        store = MemoryStore()
+        store.mount(tmp_path / "run")
+        with patch.object(Path, "open", side_effect=OSError("disk full")):
+            with pytest.raises(MemoryStoreError, match="Failed to write feedback"):
+                store.append_feedback(_make_feedback())
+
+    def test_read_all_open_failure_raises(self, tmp_path):
+        store = MemoryStore()
+        store.mount(tmp_path / "run")
+        store.append_feedback(_make_feedback())  # ensure file exists
+        with patch.object(Path, "open", side_effect=OSError("disk full")):
+            with pytest.raises(MemoryStoreError, match="Failed to read feedback"):
+                store.read_all()
+
+    def test_clear_write_text_failure_raises(self, tmp_path):
+        store = MemoryStore()
+        store.mount(tmp_path / "run")  # succeeds — creates empty file
+        with patch.object(Path, "write_text", side_effect=OSError("disk full")):
+            with pytest.raises(MemoryStoreError, match="Failed to clear feedback file"):
+                store.clear()

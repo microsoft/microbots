@@ -298,3 +298,50 @@ class TestSafeRmtree:
         near_root = Path("/tmp")
         with pytest.raises(ConfigError, match="Refusing"):
             WorkspaceManager._safe_rmtree(near_root)
+
+
+# ---------------------------------------------------------------------------
+# _detect_iteration_count() edge cases
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestDetectIterationCount:
+    def test_ignores_dirs_without_iter_prefix(self, tmp_path):
+        """Directories not starting with 'iter_' are skipped (continue branch)."""
+        run_dir = tmp_path / "run"
+        wm = WorkspaceManager(run_dir=run_dir)
+        wm.prepare()
+        wm.prepare_iteration(0)
+        (wm._iterations_dir / "temp").mkdir()        # no iter_ prefix
+
+        wm2 = WorkspaceManager(run_dir=run_dir)
+        wm2.prepare(resume=True)
+        assert wm2.iteration_count == 1  # only iter_00 counts
+
+    def test_ignores_dirs_with_non_digit_suffix(self, tmp_path):
+        """Directories like 'iter_foo' (non-digit suffix) are skipped."""
+        run_dir = tmp_path / "run"
+        wm = WorkspaceManager(run_dir=run_dir)
+        wm.prepare()
+        wm.prepare_iteration(2)
+        (wm._iterations_dir / "iter_foo").mkdir()    # iter_ prefix, non-digit suffix
+
+        wm2 = WorkspaceManager(run_dir=run_dir)
+        wm2.prepare(resume=True)
+        assert wm2.iteration_count == 3  # only iter_02 counts → max_idx=2, +1=3
+
+
+# ---------------------------------------------------------------------------
+# _write_meta() error path
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestWriteMeta:
+    def test_write_meta_oserror_logs_warning_not_raises(self, tmp_path):
+        """_write_meta() swallows OSError and logs a warning instead of raising."""
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        # Block the meta path by creating a directory there so write_text raises.
+        (run_dir / "run_meta.json").mkdir()
+        wm = WorkspaceManager(run_dir=run_dir)
+        wm._write_meta()  # must not raise
