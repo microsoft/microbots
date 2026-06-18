@@ -108,8 +108,19 @@ class MemoryStore:
                             f"Invalid JSON on line {lineno} of "
                             f"{self._feedback_path}: {exc}"
                         ) from exc
+                    if not isinstance(data, dict):
+                        raise MemoryStoreError(
+                            f"Expected a JSON object on line {lineno} of "
+                            f"{self._feedback_path}, got {type(data).__name__}"
+                        )
                     known = {f.name for f in dataclasses.fields(Feedback)}
-                    entries.append(Feedback(**{k: v for k, v in data.items() if k in known}))
+                    try:
+                        entries.append(Feedback(**{k: v for k, v in data.items() if k in known}))
+                    except TypeError as exc:
+                        raise MemoryStoreError(
+                            f"Cannot construct Feedback from line {lineno} of "
+                            f"{self._feedback_path}: {exc}"
+                        ) from exc
         except OSError as exc:
             raise MemoryStoreError(f"Failed to read feedback: {exc}") from exc
 

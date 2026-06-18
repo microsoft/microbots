@@ -113,6 +113,28 @@ class TestWorkspaceManagerResume:
         wm2.prepare(resume=True)
         assert wm2.iteration_count == 0
 
+    def test_prepare_resume_gap_in_indices(self, tmp_path):
+        """Only iter_05 exists; iteration_count must be 6, not 1."""
+        run_dir = tmp_path / "run"
+        wm = WorkspaceManager(run_dir=run_dir)
+        wm.prepare()
+        wm.prepare_iteration(5)  # creates iter_05, skips 0-4
+
+        wm2 = WorkspaceManager(run_dir=run_dir)
+        wm2.prepare(resume=True)
+        assert wm2.iteration_count == 6
+
+    def test_prepare_resume_large_index(self, tmp_path):
+        """iter_100 exists; iteration_count must be 101, not 1."""
+        run_dir = tmp_path / "run"
+        wm = WorkspaceManager(run_dir=run_dir)
+        wm.prepare()
+        wm.prepare_iteration(100)
+
+        wm2 = WorkspaceManager(run_dir=run_dir)
+        wm2.prepare(resume=True)
+        assert wm2.iteration_count == 101
+
 
 # ---------------------------------------------------------------------------
 # prepare_iteration() / iteration_dir()

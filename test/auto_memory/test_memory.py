@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 
 from microbots.auto_memory.memory import MemoryStore
 from microbots.auto_memory.data_models import Feedback
@@ -171,6 +170,27 @@ class TestMemoryStoreReadWrite:
         feedback_file = run_dir / "memory" / "feedback.jsonl"
         feedback_file.write_text("{not valid json}\n", encoding="utf-8")
         with pytest.raises(MemoryStoreError, match="Invalid JSON"):
+            store.read_all()
+
+    def test_read_all_raises_on_non_object_json(self, tmp_path):
+        """read_all() raises MemoryStoreError when a line is valid JSON but not an object."""
+        run_dir = tmp_path / "run4"
+        store = MemoryStore()
+        store.mount(run_dir)
+        feedback_file = run_dir / "memory" / "feedback.jsonl"
+        feedback_file.write_text("[1, 2, 3]\n", encoding="utf-8")
+        with pytest.raises(MemoryStoreError, match="Expected a JSON object"):
+            store.read_all()
+
+    def test_read_all_raises_on_missing_required_fields(self, tmp_path):
+        """read_all() raises MemoryStoreError when required Feedback fields are absent."""
+        run_dir = tmp_path / "run5"
+        store = MemoryStore()
+        store.mount(run_dir)
+        feedback_file = run_dir / "memory" / "feedback.jsonl"
+        # Missing both iteration_idx and summary (required, no default).
+        feedback_file.write_text('{"root_causes": []}\n', encoding="utf-8")
+        with pytest.raises(MemoryStoreError, match="Cannot construct Feedback"):
             store.read_all()
 
     def test_read_all_ignores_unknown_fields(self, tmp_path):

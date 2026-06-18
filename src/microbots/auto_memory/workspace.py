@@ -187,14 +187,19 @@ class WorkspaceManager:
         shutil.rmtree(path)
 
     def _detect_iteration_count(self) -> int:
-        """Count ``iter_NN`` directories already present on disk."""
+        """Return highest existing iteration index + 1 (or 0 if none)."""
         if not self._iterations_dir.exists():
             return 0
-        return sum(
-            1
-            for p in self._iterations_dir.iterdir()
-            if p.is_dir() and p.name.startswith(_ITER_PREFIX)
-        )
+
+        max_idx = -1
+        for p in self._iterations_dir.iterdir():
+            if not (p.is_dir() and p.name.startswith(_ITER_PREFIX)):
+                continue
+            suffix = p.name[len(_ITER_PREFIX):]
+            if suffix.isdigit():
+                max_idx = max(max_idx, int(suffix))
+
+        return max_idx + 1 if max_idx >= 0 else 0
 
     def _write_meta(self) -> None:
         meta = {

@@ -2,9 +2,9 @@ name: Run Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "auto-memory/dev" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "auto-memory/dev" ]
   workflow_dispatch:
     # Allow manual triggering
 
