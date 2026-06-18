@@ -82,6 +82,10 @@ nav:
     - "Azure Managed Identity & Service Connection Setup": advanced/azure-managed-identity-setup.md
     - Tools:
       - "Custom Tool Integration Walkthrough": advanced/tools/tesseract_ocr_tool_use.md
+    - "Developer Contribution Guidance":
+      - "Environment Setup": advanced/developer-contribution-guidance/index.md
+      - "Pre-commit Setup": advanced/developer-contribution-guidance/pre-commit-setup.md
+      - "Docstring & Writing Guidelines": advanced/developer-contribution-guidance/docstring-and-writing-guidelines.md
     - "Technical Writing Guidelines": advanced/technical-writing-guidelines.md
   - Blog:
     - "Blog Posts": blog/index.md

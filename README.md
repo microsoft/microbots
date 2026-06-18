@@ -61,12 +61,6 @@ Microbots supports multiple LLM providers — pick whichever fits your stack:
 
 Each provider has its own set of environment variables (endpoint, API key, deployment name, etc.). See the [Authentication guide](https://microsoft.github.io/microbots/advanced/authentication/) for the exact `.env` variables required for each provider and for Azure AD / managed identity setup.
 
-## 📚 Links
-
-- [GitHub Repository](https://github.com/microsoft/microbots)
-- [Contributing Guide](https://github.com/microsoft/microbots/blob/main/CONTRIBUTING.md)
-- [Code of Conduct](https://github.com/microsoft/microbots/blob/main/CODE_OF_CONDUCT.md)
-
 ---
 
 ## 🎯 Getting Started
@@ -74,6 +68,18 @@ Each provider has its own set of environment variables (endpoint, API key, deplo
 Ready to build your first Microbot project? Follow the step-by-step onboarding guide:
 
 ➡️ **[Get Started with Microbots](https://microsoft.github.io/microbots/getting-started/prerequisites/)**
+
+## 🛠️ Developer Contribution Guidance
+
+Want to contribute to Microbots? Follow the step-by-step guide to set up your environment and meet the project's code and documentation standards:
+
+➡️ **[Developer Contribution Guidance](https://microsoft.github.io/microbots/advanced/developer-contribution-guidance/)**
+
+## 📚 Links
+
+- [GitHub Repository](https://github.com/microsoft/microbots)
+- [Contributing Guide](https://github.com/microsoft/microbots/blob/main/CONTRIBUTING.md)
+- [Code of Conduct](https://github.com/microsoft/microbots/blob/main/CODE_OF_CONDUCT.md)
 
 ## Legal Notice
 
