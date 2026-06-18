@@ -66,19 +66,11 @@ its dependencies separate from your system Python, so nothing is added globally.
 python -m venv .venv
 ```
 
-**Activate the virtual environment.** Choose the tab for your operating system.
+**Activate the virtual environment.**
 
-=== "macOS / Linux"
-
-    ```bash
-    source .venv/bin/activate
-    ```
-
-=== "Windows (WSL)"
-
-    ```bash
-    source .venv/bin/activate
-    ```
+```bash
+source .venv/bin/activate
+```
 
 Once activated, your shell prompt shows `(.venv)`, indicating that Python and
 `pip` now refer to the environment you just created.

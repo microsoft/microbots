@@ -69,7 +69,7 @@ jobs:
 
       - name: Publish docstring check (neutral if issues found)
         if: always()
-        uses: LouisBrunner/checks-action@v2.0.0
+        uses: LouisBrunner/checks-action@6b626ffbad7cc56fd58627f774b9067e6118af23 # v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: NumPy docstring guide
