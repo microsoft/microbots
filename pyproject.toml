@@ -36,7 +36,7 @@ dependencies = { file = ["requirements.txt"] }
 where = ["src"]
 
 [project.urls]
-"Source Repo" = "https://github.com/microsoft/minions"
+"Source Repo" = "https://github.com/microsoft/microbots"
 Issues = "https://github.com/microsoft/microbots/issues"
 
 [tool.numpydoc_validation]
