@@ -61,6 +61,10 @@ Microbots supports multiple LLM providers — pick whichever fits your stack:
 
 Each provider has its own set of environment variables (endpoint, API key, deployment name, etc.). See the [Authentication guide](https://microsoft.github.io/microbots/advanced/authentication/) for the exact `.env` variables required for each provider and for Azure AD / managed identity setup.
 
+## Azure Pipelines Log Analyzer
+
+Microbots includes a published Azure DevOps Marketplace task, `MicrobotsLogAnalyzer@0`, for analyzing logs with Azure OpenAI models through an Azure Resource Manager Service Connection. See [docs/advanced/azure-pipelines-log-analyzer.md](docs/advanced/azure-pipelines-log-analyzer.md) to install and use the task in Azure Pipelines.
+
 ---
 
 ## 🎯 Getting Started

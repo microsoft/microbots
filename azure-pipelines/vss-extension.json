@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "id": "microbots-log-analyzer",
+  "name": "Microbots Log Analyzer",
+  "version": "0.4.0",
+  "publisher": "Microbots-log-analyzer",
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "description": "Azure Pipelines task for running Microbots log analysis with Azure OpenAI.",
+  "categories": [
+    "Azure Pipelines"
+  ],
+  "files": [
+    {
+      "path": "MicrobotsLogAnalyzerTask"
+    }
+  ],
+  "contributions": [
+    {
+      "id": "microbots-log-analyzer-task",
+      "type": "ms.vss-distributed-task.task",
+      "targets": [
+        "ms.vss-distributed-task.tasks"
+      ],
+      "properties": {
+        "name": "MicrobotsLogAnalyzerTask"
+      }
+    }
+  ]
+}
