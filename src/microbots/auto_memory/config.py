@@ -1,3 +1,5 @@
+"""Task configuration dataclass and YAML loader for auto_memory runs."""
+
 from __future__ import annotations
 
 import yaml
@@ -34,9 +36,21 @@ class TaskConfig:
     def load_from_yaml(cls, path: str) -> "TaskConfig":
         """Parse a task YAML file into a TaskConfig.
 
-        Raises:
-            ConfigError: if the file is not found, not valid YAML, or missing
-                         required fields.
+        Parameters
+        ----------
+        path : str
+            Filesystem path to the YAML configuration file.
+
+        Returns
+        -------
+        TaskConfig
+            Fully validated configuration object.
+
+        Raises
+        ------
+        ConfigError
+            If the file is not found, not valid YAML, or missing required
+            fields.
         """
         yaml_path = Path(path)
         if not yaml_path.exists():
