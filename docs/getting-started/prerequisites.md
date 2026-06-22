@@ -11,10 +11,7 @@ Install
 
 ## Step 1 — Installing Python
 
-Microbots requires **Python 3.10 or later, but below 3.13**.
-
-!!! info
-    Python 3.13 compatibility issue fix is in progress — we will update the page once we fix the issue.
+Microbots requires **Python 3.11 or later** (Python 3.13 is supported).
 
 Pick your OS:
 
@@ -31,7 +28,7 @@ python3 --version
 pip3 --version
 ```
 
-Confirm the version is **at least 3.10 and below 3.13**.
+Confirm the version is **at least 3.11**.
 
 ## Step 2 — Installing Docker
 
