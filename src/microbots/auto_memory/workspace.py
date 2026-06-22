@@ -1,3 +1,5 @@
+"""On-disk workspace layout manager for auto_memory runs."""
+
 from __future__ import annotations
 
 import json
@@ -53,6 +55,7 @@ class WorkspaceManager:
     _iteration_count: int = field(init=False, default=0, repr=False)
 
     def __post_init__(self) -> None:
+        """Initialise derived path attributes after dataclass construction."""
         self._iterations_dir = self.run_dir / "iterations"
 
     # ------------------------------------------------------------------
@@ -61,18 +64,22 @@ class WorkspaceManager:
     def prepare(self, *, resume: bool = False) -> None:
         """Create (or resume) the run directory layout.
 
-        * ``resume=False`` (default): if *run_dir* already exists it is
-          **wiped** before creating a fresh layout.
-        * ``resume=True``: *run_dir* must already exist.  Its contents are
-          preserved and the number of already-completed iterations is
-          detected from the filesystem so the run continues from where it
-          left off.
+        ``resume=False`` (default): if *run_dir* already exists it is
+        **wiped** before creating a fresh layout.  ``resume=True``: *run_dir*
+        must already exist; its contents are preserved and the number of
+        already-completed iterations is detected from the filesystem.
 
-        The owned :attr:`memory` store is mounted with the same *resume*
-        flag.
+        The owned :attr:`memory` store is mounted with the same *resume* flag.
 
-        Raises:
-            ConfigError: if ``resume=True`` but *run_dir* does not exist.
+        Parameters
+        ----------
+        resume : bool, optional
+            When ``True``, continue a previously started run.
+
+        Raises
+        ------
+        ConfigError
+            If ``resume=True`` but *run_dir* does not exist.
         """
         exists = self.run_dir.exists()
 
@@ -128,7 +135,13 @@ class WorkspaceManager:
 
     @property
     def iteration_count(self) -> int:
-        """Number of iterations prepared so far."""
+        """Number of iterations prepared so far.
+
+        Returns
+        -------
+        int
+            Count of iterations prepared via :meth:`prepare_iteration`.
+        """
         return self._iteration_count
 
     def iteration_dir(self, idx: int) -> Path:
@@ -136,6 +149,16 @@ class WorkspaceManager:
 
         The directory is **not** created by this call; use
         :meth:`prepare_iteration` to create it.
+
+        Parameters
+        ----------
+        idx : int
+            Zero-based iteration index.
+
+        Returns
+        -------
+        Path
+            Path to the ``iter_<idx>`` directory.
         """
         return self._iterations_dir / f"{_ITER_PREFIX}{idx:02d}"
 
@@ -148,11 +171,20 @@ class WorkspaceManager:
             ├── candidate/
             └── logs/
 
-        Returns:
+        Parameters
+        ----------
+        idx : int
+            Zero-based iteration index.
+
+        Returns
+        -------
+        Path
             The ``iter_<idx>`` directory path.
 
-        Raises:
-            ConfigError: if *idx* is negative.
+        Raises
+        ------
+        ConfigError
+            If *idx* is negative.
         """
         if idx < 0:
             raise ConfigError(
@@ -175,8 +207,15 @@ class WorkspaceManager:
         Refuses to delete the filesystem root or any path with fewer than
         two resolved components (e.g. ``/tmp``, ``/home``).
 
-        Raises:
-            ConfigError: if *path* resolves to a root or near-root directory.
+        Parameters
+        ----------
+        path : Path
+            Directory to remove.
+
+        Raises
+        ------
+        ConfigError
+            If *path* resolves to a root or near-root directory.
         """
         resolved = path.resolve()
         # Guard: must have at least 2 parent levels (e.g. /a/b/c is fine; /a is not).
@@ -187,7 +226,13 @@ class WorkspaceManager:
         shutil.rmtree(path)
 
     def _detect_iteration_count(self) -> int:
-        """Return highest existing iteration index + 1 (or 0 if none)."""
+        """Return highest existing iteration index + 1 (or 0 if none).
+
+        Returns
+        -------
+        int
+            Number of iterations detected from the filesystem.
+        """
         if not self._iterations_dir.exists():
             return 0
 
@@ -202,6 +247,7 @@ class WorkspaceManager:
         return max_idx + 1 if max_idx >= 0 else 0
 
     def _write_meta(self) -> None:
+        """Write run metadata (creation timestamp, run_dir) to ``run_meta.json``."""
         meta = {
             "created_at": datetime.now(tz=timezone.utc).isoformat(),
             "run_dir": str(self.run_dir),

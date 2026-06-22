@@ -1,3 +1,5 @@
+"""JSONL-backed persistent memory store for auto_memory feedback."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -31,6 +33,7 @@ class MemoryStore:
     """
 
     def __init__(self) -> None:
+        """Initialise an unmounted store; call :meth:`mount` before use."""
         self._memory_dir: Path | None = None
         self._feedback_path: Path | None = None
 
@@ -40,13 +43,22 @@ class MemoryStore:
     def mount(self, run_dir: Path, *, resume: bool = False) -> None:
         """Attach the store to *run_dir/memory/*.
 
-        * ``resume=False`` (default): the feedback file is wiped so the new
-          run starts with a clean slate.
-        * ``resume=True``: if the file already exists its contents are kept so
-          the run can continue from the previous state.
+        ``resume=False`` (default): the feedback file is wiped so the new
+        run starts with a clean slate.  ``resume=True``: if the file already
+        exists its contents are kept so the run can continue from the
+        previous state.
 
-        Raises:
-            MemoryStoreError: if the memory directory cannot be created.
+        Parameters
+        ----------
+        run_dir : Path
+            Root directory of the auto_memory run.
+        resume : bool, optional
+            When ``True``, preserve any existing feedback file.
+
+        Raises
+        ------
+        MemoryStoreError
+            If the memory directory cannot be created.
         """
         memory_dir = run_dir / "memory"
         try:
@@ -72,8 +84,15 @@ class MemoryStore:
     def append_feedback(self, feedback: Feedback) -> None:
         """Append one *feedback* entry to the JSONL file.
 
-        Raises:
-            MemoryStoreError: if not mounted or on I/O error.
+        Parameters
+        ----------
+        feedback : Feedback
+            The feedback object to serialise and append.
+
+        Raises
+        ------
+        MemoryStoreError
+            If not mounted or on I/O error.
         """
         self._require_mounted()
         try:
@@ -87,8 +106,15 @@ class MemoryStore:
 
         Returns an empty list if the feedback file does not exist yet.
 
-        Raises:
-            MemoryStoreError: if not mounted or on I/O / parse error.
+        Returns
+        -------
+        list[Feedback]
+            All feedback entries in the order they were appended.
+
+        Raises
+        ------
+        MemoryStoreError
+            If not mounted or on I/O / parse error.
         """
         self._require_mounted()
         if not self._feedback_path.exists():  # type: ignore[union-attr]
@@ -132,16 +158,20 @@ class MemoryStore:
         Present for interface symmetry so callers can call ``persist()``
         without needing to know about the underlying implementation.
 
-        Raises:
-            MemoryStoreError: if not mounted.
+        Raises
+        ------
+        MemoryStoreError
+            If not mounted.
         """
         self._require_mounted()
 
     def clear(self) -> None:
         """Truncate the feedback file (creates it empty if it does not exist).
 
-        Raises:
-            MemoryStoreError: if not mounted or on I/O error.
+        Raises
+        ------
+        MemoryStoreError
+            If not mounted or on I/O error.
         """
         self._require_mounted()
         try:
@@ -155,6 +185,7 @@ class MemoryStore:
     # Internals
 
     def _require_mounted(self) -> None:
+        """Raise :exc:`MemoryStoreError` if the store has not been mounted."""
         if self._feedback_path is None:
             raise MemoryStoreError(
                 "MemoryStore has not been mounted; call mount() first"

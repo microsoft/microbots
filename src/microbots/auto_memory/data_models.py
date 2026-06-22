@@ -1,3 +1,5 @@
+"""Shared data models, enums, and value objects used across the auto_memory package."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,6 +9,7 @@ from enum import StrEnum
 # Enums  (shared across orchestrator, callbacks, cli)
 
 class IterationStatus(StrEnum):
+    """Status of a single agent iteration."""
     PASSED = "passed"
     FAILED = "failed"
     TIMEOUT = "timeout"
@@ -15,6 +18,7 @@ class IterationStatus(StrEnum):
 
 
 class FinalStatus(StrEnum):
+    """Overall status of a completed auto_memory run."""
     PASSED = "passed"
     LIMIT_REACHED = "limit_reached"
     TIMEOUT = "timeout"
