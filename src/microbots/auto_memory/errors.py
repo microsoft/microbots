@@ -1,3 +1,6 @@
+"""Custom exception hierarchy for the auto_memory package."""
+
+
 class AutoMemoryError(Exception):
     """Base class for all auto_memory framework errors."""
 
