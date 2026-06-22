@@ -15,10 +15,9 @@ from microbots.MicroBot import BotRunResult
 
 _MODEL = "azure/gpt-4o"
 _TASK = "Write a summary to /memories/summary.md"
-_MEMORY_DIR = "/tmp/test_run/memory"
 
 
-def _make_ctx(memory_dir: str = _MEMORY_DIR, task: str = _TASK) -> IterationContext:
+def _make_ctx(memory_dir: str, task: str = _TASK) -> IterationContext:
     return IterationContext(task=task, memory_dir=memory_dir)
 
 
@@ -30,8 +29,8 @@ def _make_ctx(memory_dir: str = _MEMORY_DIR, task: str = _TASK) -> IterationCont
 class TestWritingBotRunnerConstruction:
     """WritingBot must be created with the correct arguments from ctx."""
 
-    def test_passes_memory_dir_as_folder_to_mount(self):
-        ctx = _make_ctx()
+    def test_passes_memory_dir_as_folder_to_mount(self, tmp_path):
+        ctx = _make_ctx(memory_dir=str(tmp_path))
         bot_mock = MagicMock()
         bot_mock.run.return_value = BotRunResult(status=True, result="done", error=None)
 
@@ -46,8 +45,8 @@ class TestWritingBotRunnerConstruction:
             _, kwargs = MockWritingBot.call_args
             assert kwargs["folder_to_mount"] == ctx.memory_dir
 
-    def test_passes_memory_tool_with_memory_dir(self):
-        ctx = _make_ctx()
+    def test_passes_memory_tool_with_memory_dir(self, tmp_path):
+        ctx = _make_ctx(memory_dir=str(tmp_path))
         bot_mock = MagicMock()
         bot_mock.run.return_value = BotRunResult(status=True, result="done", error=None)
 
@@ -68,8 +67,8 @@ class TestWritingBotRunnerConstruction:
                 _, kwargs = MockWritingBot.call_args
                 assert kwargs["additional_tools"] == [memory_tool_instance]
 
-    def test_passes_model_to_writing_bot(self):
-        ctx = _make_ctx()
+    def test_passes_model_to_writing_bot(self, tmp_path):
+        ctx = _make_ctx(memory_dir=str(tmp_path))
         bot_mock = MagicMock()
         bot_mock.run.return_value = BotRunResult(status=True, result="done", error=None)
 
@@ -83,8 +82,8 @@ class TestWritingBotRunnerConstruction:
             _, kwargs = MockWritingBot.call_args
             assert kwargs["model"] == _MODEL
 
-    def test_calls_bot_run_with_task_and_timeout(self):
-        ctx = _make_ctx()
+    def test_calls_bot_run_with_task_and_timeout(self, tmp_path):
+        ctx = _make_ctx(memory_dir=str(tmp_path))
         bot_mock = MagicMock()
         bot_mock.run.return_value = BotRunResult(status=True, result="done", error=None)
 
@@ -99,8 +98,8 @@ class TestWritingBotRunnerConstruction:
                 ctx.task, max_iterations=20, timeout_in_seconds=120
             )
 
-    def test_custom_max_iterations_forwarded_to_bot(self):
-        ctx = _make_ctx()
+    def test_custom_max_iterations_forwarded_to_bot(self, tmp_path):
+        ctx = _make_ctx(memory_dir=str(tmp_path))
         bot_mock = MagicMock()
         bot_mock.run.return_value = BotRunResult(status=True, result="done", error=None)
 
@@ -124,8 +123,12 @@ class TestWritingBotRunnerConstruction:
 class TestWritingBotRunnerResultMapping:
     """All three BotRunResult states must map to the correct AgentResult."""
 
+    @pytest.fixture(autouse=True)
+    def _set_memory_dir(self, tmp_path):
+        self._memory_dir = str(tmp_path)
+
     def _run_with_bot_result(self, bot_result: BotRunResult) -> AgentResult:
-        ctx = _make_ctx()
+        ctx = _make_ctx(memory_dir=self._memory_dir)
         bot_mock = MagicMock()
         bot_mock.run.return_value = bot_result
 

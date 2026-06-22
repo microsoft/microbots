@@ -18,7 +18,7 @@ class IterationContext:
         The task prompt to send to the agent.
     memory_dir : str
         Host-side directory that is both mounted into the agent container
-        (``folder_to_mount``) and surfaced to the agent via :class:`MemoryTool`.
+        (``folder_to_mount``) and surfaced to the agent via :class:`~microbots.tools.tool_definitions.memory_tool.MemoryTool`.
     """
 
     task: str
