@@ -3,7 +3,7 @@ from enum import StrEnum
 from pathlib import PurePosixPath
 
 from microbots.constants import PermissionLabels, PermissionMapping
-from microbots.utils.path import PathInfo, get_path_info, ends_with_separator
+from microbots.utils.path import PathInfo, ends_with_separator, get_path_info
 
 
 class MountType(StrEnum):
