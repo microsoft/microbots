@@ -162,7 +162,7 @@ class ShellCallbackRunner(CallbackRunner):
             )
         except OSError as exc:
             raise CallbackError(
-                f"Failed to spawn callback {spec.name!r}: {exc}"
+                f"Failed to execute callback {spec.name!r}: {exc}"
             ) from exc
 
         duration_s = time.monotonic() - start

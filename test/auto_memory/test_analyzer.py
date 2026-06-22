@@ -175,3 +175,24 @@ class TestAnalyzeFailureTimeout:
         results = [_result(tmp_path, "bigtest", passed=False, return_code=-1, timed_out=True)]
         fb = analyze_failure(results, tmp_path / "cand", iteration_idx=0)
         assert any("bigtest" in a for a in fb.suggested_actions)
+
+
+# ---------------------------------------------------------------------------
+# _read_tail — OSError fallback
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestReadTailOSError:
+    def test_missing_log_files_fall_back_to_exit_code_root_cause(self, tmp_path):
+        """OSError on missing log files must not propagate; root cause falls back to exit code."""
+        spec = _spec("mycheck", expected_rc=0)
+        # Create a result whose log paths point to non-existent files.
+        result = CallbackResult(
+            spec=spec,
+            return_code=5,
+            stdout_path=tmp_path / "nonexistent.stdout",
+            stderr_path=tmp_path / "nonexistent.stderr",
+            passed=False,
+        )
+        fb = analyze_failure([result], tmp_path / "cand", iteration_idx=0)
+        assert any("5" in c for c in fb.root_causes)
