@@ -140,6 +140,11 @@ class TaskConfig:
                 f"'output_path' must be a relative path, got '{self.output_path}'"
             )
 
+        if ".." in Path(self.output_path).parts:
+            raise ConfigError(
+                f"'output_path' must not contain '..', got '{self.output_path}'"
+            )
+
         if not self.callbacks:
             raise ConfigError("'callbacks' must contain at least one entry")
 

@@ -7,6 +7,8 @@ from jinja2 import Environment as JinjaEnvironment, StrictUndefined
 from microbots.auto_memory.config import TaskConfig
 from microbots.auto_memory.data_models import Feedback
 
+_JINJA_ENV = JinjaEnvironment(undefined=StrictUndefined, keep_trailing_newline=True)
+
 
 def build_iteration_context(
     config: TaskConfig,
@@ -40,7 +42,7 @@ def build_iteration_context(
     str
         The rendered prompt text, ready to be sent to the agent.
     """
-    env = JinjaEnvironment(undefined=StrictUndefined, keep_trailing_newline=True)
+    env = _JINJA_ENV
     template = env.from_string(config.prompt_template)
     return template.render(
         task=config.task_definition,

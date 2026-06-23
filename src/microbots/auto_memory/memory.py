@@ -130,23 +130,32 @@ class MemoryStore:
                     try:
                         data = json.loads(line)
                     except json.JSONDecodeError as exc:
-                        raise MemoryStoreError(
-                            f"Invalid JSON on line {lineno} of "
-                            f"{self._feedback_path}: {exc}"
-                        ) from exc
-                    if not isinstance(data, dict):
-                        raise MemoryStoreError(
-                            f"Expected a JSON object on line {lineno} of "
-                            f"{self._feedback_path}, got {type(data).__name__}"
+                        logger.warning(
+                            "Skipping corrupt JSON on line %d of %s: %s",
+                            lineno,
+                            self._feedback_path,
+                            exc,
                         )
+                        continue
+                    if not isinstance(data, dict):
+                        logger.warning(
+                            "Skipping non-object entry on line %d of %s (got %s)",
+                            lineno,
+                            self._feedback_path,
+                            type(data).__name__,
+                        )
+                        continue
                     known = {f.name for f in dataclasses.fields(Feedback)}
                     try:
                         entries.append(Feedback(**{k: v for k, v in data.items() if k in known}))
                     except TypeError as exc:
-                        raise MemoryStoreError(
-                            f"Cannot construct Feedback from line {lineno} of "
-                            f"{self._feedback_path}: {exc}"
-                        ) from exc
+                        logger.warning(
+                            "Skipping malformed Feedback on line %d of %s: %s",
+                            lineno,
+                            self._feedback_path,
+                            exc,
+                        )
+                        continue
         except OSError as exc:
             raise MemoryStoreError(f"Failed to read feedback: {exc}") from exc
 
@@ -190,3 +199,20 @@ class MemoryStore:
             raise MemoryStoreError(
                 "MemoryStore has not been mounted; call mount() first"
             )
+
+    @property
+    def memory_dir(self) -> Path:
+        """Absolute path to the memory directory.
+
+        Returns
+        -------
+        Path
+            The directory that holds the feedback file.
+
+        Raises
+        ------
+        MemoryStoreError
+            If the store has not been mounted yet.
+        """
+        self._require_mounted()
+        return self._memory_dir  # type: ignore[return-value]
