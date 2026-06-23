@@ -204,6 +204,21 @@ class TestMemoryStoreReadWrite:
         assert entries == []
         assert any("malformed" in r.message.lower() for r in caplog.records)
 
+    def test_read_all_skips_blank_lines(self, tmp_path):
+        """Blank lines in the feedback file are silently skipped."""
+        run_dir = tmp_path / "run6"
+        store = MemoryStore()
+        store.mount(run_dir)
+        feedback_file = run_dir / "memory" / "feedback.jsonl"
+        feedback_file.write_text(
+            '\n{"iteration_idx": 0, "summary": "ok", "root_causes": [], '
+            '"validator_failures": [], "suggested_actions": []}\n\n',
+            encoding="utf-8",
+        )
+        entries = store.read_all()
+        assert len(entries) == 1
+        assert entries[0].summary == "ok"
+
     def test_read_all_ignores_unknown_fields(self, tmp_path):
         """read_all() silently drops fields not present in Feedback."""
         run_dir = tmp_path / "run3"

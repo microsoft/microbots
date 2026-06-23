@@ -436,6 +436,53 @@ class TestAgentErrorPath:
 
         assert summary.iterations_run == 1
 
+    def test_retries_transient_errors_then_fails(self, tmp_path):
+        """After max_agent_retries consecutive ERROR results the run aborts."""
+        config = _make_config(max_iterations=10)
+        # With max_agent_retries=2 (default): 3 consecutive ERRORs exhaust retries.
+        agent = MockAgentRunner([
+            _make_agent_result(IterationStatus.ERROR, error="transient"),
+            _make_agent_result(IterationStatus.ERROR, error="transient"),
+            _make_agent_result(IterationStatus.ERROR, error="transient"),
+        ])
+        callbacks = MockCallbackRunner([])
+        workspace = WorkspaceManager(run_dir=tmp_path / "run")
+        orch = TrainingLoopOrchestrator(
+            config=config,
+            agent_runner=agent,
+            callback_runner=callbacks,
+            workspace=workspace,
+            max_agent_retries=2,
+        )
+
+        summary = orch.run()
+
+        assert summary.final_status == FinalStatus.ERROR
+        assert agent.call_count == 3
+
+    def test_retries_reset_after_success(self, tmp_path):
+        """Consecutive-error counter resets when an iteration succeeds."""
+        config = _make_config(max_iterations=10)
+        # Two errors, then a pass — should NOT abort.
+        agent = MockAgentRunner([
+            _make_agent_result(IterationStatus.ERROR, error="t1"),
+            _make_agent_result(IterationStatus.ERROR, error="t2"),
+            _make_agent_result(IterationStatus.PASSED),
+        ])
+        callbacks = MockCallbackRunner([[_make_callback_result(tmp_path / "cb", passed=True)]])
+        workspace = WorkspaceManager(run_dir=tmp_path / "run")
+        orch = TrainingLoopOrchestrator(
+            config=config,
+            agent_runner=agent,
+            callback_runner=callbacks,
+            workspace=workspace,
+            max_agent_retries=2,
+        )
+
+        summary = orch.run()
+
+        assert summary.final_status == FinalStatus.PASSED
+
 
 # ---------------------------------------------------------------------------
 # RunSummary data model

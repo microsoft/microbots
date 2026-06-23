@@ -330,6 +330,14 @@ class TestDetectIterationCount:
         wm2.prepare(resume=True)
         assert wm2.iteration_count == 3  # only iter_02 counts → max_idx=2, +1=3
 
+    def test_returns_zero_when_iterations_dir_missing(self, tmp_path):
+        """_detect_iteration_count() returns 0 when iterations/ does not exist."""
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        wm = WorkspaceManager(run_dir=run_dir)
+        # _iterations_dir has not been created — simulate a partial workspace.
+        assert wm._detect_iteration_count() == 0
+
 
 # ---------------------------------------------------------------------------
 # _write_meta() error path
