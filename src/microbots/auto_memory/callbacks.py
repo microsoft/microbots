@@ -145,6 +145,11 @@ class ShellCallbackRunner(CallbackRunner):
                 stdout_path.open("w", encoding="utf-8") as out_fh,
                 stderr_path.open("w", encoding="utf-8") as err_fh,
             ):
+                # Security note: spec.command is intentionally run with
+                # shell=True for developer convenience (supports pipes,
+                # redirects, etc.).  This runner assumes configs are loaded
+                # from trusted local files only.  Do NOT use with configs
+                # sourced from untrusted input.
                 proc = subprocess.run(
                     spec.command,
                     shell=True,

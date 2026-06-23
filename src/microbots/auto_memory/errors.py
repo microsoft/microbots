@@ -17,7 +17,7 @@ class CallbackError(AutoMemoryError):
     """Raised when a callback cannot be spawned or set up (not a failing assertion)."""
 
 
-class TimeoutError(AutoMemoryError):  # noqa: A001 — intentional shadow of builtin
+class AutoMemoryTimeoutError(AutoMemoryError):
     """Raised when the per-iteration or total run timeout is exceeded."""
 
 

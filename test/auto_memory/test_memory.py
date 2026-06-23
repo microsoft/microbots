@@ -91,6 +91,11 @@ class TestMemoryStoreUnmountedGuard:
         with pytest.raises(MemoryStoreError, match="not been mounted"):
             store.persist()
 
+    def test_unmounted_raises_on_memory_dir(self):
+        store = MemoryStore()
+        with pytest.raises(MemoryStoreError, match="not been mounted"):
+            _ = store.memory_dir
+
 
 # ---------------------------------------------------------------------------
 # Read / write
@@ -164,36 +169,60 @@ class TestMemoryStoreReadWrite:
         feedback_file.unlink()  # remove the empty file clear() created
         assert store.read_all() == []
 
-    def test_read_all_raises_on_corrupt_jsonl(self, tmp_path):
-        """read_all() raises MemoryStoreError when a line is not valid JSON."""
+    def test_read_all_skips_corrupt_jsonl(self, tmp_path, caplog):
+        """read_all() skips and warns on a line that is not valid JSON."""
+        import logging
         run_dir = tmp_path / "run3"
         store = MemoryStore()
         store.mount(run_dir)
         feedback_file = run_dir / "memory" / "feedback.jsonl"
         feedback_file.write_text("{not valid json}\n", encoding="utf-8")
-        with pytest.raises(MemoryStoreError, match="Invalid JSON"):
-            store.read_all()
+        with caplog.at_level(logging.WARNING):
+            entries = store.read_all()
+        assert entries == []
+        assert any("corrupt" in r.message.lower() for r in caplog.records)
 
-    def test_read_all_raises_on_non_object_json(self, tmp_path):
-        """read_all() raises MemoryStoreError when a line is valid JSON but not an object."""
+    def test_read_all_skips_non_object_json(self, tmp_path, caplog):
+        """read_all() skips and warns on a valid-JSON line that is not an object."""
+        import logging
         run_dir = tmp_path / "run4"
         store = MemoryStore()
         store.mount(run_dir)
         feedback_file = run_dir / "memory" / "feedback.jsonl"
         feedback_file.write_text("[1, 2, 3]\n", encoding="utf-8")
-        with pytest.raises(MemoryStoreError, match="Expected a JSON object"):
-            store.read_all()
+        with caplog.at_level(logging.WARNING):
+            entries = store.read_all()
+        assert entries == []
+        assert any("non-object" in r.message.lower() for r in caplog.records)
 
-    def test_read_all_raises_on_missing_required_fields(self, tmp_path):
-        """read_all() raises MemoryStoreError when required Feedback fields are absent."""
+    def test_read_all_skips_missing_required_fields(self, tmp_path, caplog):
+        """read_all() skips and warns when required Feedback fields are absent."""
+        import logging
         run_dir = tmp_path / "run5"
         store = MemoryStore()
         store.mount(run_dir)
         feedback_file = run_dir / "memory" / "feedback.jsonl"
         # Missing both iteration_idx and summary (required, no default).
         feedback_file.write_text('{"root_causes": []}\n', encoding="utf-8")
-        with pytest.raises(MemoryStoreError, match="Cannot construct Feedback"):
-            store.read_all()
+        with caplog.at_level(logging.WARNING):
+            entries = store.read_all()
+        assert entries == []
+        assert any("malformed" in r.message.lower() for r in caplog.records)
+
+    def test_read_all_skips_blank_lines(self, tmp_path):
+        """Blank lines in the feedback file are silently skipped."""
+        run_dir = tmp_path / "run6"
+        store = MemoryStore()
+        store.mount(run_dir)
+        feedback_file = run_dir / "memory" / "feedback.jsonl"
+        feedback_file.write_text(
+            '\n{"iteration_idx": 0, "summary": "ok", "root_causes": [], '
+            '"validator_failures": [], "suggested_actions": []}\n\n',
+            encoding="utf-8",
+        )
+        entries = store.read_all()
+        assert len(entries) == 1
+        assert entries[0].summary == "ok"
 
     def test_read_all_ignores_unknown_fields(self, tmp_path):
         """read_all() silently drops fields not present in Feedback."""

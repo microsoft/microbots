@@ -177,6 +177,13 @@ class TestValidate:
         with pytest.raises(ConfigError, match="output_path"):
             cfg.validate()
 
+    def test_dotdot_output_path_rejected(self):
+        """output_path containing '..' is rejected to prevent path traversal."""
+        cfg = self._base()
+        cfg.output_path = "../../etc/passwd"
+        with pytest.raises(ConfigError, match="output_path"):
+            cfg.validate()
+
     def test_callback_empty_name(self):
         from microbots.auto_memory.data_models import CallbackSpec
         cfg = self._base()
