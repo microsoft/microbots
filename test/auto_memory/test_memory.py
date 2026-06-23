@@ -91,6 +91,11 @@ class TestMemoryStoreUnmountedGuard:
         with pytest.raises(MemoryStoreError, match="not been mounted"):
             store.persist()
 
+    def test_unmounted_raises_on_memory_dir(self):
+        store = MemoryStore()
+        with pytest.raises(MemoryStoreError, match="not been mounted"):
+            _ = store.memory_dir
+
 
 # ---------------------------------------------------------------------------
 # Read / write

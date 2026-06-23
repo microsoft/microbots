@@ -166,7 +166,7 @@ class TestPassedPath:
         assert agent.call_count == 1
 
     def test_passed_on_second_attempt(self, tmp_path):
-        """Agent fails then passes — status must be PASSED after 2 iterations."""
+        """Callbacks fail on iteration 0 then pass on iteration 1 — status must be PASSED after 2 iterations."""
         config = _make_config()
         agent = MockAgentRunner([
             _make_agent_result(IterationStatus.PASSED),
@@ -395,6 +395,17 @@ class TestAgentErrorPath:
 
         assert summary.final_status == FinalStatus.ERROR
 
+    def test_raised_agent_error_iterations_run_is_one(self, tmp_path):
+        """AgentError on iteration 0 → iterations_run == 1 (attempt counts)."""
+        config = _make_config()
+        agent = RaisingAgentRunner("disk full")
+        callbacks = MockCallbackRunner([])
+        orch = _build_orchestrator(config, agent, callbacks, tmp_path)
+
+        summary = orch.run()
+
+        assert summary.iterations_run == 1
+
     def test_raised_agent_error_message_captured(self, tmp_path):
         config = _make_config()
         agent = RaisingAgentRunner("disk full")
@@ -410,7 +421,14 @@ class TestAgentErrorPath:
         config = _make_config()
         agent = MockAgentRunner([_make_agent_result(IterationStatus.ERROR, error="OOM")])
         callbacks = MockCallbackRunner([])
-        orch = _build_orchestrator(config, agent, callbacks, tmp_path)
+        workspace = WorkspaceManager(run_dir=tmp_path / "run")
+        orch = TrainingLoopOrchestrator(
+            config=config,
+            agent_runner=agent,
+            callback_runner=callbacks,
+            workspace=workspace,
+            max_agent_retries=0,
+        )
 
         summary = orch.run()
 
@@ -420,7 +438,14 @@ class TestAgentErrorPath:
         config = _make_config()
         agent = MockAgentRunner([_make_agent_result(IterationStatus.ERROR, error="OOM")])
         callbacks = MockCallbackRunner([])
-        orch = _build_orchestrator(config, agent, callbacks, tmp_path)
+        workspace = WorkspaceManager(run_dir=tmp_path / "run")
+        orch = TrainingLoopOrchestrator(
+            config=config,
+            agent_runner=agent,
+            callback_runner=callbacks,
+            workspace=workspace,
+            max_agent_retries=0,
+        )
 
         orch.run()
 
@@ -430,7 +455,14 @@ class TestAgentErrorPath:
         config = _make_config()
         agent = MockAgentRunner([_make_agent_result(IterationStatus.ERROR, error="OOM")])
         callbacks = MockCallbackRunner([])
-        orch = _build_orchestrator(config, agent, callbacks, tmp_path)
+        workspace = WorkspaceManager(run_dir=tmp_path / "run")
+        orch = TrainingLoopOrchestrator(
+            config=config,
+            agent_runner=agent,
+            callback_runner=callbacks,
+            workspace=workspace,
+            max_agent_retries=0,
+        )
 
         summary = orch.run()
 
@@ -459,6 +491,7 @@ class TestAgentErrorPath:
 
         assert summary.final_status == FinalStatus.ERROR
         assert agent.call_count == 3
+        assert summary.error_message == "transient"
 
     def test_retries_reset_after_success(self, tmp_path):
         """Consecutive-error counter resets when an iteration succeeds."""

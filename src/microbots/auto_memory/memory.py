@@ -105,16 +105,20 @@ class MemoryStore:
         """Return all persisted :class:`~microbots.auto_memory.data_models.Feedback` entries.
 
         Returns an empty list if the feedback file does not exist yet.
+        Lines that contain invalid JSON, non-object JSON, or fields that cannot
+        be mapped to :class:`~microbots.auto_memory.data_models.Feedback` are
+        skipped with a ``WARNING`` log message rather than raising an exception.
 
         Returns
         -------
         list[Feedback]
-            All feedback entries in the order they were appended.
+            Successfully parsed entries in the order they were appended.
+            Corrupt or malformed lines are omitted.
 
         Raises
         ------
         MemoryStoreError
-            If not mounted or on I/O / parse error.
+            If not mounted, or if the file cannot be opened (I/O error).
         """
         self._require_mounted()
         if not self._feedback_path.exists():  # type: ignore[union-attr]
@@ -214,5 +218,8 @@ class MemoryStore:
         MemoryStoreError
             If the store has not been mounted yet.
         """
-        self._require_mounted()
-        return self._memory_dir  # type: ignore[return-value]
+        if self._memory_dir is None:
+            raise MemoryStoreError(
+                "MemoryStore has not been mounted; call mount() first"
+            )
+        return self._memory_dir

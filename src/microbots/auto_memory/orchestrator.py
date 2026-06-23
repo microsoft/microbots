@@ -31,6 +31,7 @@ class IterationRecord:
     idx: int
     status: IterationStatus
     feedback: Feedback | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -180,7 +181,7 @@ class TrainingLoopOrchestrator:
                 )
                 return RunSummary(
                     final_status=FinalStatus.ERROR,
-                    iterations_run=iteration_idx,
+                    iterations_run=iteration_idx + 1,
                     iteration_records=records,
                     elapsed_s=elapsed,
                     error_message=str(exc),
@@ -201,9 +202,8 @@ class TrainingLoopOrchestrator:
                     continue
                 elapsed = time.monotonic() - start_time
                 error_msg = (
-                    record.feedback.summary
-                    if record.feedback
-                    else f"Agent returned ERROR on iteration {iteration_idx}"
+                    record.error
+                    or f"Agent returned ERROR on iteration {iteration_idx}"
                 )
                 logger.error(
                     "Orchestrator: iteration %d returned ERROR (%d consecutive)",
@@ -319,7 +319,11 @@ class TrainingLoopOrchestrator:
                 iteration_idx,
                 agent_result.error,
             )
-            return IterationRecord(idx=iteration_idx, status=IterationStatus.ERROR)
+            return IterationRecord(
+                idx=iteration_idx,
+                status=IterationStatus.ERROR,
+                error=agent_result.error,
+            )
 
         # Run callbacks
         callback_results: list[CallbackResult] = self._callback_runner.run_all(
