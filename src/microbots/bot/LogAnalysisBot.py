@@ -135,6 +135,8 @@ Only when you have run all necessary commands and identified the root cause, you
         timeout_in_seconds : int
             Maximum time in seconds to allow the analysis to run before
             stopping. Defaults to 300.
+        user_prompt : Optional[str]
+            Optional additional context provided by the user to assist the bot
 
         Returns
         -------
