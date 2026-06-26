@@ -2,12 +2,10 @@ import logging
 import os
 from typing import Optional
 
-from microbots.constants import (DOCKER_WORKING_DIR, LOG_FILE_DIR,
-                                 PermissionLabels)
-from microbots.extras.mount import Mount, MountType
-from microbots.MicroBot import (BotRunResult, BotType, MicroBot,
-                                system_prompt_common)
+from microbots.constants import DOCKER_WORKING_DIR, LOG_FILE_DIR, PermissionLabels
+from microbots.MicroBot import BotRunResult, BotType, MicroBot, system_prompt_common
 from microbots.tools.tool import ToolAbstract
+from microbots.extras.mount import Mount, MountType
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +15,8 @@ class LogAnalysisBot(MicroBot):
     A bot specialized in analyzing log files and identifying root causes.
 
     ``LogAnalysisBot`` extends `MicroBot`. The bot is to inspect a log file and determine
-    the root cause of any failures it contains. 
-    
+    the root cause of any failures it contains.
+
     It is given **read-only**
     access to the source code that produced the log, allowing it to correlate
     log entries with the originating code while guaranteeing it can never
@@ -88,7 +86,7 @@ class LogAnalysisBot(MicroBot):
         folder_mount_info = Mount(
             folder_to_mount,
             f"/{DOCKER_WORKING_DIR}/{os.path.basename(folder_to_mount)}",
-            PermissionLabels.READ_ONLY
+            PermissionLabels.READ_ONLY,
         )
 
         system_prompt = f"""
@@ -134,8 +132,9 @@ Only when you have run all necessary commands and identified the root cause, you
         max_iterations : int
             Maximum number of reasoning/tool-call iterations the bot may run
             before stopping. Defaults to 20.
-        verbose : bool
-            Whether to emit extra diagnostic output during analysis.
+        timeout_in_seconds : int
+            Maximum time in seconds to allow the analysis to run before
+            stopping. Defaults to 300.
 
         Returns
         -------
@@ -173,5 +172,5 @@ Only when you have run all necessary commands and identified the root cause, you
             task=file_name_prompt,
             additional_mounts=[file_mount_info],
             max_iterations=max_iterations,
-            timeout_in_seconds=timeout_in_seconds
+            timeout_in_seconds=timeout_in_seconds,
         )
