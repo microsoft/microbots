@@ -2,10 +2,12 @@ import logging
 import os
 from typing import Optional
 
-from microbots.constants import DOCKER_WORKING_DIR, LOG_FILE_DIR, PermissionLabels
-from microbots.MicroBot import BotRunResult, BotType, MicroBot, system_prompt_common
-from microbots.tools.tool import ToolAbstract
+from microbots.constants import (DOCKER_WORKING_DIR, LOG_FILE_DIR,
+                                 PermissionLabels)
 from microbots.extras.mount import Mount, MountType
+from microbots.MicroBot import (BotRunResult, BotType, MicroBot,
+                                system_prompt_common)
+from microbots.tools.tool import ToolAbstract
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +134,8 @@ Only when you have run all necessary commands and identified the root cause, you
         max_iterations : int
             Maximum number of reasoning/tool-call iterations the bot may run
             before stopping. Defaults to 20.
-        timeout_in_seconds : int
-            Maximum time in seconds to allow the analysis to run before
-            stopping. Defaults to 300.
+        verbose : bool
+            Whether to emit extra diagnostic output during analysis.
 
         Returns
         -------
