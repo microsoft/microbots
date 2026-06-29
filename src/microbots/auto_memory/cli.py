@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
@@ -44,8 +45,9 @@ def run_from_yaml(
     workdir : str | Path
         Parent directory that holds the ``runs/`` tree.
     run_id : str | None, optional
-        Identifier for this run.  When ``None`` a UTC timestamp of the form
-        ``run-YYYYMMDD-HHMMSS-ffffff`` is generated.
+        Identifier for this run.  When ``None`` a UTC timestamp plus a short
+        random suffix of the form ``run-YYYYMMDD-HHMMSS-ffffff-<rand>`` is
+        generated to avoid collisions.
     model : str
         Model identifier forwarded to :class:`WritingBotRunner` (required,
         keyword-only — e.g. ``"azure/gpt-4o"``).
@@ -78,12 +80,14 @@ def run_from_yaml(
 
 
 def _generate_run_id() -> str:
-    """Return a UTC-timestamp-based run identifier.
+    """Return a unique UTC-timestamp-based run identifier.
 
     Returns
     -------
     str
-        Identifier of the form ``run-YYYYMMDD-HHMMSS-ffffff`` using the
-        current UTC time.
+        Identifier of the form ``run-YYYYMMDD-HHMMSS-ffffff-<rand>`` using
+        the current UTC time plus an 8-character random suffix to guard
+        against collisions on coarse-resolution clocks or concurrent starts.
     """
-    return "run-" + datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    return f"run-{timestamp}-{uuid.uuid4().hex[:8]}"
