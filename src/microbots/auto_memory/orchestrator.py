@@ -71,7 +71,7 @@ class TrainingLoopOrchestrator:
 
         orchestrator = TrainingLoopOrchestrator(
             config=cfg,
-            agent_runner=WritingBotRunner(model="azure/gpt-4o"),
+            agent_runner=WritingBotRunner(model="azure-openai/gpt-4o"),
             callback_runner=ShellCallbackRunner(),
             workspace=WorkspaceManager(run_dir=Path("runs/my_task")),
         )

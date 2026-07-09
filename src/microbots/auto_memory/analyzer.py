@@ -12,6 +12,11 @@ from microbots.bot.LogAnalysisBot import LogAnalysisBot
 
 logger = getLogger(__name__)
 
+# Per-stream tail cap when assembling the combined log fed to the LLM
+# analyzer. Prevents pathological callback outputs (e.g. verbose pytest
+# tracebacks or dumped fixtures) from blowing up model context / cost.
+_LOG_TAIL_BYTES = 16 * 1024
+
 
 def analyze_failure(
     callback_results: list[CallbackResult],
@@ -25,13 +30,21 @@ def analyze_failure(
     """Produce a :class:`~microbots.auto_memory.data_models.Feedback` via LogAnalysisBot.
 
     Combines the stdout/stderr of every failed callback into a single log
-    file and hands it to a fresh :class:`~microbots.bot.LogAnalysisBot.LogAnalysisBot`
-    with the candidate directory mounted read-only. The bot's final answer
-    becomes the sole entry in :attr:`Feedback.root_causes`.
+    file and hands it to a fresh
+    :class:`~microbots.bot.LogAnalysisBot.LogAnalysisBot` with the candidate
+    directory mounted read-only. The bot's final narrative answer is stored
+    as :attr:`Feedback.summary`; :attr:`Feedback.root_causes` is left empty
+    on the success path because the LLM emits a single diagnosis rather
+    than a discrete list.
 
     On no failures, returns a minimal ``All callbacks passed.`` feedback
-    without invoking the bot. On bot failure, returns a feedback whose
-    ``root_causes`` describes the analyzer error.
+    without invoking the bot. If the bot raises or fails to produce a
+    result, :attr:`Feedback.summary` falls back to a short
+    ``"<N> of <M> callback(s) failed: ..."`` string and
+    :attr:`Feedback.root_causes` contains the analyzer error.
+
+    In every non-passing case :attr:`Feedback.validator_failures` lists the
+    names of the callbacks that did not pass.
 
     Parameters
     ----------
@@ -86,7 +99,7 @@ def analyze_failure(
             timeout_in_seconds=analyzer_timeout_s,
         )
     except Exception as exc:
-        logger.warning("LogAnalysisBot invocation failed: %s", exc)
+        logger.warning("LogAnalysisBot invocation failed: %s", exc, exc_info=True)
         return Feedback(
             iteration_idx=iteration_idx,
             summary=summary,
@@ -148,21 +161,48 @@ def _write_combined_log(failed: list[CallbackResult]) -> Path:
         return Path(fh.name)
 
 
-def _safe_read(path: Path) -> str:
-    """Return the text content of *path*, or a placeholder on I/O error.
+def _safe_read(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> str:
+    """Return the tail of *path*'s text content, or a placeholder on I/O error.
+
+    Only the last ``max_bytes`` bytes are read to bound memory usage and the
+    downstream LLM analyzer context. When the file exceeds that cap a
+    ``"<truncated: showing last N bytes of M>\\n"`` marker is prepended so
+    the model knows the view is partial.
 
     Parameters
     ----------
     path : Path
         Filesystem path to read.
+    max_bytes : int, optional
+        Maximum number of trailing bytes to return. Defaults to
+        ``_LOG_TAIL_BYTES``. A value ``<= 0`` disables the cap.
 
     Returns
     -------
     str
-        The file's contents decoded as UTF-8 (with replacement for invalid
-        bytes), or ``"<log unavailable>"`` if the file cannot be read.
+        The (possibly truncated) file contents decoded as UTF-8 (invalid
+        bytes replaced), or ``"<log unavailable>"`` if the file cannot be
+        read.
     """
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
+        if max_bytes <= 0:
+            data = path.read_bytes()
+            truncated = False
+            total = len(data)
+        else:
+            size = path.stat().st_size
+            with path.open("rb") as fh:
+                if size > max_bytes:
+                    fh.seek(size - max_bytes)
+                    truncated = True
+                else:
+                    truncated = False
+                data = fh.read()
+            total = size
     except OSError:
         return "<log unavailable>"
+
+    text = data.decode("utf-8", errors="replace")
+    if truncated:
+        return f"<truncated: showing last {len(data)} bytes of {total}>\n{text}"
+    return text

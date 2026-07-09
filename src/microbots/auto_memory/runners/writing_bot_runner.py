@@ -24,7 +24,7 @@ class WritingBotRunner:
     ----------
     model : str
         Model identifier forwarded to ``WritingBot`` (e.g.
-        ``"azure/gpt-4o"``).
+        ``"azure-openai/gpt-4o"``).
     max_iterations : int, optional
         Maximum number of agent steps per run; forwarded to
         ``WritingBot.run()``. Defaults to 20.
@@ -36,7 +36,7 @@ class WritingBotRunner:
         Parameters
         ----------
         model : str
-            Model identifier forwarded to ``WritingBot`` (e.g. ``"azure/gpt-4o"``).
+            Model identifier forwarded to ``WritingBot`` (e.g. ``"azure-openai/gpt-4o"``).
         max_iterations : int, optional
             Maximum number of agent steps per run. Defaults to 20.
         """

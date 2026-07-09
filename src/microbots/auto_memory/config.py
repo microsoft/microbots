@@ -9,6 +9,7 @@ from pathlib import Path
 
 from microbots.auto_memory.errors import ConfigError
 from microbots.auto_memory.data_models import CallbackSpec, ReferenceInput
+from microbots.constants import ModelProvider
 
 logger = getLogger(__name__)
 
@@ -31,7 +32,7 @@ class TaskConfig:
     per_iteration_timeout: int = 600    # seconds
 
     # --- analyzer (LogAnalysisBot) settings ---
-    analyzer_model: str = "azure/gpt-4o"
+    analyzer_model: str = "azure-openai/gpt-4o"
     analyzer_max_iterations: int = 20
     analyzer_timeout_s: int = 300
 
@@ -108,7 +109,7 @@ class TaskConfig:
             max_iterations=int(data.get("max_iterations", 5)),
             timeout_min=int(data.get("timeout_min", 60)),
             per_iteration_timeout=int(data.get("per_iteration_timeout", 600)),
-            analyzer_model=str(data.get("analyzer_model", "azure/gpt-4o")),
+            analyzer_model=str(data.get("analyzer_model", "azure-openai/gpt-4o")),
             analyzer_max_iterations=int(data.get("analyzer_max_iterations", 20)),
             analyzer_timeout_s=int(data.get("analyzer_timeout_s", 300)),
         )
@@ -140,6 +141,22 @@ class TaskConfig:
 
         if not self.analyzer_model:
             raise ConfigError("'analyzer_model' must not be empty")
+
+        # Mirror MicroBot._validate_model_and_provider so we fail fast at
+        # config load time instead of deferring to a runtime ValueError
+        # when LogAnalysisBot is instantiated.
+        if self.analyzer_model.count("/") != 1:
+            raise ConfigError(
+                f"'analyzer_model' must be in the format '<provider>/<model_name>', "
+                f"got '{self.analyzer_model}'"
+            )
+        provider = self.analyzer_model.split("/", 1)[0]
+        supported = [e.value for e in ModelProvider]
+        if provider not in supported:
+            raise ConfigError(
+                f"'analyzer_model' has unsupported provider '{provider}'; "
+                f"expected one of {supported}"
+            )
 
         if self.analyzer_max_iterations < 1:
             raise ConfigError(

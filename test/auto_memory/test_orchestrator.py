@@ -572,4 +572,7 @@ class TestAnalyzeFailureDelegation:
             callback_results=[cb_result],
             candidate_path=tmp_path / "cand",
             iteration_idx=0,
+            analyzer_model=config.analyzer_model,
+            analyzer_max_iterations=config.analyzer_max_iterations,
+            analyzer_timeout_s=config.analyzer_timeout_s,
         )
