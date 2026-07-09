@@ -380,4 +380,7 @@ class TrainingLoopOrchestrator:
             callback_results=callback_results,
             candidate_path=candidate_path,
             iteration_idx=iteration_idx,
+            analyzer_model=self._config.analyzer_model,
+            analyzer_max_iterations=self._config.analyzer_max_iterations,
+            analyzer_timeout_s=self._config.analyzer_timeout_s,
         )
