@@ -109,12 +109,13 @@ def analyze_failure(
     finally:
         combined_log.unlink(missing_ok=True)
 
-    if bot_result.status and bot_result.result:
+    result = (bot_result.result or "").strip()
+    if bot_result.status and result:
         # The LLM produces one narrative diagnosis, not a list of causes;
         # store it as the summary and leave root_causes empty.
         return Feedback(
             iteration_idx=iteration_idx,
-            summary=bot_result.result.strip(),
+            summary=result,
             validator_failures=validator_failures,
         )
 

@@ -321,6 +321,34 @@ class TestAnalyzeFailureBotNoResult:
             )
         assert any("did not produce a result" in c for c in fb.root_causes)
 
+    def test_whitespace_only_result_treated_as_no_result(self, tmp_path):
+        # status=True but result is whitespace only → strips to "" and must
+        # take the "did not produce a result" path (not silently produce an
+        # empty summary).
+        patcher, _ = _patched_bot(status=True, result="   \n\t  ", error=None)
+        with patcher:
+            fb = analyze_failure(
+                [_result(tmp_path, "tests", passed=False, return_code=1)],
+                tmp_path / "cand",
+                iteration_idx=0,
+                **_ANALYZER_KWARGS,
+            )
+        assert fb.summary != ""
+        assert "1 of 1" in fb.summary
+        assert any("did not produce a result" in c for c in fb.root_causes)
+
+    def test_none_result_treated_as_no_result(self, tmp_path):
+        # status=True but result=None must not crash on .strip().
+        patcher, _ = _patched_bot(status=True, result=None, error=None)
+        with patcher:
+            fb = analyze_failure(
+                [_result(tmp_path, "tests", passed=False, return_code=1)],
+                tmp_path / "cand",
+                iteration_idx=0,
+                **_ANALYZER_KWARGS,
+            )
+        assert any("did not produce a result" in c for c in fb.root_causes)
+
 
 # ---------------------------------------------------------------------------
 # Bot invocation itself raised
