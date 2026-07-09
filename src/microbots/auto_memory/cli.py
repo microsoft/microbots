@@ -50,7 +50,7 @@ def run_from_yaml(
         generated to avoid collisions.
     model : str
         Model identifier forwarded to :class:`WritingBotRunner` (required,
-        keyword-only — e.g. ``"azure/gpt-4o"``).
+        keyword-only — e.g. ``"azure-openai/gpt-4o"``).
 
     Returns
     -------

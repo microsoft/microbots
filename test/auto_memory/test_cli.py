@@ -13,7 +13,7 @@ from microbots.auto_memory.data_models import FinalStatus
 from microbots.auto_memory.orchestrator import RunSummary
 from microbots.MicroBot import BotRunResult
 
-_MODEL = "azure/gpt-4o"
+_MODEL = "azure-openai/gpt-4o"
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +59,18 @@ def _mock_writing_bot(status: bool = True, error: str | None = None):
     )
     return patch(
         "microbots.auto_memory.runners.writing_bot_runner.WritingBot",
+        return_value=bot_instance,
+    ), bot_instance
+
+
+def _mock_log_analysis_bot(result: str = "diagnosis narrative"):
+    """Patch LogAnalysisBot so failure analysis never hits a real LLM endpoint."""
+    bot_instance = MagicMock()
+    bot_instance.run.return_value = BotRunResult(
+        status=True, result=result, error=None
+    )
+    return patch(
+        "microbots.auto_memory.analyzer.LogAnalysisBot",
         return_value=bot_instance,
     ), bot_instance
 
@@ -159,8 +171,9 @@ class TestRunFromYamlEndToEnd:
         yaml_path = _write_yaml(tmp_path, _TASK_YAML_FAILING)
         workdir = tmp_path / "workdir"
         bot_patch, _ = _mock_writing_bot()
+        analyzer_patch, _ = _mock_log_analysis_bot()
 
-        with bot_patch, patch(
+        with bot_patch, analyzer_patch, patch(
             "microbots.auto_memory.runners.writing_bot_runner.MemoryTool"
         ):
             summary = run_from_yaml(

@@ -13,7 +13,7 @@ from microbots.MicroBot import BotRunResult
 # Helpers
 # ---------------------------------------------------------------------------
 
-_MODEL = "azure/gpt-4o"
+_MODEL = "azure-openai/gpt-4o"
 _TASK = "Write a summary to /memories/summary.md"
 
 

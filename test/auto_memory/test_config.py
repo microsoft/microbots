@@ -165,6 +165,42 @@ class TestValidate:
         with pytest.raises(ConfigError, match="per_iteration_timeout"):
             cfg.validate()
 
+    def test_analyzer_model_empty(self):
+        cfg = self._base()
+        cfg.analyzer_model = ""
+        with pytest.raises(ConfigError, match="analyzer_model"):
+            cfg.validate()
+
+    def test_analyzer_model_missing_slash(self):
+        cfg = self._base()
+        cfg.analyzer_model = "gpt-4o"
+        with pytest.raises(ConfigError, match="<provider>/<model_name>"):
+            cfg.validate()
+
+    def test_analyzer_model_too_many_slashes(self):
+        cfg = self._base()
+        cfg.analyzer_model = "azure-openai/gpt-4o/extra"
+        with pytest.raises(ConfigError, match="<provider>/<model_name>"):
+            cfg.validate()
+
+    def test_analyzer_model_unknown_provider(self):
+        cfg = self._base()
+        cfg.analyzer_model = "acme/gpt-4o"
+        with pytest.raises(ConfigError, match="unsupported provider"):
+            cfg.validate()
+
+    def test_analyzer_max_iterations_zero(self):
+        cfg = self._base()
+        cfg.analyzer_max_iterations = 0
+        with pytest.raises(ConfigError, match="analyzer_max_iterations"):
+            cfg.validate()
+
+    def test_analyzer_timeout_s_zero(self):
+        cfg = self._base()
+        cfg.analyzer_timeout_s = 0
+        with pytest.raises(ConfigError, match="analyzer_timeout_s"):
+            cfg.validate()
+
     def test_invalid_output_format(self):
         cfg = self._base()
         cfg.output_format = "json"
