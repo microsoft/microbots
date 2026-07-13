@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
+from typing import Callable
 
 from microbots.auto_memory.callbacks import ShellCallbackRunner
 from microbots.auto_memory.config import TaskConfig
@@ -19,7 +20,7 @@ from microbots.auto_memory.workspace import WorkspaceManager
 logger = getLogger(__name__)
 
 
-def _load_runner_class(runner_spec: str, base_dir: Path) -> type:
+def _load_runner_class(runner_spec: str, base_dir: Path) -> Callable[..., AgentRunner]:
     """Resolve a runner class from a task config ``runner`` string.
 
     Two forms are supported:
@@ -41,14 +42,16 @@ def _load_runner_class(runner_spec: str, base_dir: Path) -> type:
 
     Returns
     -------
-    type
-        The resolved runner class.
+    Callable[..., AgentRunner]
+        The resolved runner factory — a class or any callable that accepts
+        ``model=...`` plus ``runner_params`` and returns an
+        :class:`~microbots.auto_memory.runners.base.AgentRunner`.
 
     Raises
     ------
     ConfigError
-        If the spec is malformed, the module/file cannot be imported, or the
-        class is not found.
+        If the spec is malformed, the module/file cannot be imported, the
+        class is not found, or the resolved attribute is not callable.
     """
     if ":" in runner_spec:
         # File-path form: "<path>.py:<ClassName>"
@@ -89,13 +92,25 @@ def _load_runner_class(runner_spec: str, base_dir: Path) -> type:
             raise ConfigError(
                 f"Cannot import runner module '{module_path}': {exc}"
             ) from exc
+        except Exception as exc:  # noqa: BLE001 - surface import-time errors
+            raise ConfigError(
+                f"Failed to import runner module '{module_path}': {exc}"
+            ) from exc
 
     try:
-        return getattr(module, cls_name)
+        runner_obj = getattr(module, cls_name)
     except AttributeError as exc:
         raise ConfigError(
             f"Runner class '{cls_name}' not found in '{runner_spec}'"
         ) from exc
+
+    if not callable(runner_obj):
+        raise ConfigError(
+            f"Runner '{cls_name}' in '{runner_spec}' is not callable "
+            f"(got {type(runner_obj).__name__}); expected a class or factory "
+            f"that accepts model=... and returns an AgentRunner"
+        )
+    return runner_obj
 
 
 def run_from_yaml(
@@ -149,7 +164,23 @@ def run_from_yaml(
     logger.info("auto_memory: starting run %s at %s", run_id, run_dir)
 
     runner_cls = _load_runner_class(config.runner, base_dir=yaml_path.resolve().parent)
-    agent_runner: AgentRunner = runner_cls(model=model, **config.runner_params)
+    try:
+        agent_runner: AgentRunner = runner_cls(model=model, **config.runner_params)
+    except Exception as exc:  # noqa: BLE001 - surface construction errors as config errors
+        raise ConfigError(
+            f"Failed to construct runner '{config.runner}' with "
+            f"runner_params={config.runner_params!r}: {exc}"
+        ) from exc
+
+    # Structural check: the constructed object must satisfy the AgentRunner
+    # protocol (i.e. expose a run() method). This only verifies method
+    # presence, not its signature, but catches gross misconfigurations early
+    # with a clear error instead of failing deep inside the orchestrator.
+    if not isinstance(agent_runner, AgentRunner):
+        raise ConfigError(
+            f"Runner '{config.runner}' does not satisfy the AgentRunner "
+            f"protocol; it must define run(ctx, timeout_s)"
+        )
     logger.info("auto_memory: using runner %s", config.runner)
 
     workspace = WorkspaceManager(run_dir=run_dir)

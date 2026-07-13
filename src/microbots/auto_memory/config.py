@@ -127,7 +127,10 @@ class TaskConfig:
                     "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner",
                 )
             ),
-            runner_params=dict(data.get("runner_params", {}) or {}),
+            # Pass through as-is (no dict() coercion) so a non-mapping value
+            # reaches validate() and produces a clear ConfigError instead of a
+            # cryptic ValueError/TypeError from dict().
+            runner_params=data.get("runner_params", {}) or {},
         )
         config.validate()
         return config

@@ -194,6 +194,65 @@ class TestRunFromYamlEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# Runner construction guards (run_from_yaml)
+# ---------------------------------------------------------------------------
+
+_GOOD_RUNNER_SRC = textwrap.dedent("""\
+    class R:
+        def __init__(self, model):
+            self.model = model
+
+        def run(self, ctx, timeout_s):
+            return None
+""")
+
+_NO_RUN_RUNNER_SRC = textwrap.dedent("""\
+    class R:
+        def __init__(self, model):
+            self.model = model
+""")
+
+
+def _write_custom_runner_yaml(tmp_path: Path, runner_src: str, runner_params: str) -> Path:
+    (tmp_path / "custom_runner.py").write_text(runner_src)
+    yaml = textwrap.dedent(f"""\
+        task_definition: do a thing
+        prompt_template: "Goal: {{{{ task }}}}"
+        runner: ./custom_runner.py:R
+        runner_params:
+        {runner_params}
+        callbacks:
+          - name: always_ok
+            command: 'true'
+        max_iterations: 1
+        timeout_min: 1
+        per_iteration_timeout: 30
+    """)
+    p = tmp_path / "task.yml"
+    p.write_text(yaml)
+    return p
+
+
+@pytest.mark.unit
+class TestRunnerConstructionGuards:
+    def test_bad_runner_params_raises_config_error(self, tmp_path):
+        """runner_params that don't match __init__ surface as ConfigError."""
+        yaml_path = _write_custom_runner_yaml(
+            tmp_path, _GOOD_RUNNER_SRC, runner_params="  unexpected_kwarg: 1"
+        )
+        with pytest.raises(ConfigError, match="Failed to construct runner"):
+            run_from_yaml(str(yaml_path), str(tmp_path / "wd"), model=_MODEL)
+
+    def test_runner_missing_run_raises_config_error(self, tmp_path):
+        """A runner without run() fails the AgentRunner protocol check."""
+        yaml_path = _write_custom_runner_yaml(
+            tmp_path, _NO_RUN_RUNNER_SRC, runner_params="  {}"
+        )
+        with pytest.raises(ConfigError, match="AgentRunner"):
+            run_from_yaml(str(yaml_path), str(tmp_path / "wd"), model=_MODEL)
+
+
+# ---------------------------------------------------------------------------
 # Runner resolution (_load_runner_class)
 # ---------------------------------------------------------------------------
 
@@ -278,8 +337,28 @@ class TestLoadRunnerClass:
         with pytest.raises(ConfigError, match="Cannot import runner module"):
             _load_runner_class("no_such_pkg.module.Klass", base_dir=tmp_path)
 
+    def test_dotted_form_import_time_error(self, tmp_path):
+        """A non-ImportError raised while importing the module is wrapped in
+        ConfigError instead of escaping as a raw traceback."""
+        with patch(
+            "microbots.auto_memory.cli.importlib.import_module",
+            side_effect=RuntimeError("boom at import"),
+        ):
+            with pytest.raises(ConfigError, match="Failed to import runner module"):
+                _load_runner_class(
+                    "microbots.auto_memory.config.TaskConfig", base_dir=tmp_path
+                )
+
     def test_dotted_form_class_not_found(self, tmp_path):
         with pytest.raises(ConfigError, match="not found"):
             _load_runner_class(
                 "microbots.auto_memory.config.NoSuchClass", base_dir=tmp_path
             )
+
+    def test_resolved_attribute_not_callable(self, tmp_path):
+        """A resolved attribute that is not callable (e.g. a constant) raises a
+        clear ConfigError instead of a later cryptic TypeError."""
+        const_file = tmp_path / "const_runner.py"
+        const_file.write_text("NOT_A_RUNNER = 42\n")
+        with pytest.raises(ConfigError, match="not callable"):
+            _load_runner_class("const_runner.py:NOT_A_RUNNER", base_dir=tmp_path)

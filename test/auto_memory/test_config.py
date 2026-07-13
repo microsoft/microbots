@@ -119,6 +119,35 @@ class TestLoadFromYaml:
             "target_commit": "abc123",
         }
 
+    def test_runner_params_non_mapping_raises_config_error(self, tmp_yaml):
+        """A non-mapping runner_params in YAML surfaces as ConfigError, not a
+        raw ValueError/TypeError from dict() coercion."""
+        yaml = textwrap.dedent("""\
+            task_definition: Backport the patch
+            prompt_template: "Goal: {{ task }}"
+            runner_params:
+              - not
+              - a
+              - mapping
+            callbacks:
+              - name: tests
+                command: pytest
+        """)
+        with pytest.raises(ConfigError, match="runner_params.*mapping"):
+            TaskConfig.load_from_yaml(tmp_yaml(yaml))
+
+    def test_runner_params_scalar_raises_config_error(self, tmp_yaml):
+        yaml = textwrap.dedent("""\
+            task_definition: Backport the patch
+            prompt_template: "Goal: {{ task }}"
+            runner_params: 5
+            callbacks:
+              - name: tests
+                command: pytest
+        """)
+        with pytest.raises(ConfigError, match="runner_params.*mapping"):
+            TaskConfig.load_from_yaml(tmp_yaml(yaml))
+
     def test_missing_callbacks(self, tmp_yaml):
         yaml = textwrap.dedent("""\
             task_definition: Fix the bug
