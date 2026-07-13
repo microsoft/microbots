@@ -9,7 +9,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from microbots.auto_memory import run_from_yaml
+from microbots.auto_memory.cli import _load_runner_class
 from microbots.auto_memory.data_models import FinalStatus
+from microbots.auto_memory.errors import ConfigError
 from microbots.auto_memory.orchestrator import RunSummary
 from microbots.MicroBot import BotRunResult
 
@@ -189,3 +191,95 @@ class TestRunFromYamlEndToEnd:
         lines = [ln for ln in feedback_file.read_text().splitlines() if ln.strip()]
         assert len(lines) == 2
         assert (run_dir / "iterations" / "iter_01" / "candidate").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Runner resolution (_load_runner_class)
+# ---------------------------------------------------------------------------
+
+_RUNNER_FILE_SRC = textwrap.dedent("""\
+    class MyRunner:
+        def __init__(self, model, **kwargs):
+            self.model = model
+            self.kwargs = kwargs
+
+        def run(self, ctx, timeout_s):
+            return None
+""")
+
+
+@pytest.mark.unit
+class TestLoadRunnerClass:
+    def _write_runner(self, tmp_path: Path, name: str = "myrunner.py") -> Path:
+        p = tmp_path / name
+        p.write_text(_RUNNER_FILE_SRC)
+        return p
+
+    # --- file-path form -------------------------------------------------
+    def test_file_path_form_loads_class(self, tmp_path):
+        self._write_runner(tmp_path)
+        cls = _load_runner_class("myrunner.py:MyRunner", base_dir=tmp_path)
+        assert cls.__name__ == "MyRunner"
+        instance = cls(model=_MODEL, repo_url="x")
+        assert instance.model == _MODEL
+        assert instance.kwargs == {"repo_url": "x"}
+
+    def test_file_path_form_absolute(self, tmp_path):
+        runner = self._write_runner(tmp_path)
+        cls = _load_runner_class(f"{runner}:MyRunner", base_dir=Path("/nonexistent"))
+        assert cls.__name__ == "MyRunner"
+
+    def test_file_path_missing_class_name(self, tmp_path):
+        self._write_runner(tmp_path)
+        with pytest.raises(ConfigError, match="expected 'path/to/file.py:ClassName'"):
+            _load_runner_class("myrunner.py:", base_dir=tmp_path)
+
+    def test_file_path_missing_file_part(self, tmp_path):
+        with pytest.raises(ConfigError, match="expected 'path/to/file.py:ClassName'"):
+            _load_runner_class(":MyRunner", base_dir=tmp_path)
+
+    def test_file_not_found(self, tmp_path):
+        with pytest.raises(ConfigError, match="Runner file not found"):
+            _load_runner_class("does_not_exist.py:MyRunner", base_dir=tmp_path)
+
+    def test_file_import_error(self, tmp_path):
+        bad = tmp_path / "bad_runner.py"
+        bad.write_text("raise RuntimeError('boom')\n")
+        with pytest.raises(ConfigError, match="Failed to import runner file"):
+            _load_runner_class("bad_runner.py:MyRunner", base_dir=tmp_path)
+
+    def test_file_spec_none(self, tmp_path):
+        self._write_runner(tmp_path)
+        with patch(
+            "microbots.auto_memory.cli.importlib.util.spec_from_file_location",
+            return_value=None,
+        ):
+            with pytest.raises(ConfigError, match="Cannot load runner module"):
+                _load_runner_class("myrunner.py:MyRunner", base_dir=tmp_path)
+
+    def test_file_class_not_found(self, tmp_path):
+        self._write_runner(tmp_path)
+        with pytest.raises(ConfigError, match="not found"):
+            _load_runner_class("myrunner.py:NoSuchRunner", base_dir=tmp_path)
+
+    # --- dotted import path form ---------------------------------------
+    def test_dotted_form_loads_class(self, tmp_path):
+        cls = _load_runner_class(
+            "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner",
+            base_dir=tmp_path,
+        )
+        assert cls.__name__ == "WritingBotRunner"
+
+    def test_dotted_form_missing_module(self, tmp_path):
+        with pytest.raises(ConfigError, match="expected"):
+            _load_runner_class("WritingBotRunner", base_dir=tmp_path)
+
+    def test_dotted_form_import_error(self, tmp_path):
+        with pytest.raises(ConfigError, match="Cannot import runner module"):
+            _load_runner_class("no_such_pkg.module.Klass", base_dir=tmp_path)
+
+    def test_dotted_form_class_not_found(self, tmp_path):
+        with pytest.raises(ConfigError, match="not found"):
+            _load_runner_class(
+                "microbots.auto_memory.config.NoSuchClass", base_dir=tmp_path
+            )

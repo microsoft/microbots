@@ -302,7 +302,11 @@ class TrainingLoopOrchestrator:
             feedback=feedback,
         )
 
-        ctx = IterationContext(task=task_prompt, memory_dir=memory_dir)
+        ctx = IterationContext(
+            task=task_prompt,
+            memory_dir=memory_dir,
+            output_dir=str(candidate_path),
+        )
 
         # Run agent
         agent_result: AgentResult = self._agent_runner.run(

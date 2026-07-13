@@ -36,6 +36,15 @@ class TaskConfig:
     analyzer_max_iterations: int = 20
     analyzer_timeout_s: int = 300
 
+    # --- runner selection ---
+    # Either a dotted import path ("pkg.module.ClassName") or a file-path form
+    # ("path/to/file.py:ClassName") resolved relative to the task YAML's dir.
+    # Defaults to the built-in WritingBotRunner so existing configs are
+    # unaffected. Extra keyword arguments for the runner's constructor go in
+    # runner_params (model is always injected separately by the CLI).
+    runner: str = "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner"
+    runner_params: dict = field(default_factory=dict)
+
     # -----------------------------------------------------------------------
 
     @classmethod
@@ -112,6 +121,13 @@ class TaskConfig:
             analyzer_model=str(data.get("analyzer_model", "azure-openai/gpt-4o")),
             analyzer_max_iterations=int(data.get("analyzer_max_iterations", 20)),
             analyzer_timeout_s=int(data.get("analyzer_timeout_s", 300)),
+            runner=str(
+                data.get(
+                    "runner",
+                    "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner",
+                )
+            ),
+            runner_params=dict(data.get("runner_params", {}) or {}),
         )
         config.validate()
         return config
@@ -201,3 +217,17 @@ class TaskConfig:
                 raise ConfigError(
                     f"reference_input '{ri.name}' must have a non-empty 'value'"
                 )
+
+        if not self.runner or not self.runner.strip():
+            raise ConfigError("'runner' must not be empty")
+
+        if not isinstance(self.runner_params, dict):
+            raise ConfigError(
+                f"'runner_params' must be a mapping, got {type(self.runner_params).__name__}"
+            )
+
+        if "model" in self.runner_params:
+            raise ConfigError(
+                "'runner_params' must not contain 'model'; it is injected "
+                "automatically by the CLI"
+            )
