@@ -18,7 +18,9 @@ _TASK = "Write a summary to /memories/summary.md"
 
 
 def _make_ctx(memory_dir: str, task: str = _TASK) -> IterationContext:
-    return IterationContext(task=task, memory_dir=memory_dir)
+    return IterationContext(
+        task=task, memory_dir=memory_dir, output_dir=memory_dir
+    )
 
 
 # ---------------------------------------------------------------------------

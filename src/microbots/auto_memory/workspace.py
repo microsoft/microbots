@@ -26,7 +26,9 @@ class WorkspaceManager:
 
         <run_dir>/
         ├── memory/
-        │   └── feedback.jsonl          ← managed by MemoryStore
+        │   ├── feedback.jsonl          ← managed by MemoryStore (framework)
+        │   └── <agent notes>           ← written by MemoryTool; the agent's
+        │                                 /memories/… tree maps 1:1 here
         ├── iterations/
         │   ├── iter_00/
         │   │   ├── candidate/          ← agent writes output here

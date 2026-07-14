@@ -93,6 +93,61 @@ class TestLoadFromYaml:
         assert cfg.output_path == "candidate"
         assert cfg.reference_inputs == []
 
+    def test_runner_defaults_to_writing_bot(self, tmp_yaml):
+        cfg = TaskConfig.load_from_yaml(tmp_yaml(MINIMAL_YAML))
+        assert cfg.runner == (
+            "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner"
+        )
+        assert cfg.runner_params == {}
+
+    def test_runner_fields_parsed(self, tmp_yaml):
+        yaml = textwrap.dedent("""\
+            task_definition: Backport the patch
+            prompt_template: "Goal: {{ task }}"
+            runner: ./backport_runner.py:BackportRunner
+            runner_params:
+              repo_url: https://example.com/repo.git
+              target_commit: abc123
+            callbacks:
+              - name: tests
+                command: pytest
+        """)
+        cfg = TaskConfig.load_from_yaml(tmp_yaml(yaml))
+        assert cfg.runner == "./backport_runner.py:BackportRunner"
+        assert cfg.runner_params == {
+            "repo_url": "https://example.com/repo.git",
+            "target_commit": "abc123",
+        }
+
+    def test_runner_params_non_mapping_raises_config_error(self, tmp_yaml):
+        """A non-mapping runner_params in YAML surfaces as ConfigError, not a
+        raw ValueError/TypeError from dict() coercion."""
+        yaml = textwrap.dedent("""\
+            task_definition: Backport the patch
+            prompt_template: "Goal: {{ task }}"
+            runner_params:
+              - not
+              - a
+              - mapping
+            callbacks:
+              - name: tests
+                command: pytest
+        """)
+        with pytest.raises(ConfigError, match="runner_params.*mapping"):
+            TaskConfig.load_from_yaml(tmp_yaml(yaml))
+
+    def test_runner_params_scalar_raises_config_error(self, tmp_yaml):
+        yaml = textwrap.dedent("""\
+            task_definition: Backport the patch
+            prompt_template: "Goal: {{ task }}"
+            runner_params: 5
+            callbacks:
+              - name: tests
+                command: pytest
+        """)
+        with pytest.raises(ConfigError, match="runner_params.*mapping"):
+            TaskConfig.load_from_yaml(tmp_yaml(yaml))
+
     def test_missing_callbacks(self, tmp_yaml):
         yaml = textwrap.dedent("""\
             task_definition: Fix the bug
@@ -252,4 +307,22 @@ class TestValidate:
         cfg = self._base()
         cfg.callbacks = []
         with pytest.raises(ConfigError, match="callbacks"):
+            cfg.validate()
+
+    def test_runner_empty(self):
+        cfg = self._base()
+        cfg.runner = "   "
+        with pytest.raises(ConfigError, match="runner"):
+            cfg.validate()
+
+    def test_runner_params_not_a_dict(self):
+        cfg = self._base()
+        cfg.runner_params = ["not", "a", "dict"]
+        with pytest.raises(ConfigError, match="runner_params.*mapping"):
+            cfg.validate()
+
+    def test_runner_params_reject_model_key(self):
+        cfg = self._base()
+        cfg.runner_params = {"model": "azure-openai/gpt-4o"}
+        with pytest.raises(ConfigError, match="runner_params.*model"):
             cfg.validate()

@@ -19,10 +19,16 @@ class IterationContext:
     memory_dir : str
         Host-side directory that is both mounted into the agent container
         (``folder_to_mount``) and surfaced to the agent via :class:`~microbots.tools.tool_definitions.memory_tool.MemoryTool`.
+    output_dir : str
+        Host-side directory (the iteration's ``candidate`` path) where the
+        runner should write the artefact that callbacks validate. Callbacks
+        receive this same path as ``$CANDIDATE``, so a runner that produces a
+        file/tree here closes the produce → validate loop.
     """
 
     task: str
     memory_dir: str
+    output_dir: str
 
 
 @dataclass
