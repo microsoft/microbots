@@ -15,6 +15,8 @@ from microbots.auto_memory.training.cli import (
 from microbots.auto_memory.training.orchestrator import TrainingSummary
 from microbots.auto_memory.training.training_source import TrainingSource
 
+pytestmark = pytest.mark.unit
+
 
 def _summary(*, error: str | None = None) -> TrainingSummary:
     return TrainingSummary(

@@ -8,6 +8,8 @@ import pytest
 from microbots.MicroBot import BotRunResult
 from microbots.auto_memory.training.runner import LearningRunner
 
+pytestmark = pytest.mark.unit
+
 
 def test_learning_runner_constructs_and_invokes_reading_bot() -> None:
     bot = MagicMock()

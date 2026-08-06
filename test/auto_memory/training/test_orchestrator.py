@@ -14,6 +14,8 @@ from microbots.auto_memory.training.orchestrator import (
 from microbots.auto_memory.training.runner import TrainingIterationResult
 from microbots.auto_memory.training.training_source import TrainingSource
 
+pytestmark = pytest.mark.unit
+
 
 def _config(tmp_path: Path, *, iterations: int = 2) -> TrainingConfig:
     source = tmp_path / "source"

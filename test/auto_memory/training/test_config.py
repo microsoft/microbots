@@ -10,6 +10,8 @@ from microbots.auto_memory.errors import ConfigError
 from microbots.auto_memory.training.config import TrainingConfig
 from microbots.auto_memory.training.training_source import TrainingSource
 
+pytestmark = pytest.mark.unit
+
 
 def _config(tmp_path: Path, **overrides: object) -> TrainingConfig:
     source = tmp_path / "source"

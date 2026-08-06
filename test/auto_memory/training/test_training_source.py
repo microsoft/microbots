@@ -16,6 +16,8 @@ from microbots.auto_memory.training.training_source import (
     looks_like_git_url,
 )
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.mark.parametrize(
     ("value", "expected"),
