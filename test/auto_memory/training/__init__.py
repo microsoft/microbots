@@ -1,0 +1,1 @@
+"""Tests for the auto-memory training package."""
