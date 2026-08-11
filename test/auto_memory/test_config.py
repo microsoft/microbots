@@ -2,13 +2,12 @@ import textwrap
 import pytest
 from pathlib import Path
 
-from microbots.auto_memory.config import TaskConfig
+from microbots.auto_memory.config import DEFAULT_PROMPT_TEMPLATE, TaskConfig
 from microbots.auto_memory.errors import ConfigError
 
 
 MINIMAL_YAML = textwrap.dedent("""\
     task_definition: Fix the bug
-    prompt_template: "Goal: {{ task }}"
     callbacks:
       - name: tests
         command: pytest "$CANDIDATE"
@@ -58,7 +57,7 @@ class TestLoadFromYaml:
     def test_minimal_valid(self, tmp_yaml):
         cfg = TaskConfig.load_from_yaml(tmp_yaml(MINIMAL_YAML))
         assert cfg.task_definition == "Fix the bug"
-        assert "{{ task }}" in cfg.prompt_template
+        assert cfg.prompt_template == DEFAULT_PROMPT_TEMPLATE
 
     def test_full_yaml(self, tmp_yaml):
         cfg = TaskConfig.load_from_yaml(tmp_yaml(FULL_YAML))
@@ -86,6 +85,8 @@ class TestLoadFromYaml:
 
     def test_defaults_applied(self, tmp_yaml):
         cfg = TaskConfig.load_from_yaml(tmp_yaml(MINIMAL_YAML))
+        assert cfg.model is None
+        assert cfg.workdir == ".auto-memory"
         assert cfg.max_iterations == 5
         assert cfg.timeout_min == 60
         assert cfg.per_iteration_timeout == 600
@@ -93,60 +94,19 @@ class TestLoadFromYaml:
         assert cfg.output_path == "candidate"
         assert cfg.reference_inputs == []
 
-    def test_runner_defaults_to_writing_bot(self, tmp_yaml):
-        cfg = TaskConfig.load_from_yaml(tmp_yaml(MINIMAL_YAML))
-        assert cfg.runner == (
-            "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner"
-        )
-        assert cfg.runner_params == {}
-
-    def test_runner_fields_parsed(self, tmp_yaml):
-        yaml = textwrap.dedent("""\
-            task_definition: Backport the patch
-            prompt_template: "Goal: {{ task }}"
-            runner: ./backport_runner.py:BackportRunner
-            runner_params:
-              repo_url: https://example.com/repo.git
-              target_commit: abc123
-            callbacks:
-              - name: tests
-                command: pytest
-        """)
+    def test_model_and_workdir_parsed(self, tmp_yaml):
+        yaml = "model: azure-openai/gpt-4o\nworkdir: results\n" + MINIMAL_YAML
         cfg = TaskConfig.load_from_yaml(tmp_yaml(yaml))
-        assert cfg.runner == "./backport_runner.py:BackportRunner"
-        assert cfg.runner_params == {
-            "repo_url": "https://example.com/repo.git",
-            "target_commit": "abc123",
-        }
+        assert cfg.model == "azure-openai/gpt-4o"
+        assert cfg.workdir == "results"
 
-    def test_runner_params_non_mapping_raises_config_error(self, tmp_yaml):
-        """A non-mapping runner_params in YAML surfaces as ConfigError, not a
-        raw ValueError/TypeError from dict() coercion."""
-        yaml = textwrap.dedent("""\
-            task_definition: Backport the patch
-            prompt_template: "Goal: {{ task }}"
-            runner_params:
-              - not
-              - a
-              - mapping
-            callbacks:
-              - name: tests
-                command: pytest
-        """)
-        with pytest.raises(ConfigError, match="runner_params.*mapping"):
-            TaskConfig.load_from_yaml(tmp_yaml(yaml))
-
-    def test_runner_params_scalar_raises_config_error(self, tmp_yaml):
-        yaml = textwrap.dedent("""\
-            task_definition: Backport the patch
-            prompt_template: "Goal: {{ task }}"
-            runner_params: 5
-            callbacks:
-              - name: tests
-                command: pytest
-        """)
-        with pytest.raises(ConfigError, match="runner_params.*mapping"):
-            TaskConfig.load_from_yaml(tmp_yaml(yaml))
+        @pytest.mark.parametrize("field", ["runner", "runner_params"])
+        def test_yaml_runner_fields_direct_users_to_python_injection(
+                self, tmp_yaml, field
+        ):
+                yaml = MINIMAL_YAML + f"{field}: custom\n"
+                with pytest.raises(ConfigError, match="agent_runner"):
+                        TaskConfig.load_from_yaml(tmp_yaml(yaml))
 
     def test_missing_callbacks(self, tmp_yaml):
         yaml = textwrap.dedent("""\
@@ -168,9 +128,10 @@ class TestLoadFromYaml:
         with pytest.raises(ConfigError, match="task_definition"):
             TaskConfig.load_from_yaml(tmp_yaml("prompt_template: hello"))
 
-    def test_missing_prompt_template(self, tmp_yaml):
-        with pytest.raises(ConfigError, match="prompt_template"):
-            TaskConfig.load_from_yaml(tmp_yaml("task_definition: hello"))
+    def test_prompt_template_is_optional(self, tmp_yaml):
+        yaml = "task_definition: hello\ncallbacks:\n  - name: check\n    command: echo ok\n"
+        cfg = TaskConfig.load_from_yaml(tmp_yaml(yaml))
+        assert cfg.prompt_template == DEFAULT_PROMPT_TEMPLATE
 
     def test_not_a_mapping(self, tmp_yaml):
         with pytest.raises(ConfigError, match="mapping"):
@@ -200,6 +161,19 @@ class TestValidate:
         cfg = self._base()
         cfg.prompt_template = ""
         with pytest.raises(ConfigError, match="prompt_template"):
+            cfg.validate()
+
+    @pytest.mark.parametrize("model", ["gpt-4o", "unknown/gpt-4o"])
+    def test_invalid_model(self, model):
+        cfg = self._base()
+        cfg.model = model
+        with pytest.raises(ConfigError, match="model"):
+            cfg.validate()
+
+    def test_empty_workdir(self):
+        cfg = self._base()
+        cfg.workdir = ""
+        with pytest.raises(ConfigError, match="workdir"):
             cfg.validate()
 
     def test_max_iterations_zero(self):
@@ -309,20 +283,3 @@ class TestValidate:
         with pytest.raises(ConfigError, match="callbacks"):
             cfg.validate()
 
-    def test_runner_empty(self):
-        cfg = self._base()
-        cfg.runner = "   "
-        with pytest.raises(ConfigError, match="runner"):
-            cfg.validate()
-
-    def test_runner_params_not_a_dict(self):
-        cfg = self._base()
-        cfg.runner_params = ["not", "a", "dict"]
-        with pytest.raises(ConfigError, match="runner_params.*mapping"):
-            cfg.validate()
-
-    def test_runner_params_reject_model_key(self):
-        cfg = self._base()
-        cfg.runner_params = {"model": "azure-openai/gpt-4o"}
-        with pytest.raises(ConfigError, match="runner_params.*model"):
-            cfg.validate()

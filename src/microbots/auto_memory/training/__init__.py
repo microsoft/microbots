@@ -21,6 +21,7 @@ Public API
 from microbots.auto_memory.training.config import TrainingConfig
 from microbots.auto_memory.training.training_source import TrainingSource
 from microbots.auto_memory.training.orchestrator import (
+    TrainingFinalStatus,
     TrainingIterationRecord,
     TrainingOrchestrator,
     TrainingSummary,
@@ -36,6 +37,7 @@ __all__ = [
     "TrainingOrchestrator",
     "TrainingSummary",
     "TrainingIterationRecord",
+    "TrainingFinalStatus",
     "run_training",
     "run_training_from_yaml",
 ]

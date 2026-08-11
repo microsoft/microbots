@@ -15,10 +15,10 @@ from microbots.tools.tool_definitions.memory_tool import MemoryTool
 _TIMEOUT_ERROR_PREFIX = "Timeout of "
 
 
-class WritingBotRunner:
+class WritingBotRunner(AgentRunner):
     """Runs a :class:`~microbots.bot.WritingBot.WritingBot` for one iteration.
 
-    Satisfies the :class:`AgentRunner` protocol structurally.
+    Implements the :class:`AgentRunner` abstract base class.
 
     Parameters
     ----------

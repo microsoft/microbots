@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
 
+from microbots.auto_memory.data_models import IterationStatus
 from microbots.bot.ReadingBot import ReadingBot
 from microbots.MicroBot import BotRunResult
 from microbots.tools.tool_definitions.memory_tool import MemoryTool
@@ -34,15 +35,15 @@ class TrainingIterationResult:
 
     Attributes
     ----------
-    status : str
-        One of ``"passed"``, ``"timeout"``, ``"error"``.
+    status : IterationStatus
+        One of ``PASSED``, ``TIMEOUT``, ``ERROR``.
     output : str | None
         Bot's final answer on success, else ``None``.
     error : str | None
         Error description on failure, else ``None``.
     """
 
-    status: str
+    status: IterationStatus
     output: str | None
     error: str | None
 
@@ -142,14 +143,14 @@ class LearningRunner:
         """
         if bot_result.status:
             return TrainingIterationResult(
-                status="passed", output=bot_result.result, error=None
+                status=IterationStatus.PASSED, output=bot_result.result, error=None
             )
 
         error = bot_result.error or "Unknown error"
         if error.startswith(_TIMEOUT_PREFIX):
             return TrainingIterationResult(
-                status="timeout", output=None, error=error
+                status=IterationStatus.TIMEOUT, output=None, error=error
             )
         return TrainingIterationResult(
-            status="error", output=None, error=error
+            status=IterationStatus.ERROR, output=None, error=error
         )

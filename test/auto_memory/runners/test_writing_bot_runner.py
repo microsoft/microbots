@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from microbots.auto_memory.data_models import IterationStatus
-from microbots.auto_memory.runners import AgentResult, IterationContext
+from microbots.auto_memory.runners import AgentResult, AgentRunner, IterationContext
 from microbots.auto_memory.runners.writing_bot_runner import WritingBotRunner
 from microbots.MicroBot import BotRunResult
 
@@ -21,6 +21,15 @@ def _make_ctx(memory_dir: str, task: str = _TASK) -> IterationContext:
     return IterationContext(
         task=task, memory_dir=memory_dir, output_dir=memory_dir
     )
+
+
+@pytest.mark.unit
+def test_agent_runner_requires_run_implementation() -> None:
+    class IncompleteRunner(AgentRunner):
+        pass
+
+    with pytest.raises(TypeError, match="abstract method.*run"):
+        IncompleteRunner()
 
 
 # ---------------------------------------------------------------------------

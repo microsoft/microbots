@@ -137,6 +137,50 @@ class TestWorkspaceManagerResume:
 
 
 # ---------------------------------------------------------------------------
+# external_memory_dir
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestWorkspaceManagerExternalMemoryDir:
+    def test_external_dir_is_used_instead_of_run_subdir(self, tmp_path):
+        run_dir = tmp_path / "run"
+        ext = tmp_path / "trained"
+        wm = WorkspaceManager(run_dir=run_dir, external_memory_dir=ext)
+        wm.prepare()
+        assert wm.memory.memory_dir == ext
+        # The default sub-dir must not be created.
+        assert not (run_dir / "memory").exists()
+
+    def test_external_dir_preserves_pre_existing_notes(self, tmp_path):
+        ext = tmp_path / "trained"
+        ext.mkdir()
+        (ext / "architecture.md").write_text("keep", encoding="utf-8")
+
+        wm = WorkspaceManager(run_dir=tmp_path / "run", external_memory_dir=ext)
+        wm.prepare()
+        assert (ext / "architecture.md").read_text(encoding="utf-8") == "keep"
+
+    def test_external_dir_survives_run_dir_wipe_on_non_resume(self, tmp_path):
+        """A second run with the same external memory keeps the notes intact."""
+        ext = tmp_path / "trained"
+        ext.mkdir()
+        (ext / "notes.md").write_text("shared knowledge", encoding="utf-8")
+
+        wm1 = WorkspaceManager(run_dir=tmp_path / "run1", external_memory_dir=ext)
+        wm1.prepare()
+        wm2 = WorkspaceManager(run_dir=tmp_path / "run2", external_memory_dir=ext)
+        wm2.prepare(resume=False)  # would wipe internal memory; must not touch ext
+        assert (ext / "notes.md").read_text(encoding="utf-8") == "shared knowledge"
+
+    def test_external_dir_default_is_none(self, tmp_path):
+        wm = WorkspaceManager(run_dir=tmp_path / "run")
+        assert wm.external_memory_dir is None
+        wm.prepare()
+        # Falls back to the traditional run_dir/memory/ layout.
+        assert wm.memory.memory_dir == tmp_path / "run" / "memory"
+
+
+# ---------------------------------------------------------------------------
 # prepare_iteration() / iteration_dir()
 # ---------------------------------------------------------------------------
 

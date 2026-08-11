@@ -11,6 +11,7 @@ from microbots.auto_memory.callbacks import CallbackResult, CallbackRunner
 from microbots.auto_memory.config import TaskConfig
 from microbots.auto_memory.data_models import (
     CallbackSpec,
+    Feedback,
     FinalStatus,
     IterationStatus,
 )
@@ -23,6 +24,22 @@ from microbots.auto_memory.workspace import WorkspaceManager
 # ---------------------------------------------------------------------------
 # Helpers / factories
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _mock_failure_analysis():
+    def _feedback(*, iteration_idx, **kwargs):
+        return Feedback(
+            iteration_idx=iteration_idx,
+            summary="Mock callback failure analysis",
+            validator_failures=["check"],
+        )
+
+    with patch(
+        "microbots.auto_memory.orchestrator.analyze_failure",
+        side_effect=_feedback,
+    ):
+        yield
 
 
 def _make_config(
@@ -66,7 +83,7 @@ def _make_callback_result(tmp_path: Path, *, passed: bool = True) -> CallbackRes
     )
 
 
-class MockAgentRunner:
+class MockAgentRunner(AgentRunner):
     """Controllable AgentRunner that returns results from a pre-configured queue."""
 
     def __init__(self, results: list[AgentResult]) -> None:
@@ -84,7 +101,7 @@ class MockAgentRunner:
         return len(self._calls)
 
 
-class RaisingAgentRunner:
+class RaisingAgentRunner(AgentRunner):
     """AgentRunner that always raises AgentError."""
 
     def __init__(self, message: str = "agent exploded") -> None:
@@ -339,7 +356,7 @@ class TestTimeoutPath:
             # First call (start_time) returns 0; next call returns timeout + 1
             return 0.0 if call_count == 1 else config.timeout_min * 60 + 1.0
 
-        with patch("microbots.auto_memory.orchestrator.time.monotonic", side_effect=fake_monotonic):
+        with patch("microbots.auto_memory.loop.time.monotonic", side_effect=fake_monotonic):
             summary = orch.run()
 
         assert summary.final_status == FinalStatus.TIMEOUT

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
@@ -13,10 +12,20 @@ from microbots.auto_memory.config import TaskConfig
 from microbots.auto_memory.context import build_iteration_context
 from microbots.auto_memory.data_models import Feedback, FinalStatus, IterationStatus
 from microbots.auto_memory.errors import AgentError
+from microbots.auto_memory.loop import StepOutcome, StopReason, run_bounded_loop
 from microbots.auto_memory.runners.base import AgentResult, AgentRunner, IterationContext
 from microbots.auto_memory.workspace import WorkspaceManager
 
 logger = getLogger(__name__)
+
+# Maps the generic loop's stop reason onto this loop's own FinalStatus enum.
+_STOP_REASON_TO_FINAL_STATUS: dict[StopReason, FinalStatus] = {
+    StopReason.SUCCESS: FinalStatus.PASSED,
+    StopReason.LIMIT_REACHED: FinalStatus.LIMIT_REACHED,
+    StopReason.TOTAL_TIMEOUT: FinalStatus.TIMEOUT,
+    StopReason.ITERATION_TIMEOUT: FinalStatus.TIMEOUT,
+    StopReason.ERROR: FinalStatus.ERROR,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +91,7 @@ class TrainingLoopOrchestrator:
     config : TaskConfig
         Task configuration (max_iterations, timeout_min, etc.).
     agent_runner : AgentRunner
-        Structural-protocol object that executes one agent iteration.
+        Runner object that executes one agent iteration.
     callback_runner : CallbackRunner
         Runs validation callbacks against the agent's output.
     workspace : WorkspaceManager
@@ -108,7 +117,7 @@ class TrainingLoopOrchestrator:
         config : TaskConfig
             Task configuration (max_iterations, timeout_min, etc.).
         agent_runner : AgentRunner
-            Structural-protocol object that executes one agent iteration.
+            Runner object that executes one agent iteration.
         callback_runner : CallbackRunner
             Runs validation callbacks against the agent's output.
         workspace : WorkspaceManager
@@ -145,118 +154,101 @@ class TrainingLoopOrchestrator:
         """
         self._workspace.prepare()
 
-        start_time = time.monotonic()
-        timeout_s = self._config.timeout_min * 60
-        records: list[IterationRecord] = []
         last_feedback: Feedback | None = None
-        consecutive_errors = 0
 
-        for iteration_idx in range(self._config.max_iterations):
-            elapsed = time.monotonic() - start_time
+        def step(iteration_idx: int) -> StepOutcome[IterationRecord]:
+            """Run one iteration and translate its status into a loop outcome.
 
-            # --- total timeout check ---
-            if elapsed >= timeout_s:
-                logger.info(
-                    "Orchestrator: total timeout reached after %.1fs (limit %ds)",
-                    elapsed,
-                    timeout_s,
-                )
-                return RunSummary(
-                    final_status=FinalStatus.TIMEOUT,
-                    iterations_run=iteration_idx,
-                    iteration_records=records,
-                    elapsed_s=elapsed,
-                )
+            Parameters
+            ----------
+            iteration_idx : int
+                Zero-based index of the iteration to run.
 
-            # --- run one iteration ---
-            try:
-                record = self.run_iteration(
-                    iteration_idx=iteration_idx,
-                    feedback=last_feedback,
-                )
-            except AgentError as exc:
-                elapsed = time.monotonic() - start_time
-                logger.error(
-                    "Orchestrator: AgentError on iteration %d: %s", iteration_idx, exc
-                )
-                return RunSummary(
-                    final_status=FinalStatus.ERROR,
-                    iterations_run=iteration_idx + 1,
-                    iteration_records=records,
-                    elapsed_s=elapsed,
-                    error_message=str(exc),
-                )
-
-            records.append(record)
+            Returns
+            -------
+            StepOutcome[IterationRecord]
+                The iteration's record plus the loop-control signal derived
+                from its status (retry, stop, or continue).
+            """
+            nonlocal last_feedback
+            record = self.run_iteration(
+                iteration_idx=iteration_idx, feedback=last_feedback
+            )
 
             if record.status == IterationStatus.ERROR:
-                consecutive_errors += 1
-                if consecutive_errors <= self._max_agent_retries:
-                    logger.warning(
-                        "Orchestrator: transient agent error on iteration %d "
-                        "(retry %d/%d), continuing",
-                        iteration_idx,
-                        consecutive_errors,
-                        self._max_agent_retries,
-                    )
-                    continue
-                elapsed = time.monotonic() - start_time
-                error_msg = (
-                    record.error
-                    or f"Agent returned ERROR on iteration {iteration_idx}"
-                )
-                logger.error(
-                    "Orchestrator: iteration %d returned ERROR (%d consecutive)",
-                    iteration_idx,
-                    consecutive_errors,
-                )
-                return RunSummary(
-                    final_status=FinalStatus.ERROR,
-                    iterations_run=iteration_idx + 1,
-                    iteration_records=records,
-                    elapsed_s=elapsed,
-                    error_message=error_msg,
-                )
-
-            consecutive_errors = 0
+                return StepOutcome(record=record, transient_error=True)
 
             if record.status == IterationStatus.TIMEOUT:
-                elapsed = time.monotonic() - start_time
                 logger.info(
                     "Orchestrator: per-iteration timeout on iteration %d", iteration_idx
                 )
-                return RunSummary(
-                    final_status=FinalStatus.TIMEOUT,
-                    iterations_run=iteration_idx + 1,
-                    iteration_records=records,
-                    elapsed_s=elapsed,
-                )
+                return StepOutcome(record=record, stop=StopReason.ITERATION_TIMEOUT)
 
             if record.status == IterationStatus.PASSED:
-                elapsed = time.monotonic() - start_time
-                logger.info(
-                    "Orchestrator: PASSED on iteration %d (%.1fs)", iteration_idx, elapsed
-                )
-                return RunSummary(
-                    final_status=FinalStatus.PASSED,
-                    iterations_run=iteration_idx + 1,
-                    iteration_records=records,
-                    elapsed_s=elapsed,
-                )
+                logger.info("Orchestrator: PASSED on iteration %d", iteration_idx)
+                return StepOutcome(record=record, stop=StopReason.SUCCESS)
 
             # FAILED — persist feedback and continue
             last_feedback = record.feedback
+            return StepOutcome(record=record)
 
-        # All iterations exhausted without a pass
-        elapsed = time.monotonic() - start_time
+        def on_exception(iteration_idx: int, exc: BaseException) -> IterationRecord:
+            """Build the final iteration record when the agent raises ``AgentError``.
+
+            Parameters
+            ----------
+            iteration_idx : int
+                Zero-based index of the iteration that raised.
+            exc : BaseException
+                The caught ``AgentError`` instance.
+
+            Returns
+            -------
+            IterationRecord
+                An ``ERROR`` record carrying the exception message.
+            """
+            logger.error(
+                "Orchestrator: AgentError on iteration %d: %s", iteration_idx, exc
+            )
+            return IterationRecord(
+                idx=iteration_idx, status=IterationStatus.ERROR, error=str(exc)
+            )
+
+        result = run_bounded_loop(
+            max_iterations=self._config.max_iterations,
+            total_timeout_s=self._config.timeout_min * 60,
+            step=step,
+            catch_exceptions=(AgentError,),
+            on_exception=on_exception,
+            max_transient_retries=self._max_agent_retries,
+        )
+
+        final_status = _STOP_REASON_TO_FINAL_STATUS[result.stop_reason]
+
+        error_message = result.error_message
+        if (
+            final_status == FinalStatus.ERROR
+            and error_message is None
+            and result.records
+        ):
+            last_record = result.records[-1]
+            error_message = (
+                last_record.error
+                or f"Agent returned ERROR on iteration {last_record.idx}"
+            )
+
         logger.info(
-            "Orchestrator: limit reached after %d iteration(s)", self._config.max_iterations
+            "Orchestrator: finished status=%s iterations=%d elapsed=%.1fs",
+            final_status,
+            result.iterations_run,
+            result.elapsed_s,
         )
         return RunSummary(
-            final_status=FinalStatus.LIMIT_REACHED,
-            iterations_run=self._config.max_iterations,
-            iteration_records=records,
-            elapsed_s=elapsed,
+            final_status=final_status,
+            iterations_run=result.iterations_run,
+            iteration_records=result.records,
+            elapsed_s=result.elapsed_s,
+            error_message=error_message,
         )
 
     def run_iteration(

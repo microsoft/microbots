@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import textwrap
+import runpy
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from microbots.auto_memory import run_from_yaml
-from microbots.auto_memory.cli import _load_runner_class
-from microbots.auto_memory.data_models import FinalStatus
+from microbots.auto_memory import CallbackRunner, run_from_yaml
+from microbots.auto_memory.callbacks import CallbackResult
+from microbots.auto_memory.cli import main
+from microbots.auto_memory.data_models import FinalStatus, IterationStatus
 from microbots.auto_memory.errors import ConfigError
 from microbots.auto_memory.orchestrator import RunSummary
+from microbots.auto_memory.runners.base import AgentResult, AgentRunner
 from microbots.MicroBot import BotRunResult
 
 _MODEL = "azure-openai/gpt-4o"
@@ -84,6 +87,47 @@ def _mock_log_analysis_bot(result: str = "diagnosis narrative"):
 
 @pytest.mark.unit
 class TestRunFromYamlEndToEnd:
+    def test_yaml_supplies_model_and_default_workdir(self, tmp_path):
+        yaml_path = _write_yaml(
+            tmp_path,
+            "model: azure-openai/gpt-4o\n" + _TASK_YAML,
+        )
+        bot_patch, _ = _mock_writing_bot()
+
+        with bot_patch, patch(
+            "microbots.auto_memory.runners.writing_bot_runner.MemoryTool"
+        ):
+            summary = run_from_yaml(yaml_path, run_id="yaml-only")
+
+        assert summary.final_status == FinalStatus.PASSED
+        assert (tmp_path / ".auto-memory" / "runs" / "yaml-only").is_dir()
+
+    def test_explicit_model_and_workdir_override_yaml(self, tmp_path):
+        yaml_path = _write_yaml(
+            tmp_path,
+            "model: azure-openai/from-yaml\nworkdir: yaml-work\n" + _TASK_YAML,
+        )
+        bot_patch, _ = _mock_writing_bot()
+        explicit_workdir = tmp_path / "explicit-work"
+
+        with bot_patch as writing_bot, patch(
+            "microbots.auto_memory.runners.writing_bot_runner.MemoryTool"
+        ):
+            run_from_yaml(
+                yaml_path,
+                explicit_workdir,
+                run_id="overrides",
+                model=_MODEL,
+            )
+
+        assert writing_bot.call_args.kwargs["model"] == _MODEL
+        assert (explicit_workdir / "runs" / "overrides").is_dir()
+        assert not (tmp_path / "yaml-work").exists()
+
+    def test_requires_model_in_yaml_or_argument(self, tmp_path):
+        with pytest.raises(ConfigError, match="model is required"):
+            run_from_yaml(_write_yaml(tmp_path))
+
     def test_returns_run_summary(self, tmp_path):
         yaml_path = _write_yaml(tmp_path)
         workdir = tmp_path / "workdir"
@@ -114,6 +158,41 @@ class TestRunFromYamlEndToEnd:
         assert summary.iterations_run == 1
         assert summary.error_message is None
         assert len(summary.iteration_records) == 1
+
+    def test_uses_user_callback_runner(self, tmp_path):
+        yaml_path = _write_yaml(tmp_path)
+        workdir = tmp_path / "workdir"
+        bot_patch, _ = _mock_writing_bot()
+
+        class PassingCallbacks(CallbackRunner):
+            def run_all(self, specs, logs_dir, candidate_path):
+                return [
+                    CallbackResult(
+                        spec=spec,
+                        return_code=0,
+                        stdout_path=logs_dir / f"{spec.name}.stdout",
+                        stderr_path=logs_dir / f"{spec.name}.stderr",
+                        passed=True,
+                    )
+                    for spec in specs
+                ]
+
+        callback_runner = PassingCallbacks()
+        with bot_patch, patch(
+            "microbots.auto_memory.runners.writing_bot_runner.MemoryTool"
+        ), patch(
+            "microbots.auto_memory.cli.ShellCallbackRunner"
+        ) as shell_callback_runner:
+            summary = run_from_yaml(
+                yaml_path,
+                workdir,
+                run_id="custom-callbacks",
+                model=_MODEL,
+                callback_runner=callback_runner,
+            )
+
+        assert summary.final_status == FinalStatus.PASSED
+        shell_callback_runner.assert_not_called()
 
     def test_disk_layout_created(self, tmp_path):
         yaml_path = _write_yaml(tmp_path)
@@ -193,172 +272,107 @@ class TestRunFromYamlEndToEnd:
         assert (run_dir / "iterations" / "iter_01" / "candidate").is_dir()
 
 
-# ---------------------------------------------------------------------------
-# Runner construction guards (run_from_yaml)
-# ---------------------------------------------------------------------------
-
-_GOOD_RUNNER_SRC = textwrap.dedent("""\
-    class R:
-        def __init__(self, model):
-            self.model = model
-
-        def run(self, ctx, timeout_s):
-            return None
-""")
-
-_NO_RUN_RUNNER_SRC = textwrap.dedent("""\
-    class R:
-        def __init__(self, model):
-            self.model = model
-""")
-
-
-def _write_custom_runner_yaml(tmp_path: Path, runner_src: str, runner_params: str) -> Path:
-    (tmp_path / "custom_runner.py").write_text(runner_src)
-    yaml = textwrap.dedent(f"""\
-        task_definition: do a thing
-        prompt_template: "Goal: {{{{ task }}}}"
-        runner: ./custom_runner.py:R
-        runner_params:
-        {runner_params}
-        callbacks:
-          - name: always_ok
-            command: 'true'
-        max_iterations: 1
-        timeout_min: 1
-        per_iteration_timeout: 30
-    """)
-    p = tmp_path / "task.yml"
-    p.write_text(yaml)
-    return p
-
-
 @pytest.mark.unit
-class TestRunnerConstructionGuards:
-    def test_bad_runner_params_raises_config_error(self, tmp_path):
-        """runner_params that don't match __init__ surface as ConfigError."""
-        yaml_path = _write_custom_runner_yaml(
-            tmp_path, _GOOD_RUNNER_SRC, runner_params="  unexpected_kwarg: 1"
-        )
-        with pytest.raises(ConfigError, match="Failed to construct runner"):
-            run_from_yaml(str(yaml_path), str(tmp_path / "wd"), model=_MODEL)
+class TestAgentRunnerInjection:
+    def test_uses_user_constructed_runner(self, tmp_path):
+        class CustomRunner(AgentRunner):
+            def __init__(self):
+                self.calls = []
 
-    def test_runner_missing_run_raises_config_error(self, tmp_path):
-        """A runner without run() fails the AgentRunner protocol check."""
-        yaml_path = _write_custom_runner_yaml(
-            tmp_path, _NO_RUN_RUNNER_SRC, runner_params="  {}"
+            def run(self, ctx, timeout_s):
+                self.calls.append((ctx, timeout_s))
+                return AgentResult(IterationStatus.PASSED, "done", None)
+
+        runner = CustomRunner()
+        summary = run_from_yaml(
+            _write_yaml(tmp_path),
+            tmp_path / "workdir",
+            run_id="custom-runner",
+            agent_runner=runner,
         )
+
+        assert summary.final_status == FinalStatus.PASSED
+        assert len(runner.calls) == 1
+        assert runner.calls[0][0].task == "Goal: Write a hello message to /memories/hello.txt"
+
+    def test_rejects_object_without_runner_protocol(self, tmp_path):
         with pytest.raises(ConfigError, match="AgentRunner"):
-            run_from_yaml(str(yaml_path), str(tmp_path / "wd"), model=_MODEL)
-
-
-# ---------------------------------------------------------------------------
-# Runner resolution (_load_runner_class)
-# ---------------------------------------------------------------------------
-
-_RUNNER_FILE_SRC = textwrap.dedent("""\
-    class MyRunner:
-        def __init__(self, model, **kwargs):
-            self.model = model
-            self.kwargs = kwargs
-
-        def run(self, ctx, timeout_s):
-            return None
-""")
-
-
-@pytest.mark.unit
-class TestLoadRunnerClass:
-    def _write_runner(self, tmp_path: Path, name: str = "myrunner.py") -> Path:
-        p = tmp_path / name
-        p.write_text(_RUNNER_FILE_SRC)
-        return p
-
-    # --- file-path form -------------------------------------------------
-    def test_file_path_form_loads_class(self, tmp_path):
-        self._write_runner(tmp_path)
-        cls = _load_runner_class("myrunner.py:MyRunner", base_dir=tmp_path)
-        assert cls.__name__ == "MyRunner"
-        instance = cls(model=_MODEL, repo_url="x")
-        assert instance.model == _MODEL
-        assert instance.kwargs == {"repo_url": "x"}
-
-    def test_file_path_form_absolute(self, tmp_path):
-        runner = self._write_runner(tmp_path)
-        cls = _load_runner_class(f"{runner}:MyRunner", base_dir=Path("/nonexistent"))
-        assert cls.__name__ == "MyRunner"
-
-    def test_file_path_missing_class_name(self, tmp_path):
-        self._write_runner(tmp_path)
-        with pytest.raises(ConfigError, match="expected 'path/to/file.py:ClassName'"):
-            _load_runner_class("myrunner.py:", base_dir=tmp_path)
-
-    def test_file_path_missing_file_part(self, tmp_path):
-        with pytest.raises(ConfigError, match="expected 'path/to/file.py:ClassName'"):
-            _load_runner_class(":MyRunner", base_dir=tmp_path)
-
-    def test_file_not_found(self, tmp_path):
-        with pytest.raises(ConfigError, match="Runner file not found"):
-            _load_runner_class("does_not_exist.py:MyRunner", base_dir=tmp_path)
-
-    def test_file_import_error(self, tmp_path):
-        bad = tmp_path / "bad_runner.py"
-        bad.write_text("raise RuntimeError('boom')\n")
-        with pytest.raises(ConfigError, match="Failed to import runner file"):
-            _load_runner_class("bad_runner.py:MyRunner", base_dir=tmp_path)
-
-    def test_file_spec_none(self, tmp_path):
-        self._write_runner(tmp_path)
-        with patch(
-            "microbots.auto_memory.cli.importlib.util.spec_from_file_location",
-            return_value=None,
-        ):
-            with pytest.raises(ConfigError, match="Cannot load runner module"):
-                _load_runner_class("myrunner.py:MyRunner", base_dir=tmp_path)
-
-    def test_file_class_not_found(self, tmp_path):
-        self._write_runner(tmp_path)
-        with pytest.raises(ConfigError, match="not found"):
-            _load_runner_class("myrunner.py:NoSuchRunner", base_dir=tmp_path)
-
-    # --- dotted import path form ---------------------------------------
-    def test_dotted_form_loads_class(self, tmp_path):
-        cls = _load_runner_class(
-            "microbots.auto_memory.runners.writing_bot_runner.WritingBotRunner",
-            base_dir=tmp_path,
-        )
-        assert cls.__name__ == "WritingBotRunner"
-
-    def test_dotted_form_missing_module(self, tmp_path):
-        with pytest.raises(ConfigError, match="expected"):
-            _load_runner_class("WritingBotRunner", base_dir=tmp_path)
-
-    def test_dotted_form_import_error(self, tmp_path):
-        with pytest.raises(ConfigError, match="Cannot import runner module"):
-            _load_runner_class("no_such_pkg.module.Klass", base_dir=tmp_path)
-
-    def test_dotted_form_import_time_error(self, tmp_path):
-        """A non-ImportError raised while importing the module is wrapped in
-        ConfigError instead of escaping as a raw traceback."""
-        with patch(
-            "microbots.auto_memory.cli.importlib.import_module",
-            side_effect=RuntimeError("boom at import"),
-        ):
-            with pytest.raises(ConfigError, match="Failed to import runner module"):
-                _load_runner_class(
-                    "microbots.auto_memory.config.TaskConfig", base_dir=tmp_path
-                )
-
-    def test_dotted_form_class_not_found(self, tmp_path):
-        with pytest.raises(ConfigError, match="not found"):
-            _load_runner_class(
-                "microbots.auto_memory.config.NoSuchClass", base_dir=tmp_path
+            run_from_yaml(
+                _write_yaml(tmp_path),
+                tmp_path / "workdir",
+                agent_runner=object(),  # type: ignore[arg-type]
             )
 
-    def test_resolved_attribute_not_callable(self, tmp_path):
-        """A resolved attribute that is not callable (e.g. a constant) raises a
-        clear ConfigError instead of a later cryptic TypeError."""
-        const_file = tmp_path / "const_runner.py"
-        const_file.write_text("NOT_A_RUNNER = 42\n")
-        with pytest.raises(ConfigError, match="not callable"):
-            _load_runner_class("const_runner.py:NOT_A_RUNNER", base_dir=tmp_path)
+
+@pytest.mark.unit
+class TestMain:
+    def test_runs_yaml_and_prints_summary(self, tmp_path, capsys):
+        summary = RunSummary(
+            final_status=FinalStatus.PASSED,
+            iterations_run=2,
+            elapsed_s=1.25,
+        )
+        yaml_path = tmp_path / "task.yaml"
+        with patch(
+            "microbots.auto_memory.cli.run_from_yaml", return_value=summary
+        ) as run:
+            assert main([str(yaml_path)]) == 0
+
+        run.assert_called_once_with(
+            yaml_path,
+            workdir=None,
+            run_id=None,
+            model=None,
+            external_memory_dir=None,
+        )
+        assert "auto-memory passed: iterations=2 elapsed=1.2s" in capsys.readouterr().out
+
+    def test_overrides_yaml_options(self, tmp_path):
+        summary = RunSummary(
+            final_status=FinalStatus.PASSED,
+            iterations_run=1,
+        )
+        yaml_path = tmp_path / "task.yaml"
+        with patch(
+            "microbots.auto_memory.cli.run_from_yaml", return_value=summary
+        ) as run:
+            assert main([
+                str(yaml_path),
+                "--model", _MODEL,
+                "--workdir", "work",
+                "--run-id", "fixed",
+                "--external-memory-dir", "memory",
+            ]) == 0
+
+        assert run.call_args.kwargs == {
+            "workdir": Path("work"),
+            "run_id": "fixed",
+            "model": _MODEL,
+            "external_memory_dir": Path("memory"),
+        }
+
+    def test_reports_config_error(self, tmp_path, capsys):
+        with patch(
+            "microbots.auto_memory.cli.run_from_yaml",
+            side_effect=ConfigError("bad task"),
+        ):
+            assert main([str(tmp_path / "task.yaml")]) == 2
+        assert "config error: bad task" in capsys.readouterr().err
+
+    def test_prints_summary_error(self, tmp_path, capsys):
+        summary = RunSummary(
+            final_status=FinalStatus.ERROR,
+            iterations_run=1,
+            error_message="runner failed",
+        )
+        with patch("microbots.auto_memory.cli.run_from_yaml", return_value=summary):
+            assert main([str(tmp_path / "task.yaml")]) == 0
+        assert "last error: runner failed" in capsys.readouterr().err
+
+    def test_module_entry_point_dispatches_to_main(self):
+        with (
+            patch("microbots.auto_memory.cli.main", return_value=7),
+            pytest.raises(SystemExit, match="7"),
+        ):
+            runpy.run_module("microbots.auto_memory.__main__", run_name="__main__")
+

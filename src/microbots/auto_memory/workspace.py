@@ -47,10 +47,23 @@ class WorkspaceManager:
         wm.memory.append_feedback(feedback)
 
         wm.cleanup()                            # strip __pycache__ etc.
+
+    Reusing a pre-populated memory directory (e.g. notes produced by the
+    training loop) is opt-in via ``external_memory_dir``::
+
+        wm = WorkspaceManager(
+            run_dir=Path("runs/my_task"),
+            external_memory_dir=Path(".memories/pytest"),
+        )
+
+    When set, the memory directory lives at ``external_memory_dir`` instead
+    of ``<run_dir>/memory/``. Non-feedback files in the external directory
+    are never modified.
     """
 
     run_dir: Path
     memory: MemoryStore = field(default_factory=MemoryStore)
+    external_memory_dir: Path | None = None
 
     # Set by prepare(); not part of the constructor signature.
     _iterations_dir: Path = field(init=False, repr=False)
@@ -110,7 +123,11 @@ class WorkspaceManager:
             self._iteration_count = 0
             self._write_meta()
 
-        self.memory.mount(self.run_dir, resume=resume)
+        self.memory.mount(
+            self.run_dir,
+            resume=resume,
+            external_memory_dir=self.external_memory_dir,
+        )
 
     def reset(self) -> None:
         """Wipe *run_dir* and create a fresh layout.
