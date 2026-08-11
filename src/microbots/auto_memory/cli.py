@@ -2,123 +2,33 @@
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
+import argparse
+import sys
 import uuid
 from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
-from typing import Callable
 
-from microbots.auto_memory.callbacks import ShellCallbackRunner
+from microbots.auto_memory.callbacks import CallbackRunner, ShellCallbackRunner
 from microbots.auto_memory.config import TaskConfig
 from microbots.auto_memory.errors import ConfigError
 from microbots.auto_memory.orchestrator import RunSummary, TrainingLoopOrchestrator
 from microbots.auto_memory.runners.base import AgentRunner
+from microbots.auto_memory.runners.writing_bot_runner import WritingBotRunner
 from microbots.auto_memory.workspace import WorkspaceManager
 
 logger = getLogger(__name__)
 
 
-def _load_runner_class(runner_spec: str, base_dir: Path) -> Callable[..., AgentRunner]:
-    """Resolve a runner class from a task config ``runner`` string.
-
-    Two forms are supported:
-
-    * **Dotted import path** — ``"pkg.module.ClassName"``. Imported via the
-      normal import system; the module must be importable (installed package
-      or on ``sys.path``).
-    * **File path plus class** — ``"path/to/file.py:ClassName"``. Loaded
-      directly from disk with :mod:`importlib.util`, so the runner can live
-      outside the microbots package. Relative file paths are resolved against
-      *base_dir* (the task YAML's directory).
-
-    Parameters
-    ----------
-    runner_spec : str
-        The ``runner`` value from the task configuration.
-    base_dir : Path
-        Directory used to resolve relative file paths (the task YAML's dir).
-
-    Returns
-    -------
-    Callable[..., AgentRunner]
-        The resolved runner factory — a class or any callable that accepts
-        ``model=...`` plus ``runner_params`` and returns an
-        :class:`~microbots.auto_memory.runners.base.AgentRunner`.
-
-    Raises
-    ------
-    ConfigError
-        If the spec is malformed, the module/file cannot be imported, the
-        class is not found, or the resolved attribute is not callable.
-    """
-    if ":" in runner_spec:
-        # File-path form: "<path>.py:<ClassName>"
-        file_part, _, cls_name = runner_spec.rpartition(":")
-        if not file_part or not cls_name:
-            raise ConfigError(
-                f"Invalid runner spec '{runner_spec}'; expected 'path/to/file.py:ClassName'"
-            )
-        file_path = Path(file_part)
-        if not file_path.is_absolute():
-            file_path = (base_dir / file_path).resolve()
-        if not file_path.is_file():
-            raise ConfigError(f"Runner file not found: {file_path}")
-
-        module_spec = importlib.util.spec_from_file_location(
-            "_microbots_user_runner", file_path
-        )
-        if module_spec is None or module_spec.loader is None:
-            raise ConfigError(f"Cannot load runner module from {file_path}")
-        module = importlib.util.module_from_spec(module_spec)
-        try:
-            module_spec.loader.exec_module(module)
-        except Exception as exc:  # noqa: BLE001 - surface any import-time error
-            raise ConfigError(
-                f"Failed to import runner file {file_path}: {exc}"
-            ) from exc
-    else:
-        # Dotted import path form: "pkg.module.ClassName"
-        module_path, _, cls_name = runner_spec.rpartition(".")
-        if not module_path or not cls_name:
-            raise ConfigError(
-                f"Invalid runner spec '{runner_spec}'; expected "
-                f"'pkg.module.ClassName' or 'path/to/file.py:ClassName'"
-            )
-        try:
-            module = importlib.import_module(module_path)
-        except ImportError as exc:
-            raise ConfigError(
-                f"Cannot import runner module '{module_path}': {exc}"
-            ) from exc
-        except Exception as exc:  # noqa: BLE001 - surface import-time errors
-            raise ConfigError(
-                f"Failed to import runner module '{module_path}': {exc}"
-            ) from exc
-
-    try:
-        runner_obj = getattr(module, cls_name)
-    except AttributeError as exc:
-        raise ConfigError(
-            f"Runner class '{cls_name}' not found in '{runner_spec}'"
-        ) from exc
-
-    if not callable(runner_obj):
-        raise ConfigError(
-            f"Runner '{cls_name}' in '{runner_spec}' is not callable "
-            f"(got {type(runner_obj).__name__}); expected a class or factory "
-            f"that accepts model=... and returns an AgentRunner"
-        )
-    return runner_obj
-
-
 def run_from_yaml(
     yaml_path: str | Path,
-    workdir: str | Path,
+    workdir: str | Path | None = None,
     run_id: str | None = None,
     *,
-    model: str,
+    model: str | None = None,
+    external_memory_dir: str | Path | None = None,
+    agent_runner: AgentRunner | None = None,
+    callback_runner: CallbackRunner | None = None,
 ) -> RunSummary:
     """Load a task YAML, wire all components, and run the iteration loop.
 
@@ -139,15 +49,27 @@ def run_from_yaml(
     ----------
     yaml_path : str | Path
         Path to the task configuration YAML file.
-    workdir : str | Path
-        Parent directory that holds the ``runs/`` tree.
+    workdir : str | Path | None, optional
+        Parent directory that holds the ``runs/`` tree. Defaults to the YAML
+        ``workdir`` value, resolved relative to the YAML file's directory.
     run_id : str | None, optional
         Identifier for this run.  When ``None`` a UTC timestamp plus a short
         random suffix of the form ``run-YYYYMMDD-HHMMSS-ffffff-<rand>`` is
         generated to avoid collisions.
-    model : str
-        Model identifier forwarded to the configured runner (required,
-        keyword-only — e.g. ``"azure-openai/gpt-4o"``).
+    model : str | None, optional
+        Model identifier forwarded to the configured runner. Overrides the
+        YAML ``model`` value when provided.
+    external_memory_dir : str | Path | None, optional
+        If provided, mount this pre-populated directory as the run's memory
+        directory instead of creating ``<run_dir>/memory/``. Useful for
+        reusing notes produced by the training loop. Non-feedback files
+        inside it are never modified.
+    agent_runner : AgentRunner | None, optional
+        User-constructed runner for custom agent behavior. Defaults to a
+        :class:`WritingBotRunner` configured with the resolved model.
+    callback_runner : CallbackRunner | None, optional
+        User-provided callback runner. Defaults to :class:`ShellCallbackRunner`,
+        which executes the callback commands declared in the task YAML.
 
     Returns
     -------
@@ -157,34 +79,44 @@ def run_from_yaml(
     yaml_path = Path(yaml_path)
     config = TaskConfig.load_from_yaml(str(yaml_path))
 
+    resolved_model = model or config.model
+    if agent_runner is None and resolved_model is None:
+        raise ConfigError(
+            "A model is required; set 'model' in the task YAML or pass model=..."
+        )
+
+    if workdir is None:
+        configured_workdir = Path(config.workdir)
+        workdir = (
+            configured_workdir
+            if configured_workdir.is_absolute()
+            else yaml_path.resolve().parent / configured_workdir
+        )
+
     if run_id is None:
         run_id = _generate_run_id()
 
     run_dir = Path(workdir) / "runs" / run_id
     logger.info("auto_memory: starting run %s at %s", run_id, run_dir)
 
-    runner_cls = _load_runner_class(config.runner, base_dir=yaml_path.resolve().parent)
-    try:
-        agent_runner: AgentRunner = runner_cls(model=model, **config.runner_params)
-    except Exception as exc:  # noqa: BLE001 - surface construction errors as config errors
-        raise ConfigError(
-            f"Failed to construct runner '{config.runner}' with "
-            f"runner_params={config.runner_params!r}: {exc}"
-        ) from exc
+    if agent_runner is None:
+        assert resolved_model is not None
+        agent_runner = WritingBotRunner(model=resolved_model)
 
-    # Structural check: the constructed object must satisfy the AgentRunner
-    # protocol (i.e. expose a run() method). This only verifies method
-    # presence, not its signature, but catches gross misconfigurations early
-    # with a clear error instead of failing deep inside the orchestrator.
+    # Custom runners must explicitly implement the framework extension point.
     if not isinstance(agent_runner, AgentRunner):
         raise ConfigError(
-            f"Runner '{config.runner}' does not satisfy the AgentRunner "
-            f"protocol; it must define run(ctx, timeout_s)"
+            "The provided agent_runner must inherit AgentRunner and implement "
+            "run(ctx, timeout_s)"
         )
-    logger.info("auto_memory: using runner %s", config.runner)
+    logger.info("auto_memory: using runner %s", type(agent_runner).__name__)
 
-    workspace = WorkspaceManager(run_dir=run_dir)
-    callback_runner = ShellCallbackRunner()
+    workspace = WorkspaceManager(
+        run_dir=run_dir,
+        external_memory_dir=Path(external_memory_dir) if external_memory_dir else None,
+    )
+    if callback_runner is None:
+        callback_runner = ShellCallbackRunner()
 
     orchestrator = TrainingLoopOrchestrator(
         config=config,
@@ -208,3 +140,54 @@ def _generate_run_id() -> str:
     """
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     return f"run-{timestamp}-{uuid.uuid4().hex[:8]}"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run an auto-memory task from a YAML file.
+
+    Parameters
+    ----------
+    argv : list[str] | None, optional
+        Arguments to parse. Uses :data:`sys.argv` when omitted.
+
+    Returns
+    -------
+    int
+        Process exit code, with zero indicating a completed run.
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m microbots.auto_memory",
+        description="Run an iterative auto-memory feedback loop.",
+    )
+    parser.add_argument("yaml_path", type=Path, help="Task YAML file.")
+    parser.add_argument("--model", help="Override the model declared in YAML.")
+    parser.add_argument(
+        "--workdir", type=Path, help="Override the work directory declared in YAML."
+    )
+    parser.add_argument("--run-id", help="Use a fixed run identifier.")
+    parser.add_argument(
+        "--external-memory-dir",
+        type=Path,
+        help="Reuse an existing memory directory.",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        summary = run_from_yaml(
+            args.yaml_path,
+            workdir=args.workdir,
+            run_id=args.run_id,
+            model=args.model,
+            external_memory_dir=args.external_memory_dir,
+        )
+    except ConfigError as exc:
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
+
+    print(
+        f"auto-memory {summary.final_status.value}: "
+        f"iterations={summary.iterations_run} elapsed={summary.elapsed_s:.1f}s"
+    )
+    if summary.error_message:
+        print(f"last error: {summary.error_message}", file=sys.stderr)
+    return 0

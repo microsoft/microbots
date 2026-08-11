@@ -66,6 +66,74 @@ class TestMemoryStoreMount:
 
 
 # ---------------------------------------------------------------------------
+# external_memory_dir
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestMemoryStoreExternalDir:
+    def test_external_dir_used_instead_of_run_subdir(self, tmp_path):
+        run_dir = tmp_path / "run"
+        ext = tmp_path / "trained_notes"
+        store = MemoryStore()
+        store.mount(run_dir, external_memory_dir=ext)
+        assert store.memory_dir == ext
+        assert ext.is_dir()
+        # The default sub-dir must NOT be created when external is used.
+        assert not (run_dir / "memory").exists()
+
+    def test_external_dir_created_if_missing(self, tmp_path):
+        ext = tmp_path / "nested" / "trained"
+        store = MemoryStore()
+        store.mount(tmp_path / "run", external_memory_dir=ext)
+        assert ext.is_dir()
+
+    def test_external_dir_preserves_pre_existing_notes(self, tmp_path):
+        ext = tmp_path / "trained"
+        ext.mkdir()
+        note = ext / "architecture.md"
+        note.write_text("# repo notes\n", encoding="utf-8")
+
+        store = MemoryStore()
+        store.mount(tmp_path / "run", external_memory_dir=ext)
+        # Non-feedback files must be untouched.
+        assert note.read_text(encoding="utf-8") == "# repo notes\n"
+
+    def test_external_dir_non_resume_wipes_only_feedback(self, tmp_path):
+        ext = tmp_path / "trained"
+        ext.mkdir()
+        note = ext / "notes.md"
+        note.write_text("keep me", encoding="utf-8")
+        stale_feedback = ext / "feedback.jsonl"
+        stale_feedback.write_text('{"iteration_idx": 9, "summary": "old"}\n', encoding="utf-8")
+
+        store = MemoryStore()
+        store.mount(tmp_path / "run", resume=False, external_memory_dir=ext)
+        # Feedback is wiped ...
+        assert store.read_all() == []
+        # ... but user's notes survive.
+        assert note.read_text(encoding="utf-8") == "keep me"
+
+    def test_external_dir_resume_preserves_feedback(self, tmp_path):
+        ext = tmp_path / "trained"
+        store = MemoryStore()
+        store.mount(tmp_path / "run", external_memory_dir=ext)
+        store.append_feedback(_make_feedback(0, "prior"))
+
+        store2 = MemoryStore()
+        store2.mount(tmp_path / "run2", resume=True, external_memory_dir=ext)
+        entries = store2.read_all()
+        assert len(entries) == 1
+        assert entries[0].summary == "prior"
+
+    def test_external_dir_accepts_string_path(self, tmp_path):
+        # Path-like objects: passing a string must also work.
+        ext = tmp_path / "trained"
+        store = MemoryStore()
+        store.mount(tmp_path / "run", external_memory_dir=str(ext))  # type: ignore[arg-type]
+        assert store.memory_dir == ext
+
+
+# ---------------------------------------------------------------------------
 # Unmounted guard
 # ---------------------------------------------------------------------------
 

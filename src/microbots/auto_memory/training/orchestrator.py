@@ -24,10 +24,13 @@ import shutil
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from enum import StrEnum
 from logging import getLogger
 from pathlib import Path
 
+from microbots.auto_memory.data_models import IterationStatus
 from microbots.auto_memory.errors import ConfigError
+from microbots.auto_memory.loop import StepOutcome, StopReason, run_bounded_loop
 from microbots.auto_memory.training.config import TrainingConfig
 from microbots.auto_memory.training.runner import (
     LearningRunner,
@@ -37,12 +40,29 @@ from microbots.auto_memory.training.runner import (
 logger = getLogger(__name__)
 
 
+class TrainingFinalStatus(StrEnum):
+    """Overall status of a completed training run."""
+
+    COMPLETED = "completed"
+    TIMEOUT = "timeout"
+    ERROR = "error"
+
+
+# Maps the generic loop's stop reason onto this loop's own TrainingFinalStatus.
+_STOP_REASON_TO_FINAL_STATUS: dict[StopReason, TrainingFinalStatus] = {
+    StopReason.LIMIT_REACHED: TrainingFinalStatus.COMPLETED,
+    StopReason.TOTAL_TIMEOUT: TrainingFinalStatus.TIMEOUT,
+    StopReason.ITERATION_TIMEOUT: TrainingFinalStatus.TIMEOUT,
+    StopReason.ERROR: TrainingFinalStatus.ERROR,
+}
+
+
 @dataclass
 class TrainingIterationRecord:
     """Per-iteration record persisted to ``training_run.jsonl``."""
 
     idx: int
-    status: str
+    status: IterationStatus
     elapsed_s: float
     error: str | None = None
 
@@ -51,7 +71,7 @@ class TrainingIterationRecord:
 class TrainingSummary:
     """Summary of one completed training run."""
 
-    final_status: str  # "completed" | "timeout" | "error"
+    final_status: TrainingFinalStatus
     iterations_run: int
     iteration_records: list[TrainingIterationRecord] = field(default_factory=list)
     elapsed_s: float = 0.0
@@ -121,86 +141,101 @@ class TrainingOrchestrator:
 
         agents_md = self._config.read_agents_md()
         total = self._config.iterations
-        total_budget_s = self._config.total_timeout_min * 60
-        started = time.monotonic()
-        records: list[TrainingIterationRecord] = []
+        last_iter_started = 0.0
 
-        for idx in range(total):
-            elapsed = time.monotonic() - started
-            if total_budget_s and elapsed >= total_budget_s:
-                logger.info(
-                    "TrainingOrchestrator: total timeout reached after %.1fs (limit %ds)",
-                    elapsed,
-                    total_budget_s,
-                )
-                return self._finish("timeout", records, elapsed, error=None)
+        def step(idx: int) -> StepOutcome[TrainingIterationRecord]:
+            """Run one training iteration and log its outcome.
 
+            Parameters
+            ----------
+            idx : int
+                Zero-based index of the iteration to run.
+
+            Returns
+            -------
+            StepOutcome[TrainingIterationRecord]
+                The iteration's record plus a stop signal when the runner
+                itself reports a per-iteration timeout.
+            """
+            nonlocal last_iter_started
             prompt = agents_md + _ITER_HEADER.format(
-                idx=idx,
-                total=total,
-                source=resolved_source,
+                idx=idx, total=total, source=resolved_source
             )
-
             logger.info(
                 "TrainingOrchestrator: iteration %d/%d starting", idx + 1, total
             )
-            iter_started = time.monotonic()
-            try:
-                result: TrainingIterationResult = runner.run(
-                    prompt, timeout_s=self._config.per_iteration_timeout
-                )
-            except Exception as exc:  # noqa: BLE001 - surface as ERROR record
-                iter_elapsed = time.monotonic() - iter_started
-                record = TrainingIterationRecord(
-                    idx=idx,
-                    status="error",
-                    elapsed_s=iter_elapsed,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-                records.append(record)
-                self._append_log(record)
-                logger.exception(
-                    "TrainingOrchestrator: iteration %d raised %s",
-                    idx,
-                    type(exc).__name__,
-                )
-                return self._finish(
-                    "error",
-                    records,
-                    time.monotonic() - started,
-                    error=record.error,
-                )
-
-            iter_elapsed = time.monotonic() - iter_started
+            last_iter_started = time.monotonic()
+            result: TrainingIterationResult = runner.run(
+                prompt, timeout_s=self._config.per_iteration_timeout
+            )
+            iter_elapsed = time.monotonic() - last_iter_started
             record = TrainingIterationRecord(
                 idx=idx,
                 status=result.status,
                 elapsed_s=iter_elapsed,
                 error=result.error,
             )
-            records.append(record)
             self._append_log(record)
-
             logger.info(
                 "TrainingOrchestrator: iteration %d finished status=%s in %.1fs",
                 idx,
                 result.status,
                 iter_elapsed,
             )
+            stop = (
+                StopReason.ITERATION_TIMEOUT
+                if result.status == IterationStatus.TIMEOUT
+                else None
+            )
+            return StepOutcome(record=record, stop=stop)
 
-            if result.status == "timeout":
-                return self._finish(
-                    "timeout",
-                    records,
-                    time.monotonic() - started,
-                    error=result.error,
-                )
+        def on_exception(idx: int, exc: BaseException) -> TrainingIterationRecord:
+            """Build the final iteration record when the runner raises.
+
+            Parameters
+            ----------
+            idx : int
+                Zero-based index of the iteration that raised.
+            exc : BaseException
+                The caught exception instance.
+
+            Returns
+            -------
+            TrainingIterationRecord
+                An ``ERROR`` record carrying the exception type and message.
+            """
+            record = TrainingIterationRecord(
+                idx=idx,
+                status=IterationStatus.ERROR,
+                elapsed_s=time.monotonic() - last_iter_started,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            self._append_log(record)
+            logger.exception(
+                "TrainingOrchestrator: iteration %d raised %s", idx, type(exc).__name__
+            )
+            return record
+
+        result = run_bounded_loop(
+            max_iterations=total,
+            total_timeout_s=self._config.total_timeout_min * 60,
+            step=step,
+            catch_exceptions=(Exception,),
+            on_exception=on_exception,
+        )
+
+        final_status = _STOP_REASON_TO_FINAL_STATUS[result.stop_reason]
+
+        # Prefer the last record's own error (richer / iteration-scoped)
+        # over the loop's generic error_message when both are available.
+        error_message = (
+            result.records[-1].error if result.records else result.error_message
+        )
+        if error_message is None:
+            error_message = result.error_message
 
         return self._finish(
-            "completed",
-            records,
-            time.monotonic() - started,
-            error=None,
+            final_status, result.records, result.elapsed_s, error=error_message
         )
 
     def _prepare_workdir(self) -> None:
@@ -262,7 +297,7 @@ class TrainingOrchestrator:
 
     def _finish(
         self,
-        final_status: str,
+        final_status: TrainingFinalStatus,
         records: list[TrainingIterationRecord],
         elapsed_s: float,
         error: str | None,
@@ -271,7 +306,7 @@ class TrainingOrchestrator:
 
         Parameters
         ----------
-        final_status : str
+        final_status : TrainingFinalStatus
             Overall completion status.
         records : list[TrainingIterationRecord]
             Iteration records accumulated during the run.

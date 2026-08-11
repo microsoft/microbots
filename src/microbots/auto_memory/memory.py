@@ -40,8 +40,20 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # Lifecycle
 
-    def mount(self, run_dir: Path, *, resume: bool = False) -> None:
-        """Attach the store to *run_dir/memory/*.
+    def mount(
+        self,
+        run_dir: Path,
+        *,
+        resume: bool = False,
+        external_memory_dir: Path | None = None,
+    ) -> None:
+        """Attach the store to a memory directory.
+
+        By default the store lives at ``<run_dir>/memory/`` — a fresh dir
+        owned by this run. Pass ``external_memory_dir`` to reuse an
+        already-populated memory dir (e.g. notes produced by the training
+        loop). Only the feedback JSONL inside it is managed by the store;
+        any other files (e.g. ``*.md`` notes) are left untouched.
 
         ``resume=False`` (default): the feedback file is wiped so the new
         run starts with a clean slate.  ``resume=True``: if the file already
@@ -54,13 +66,20 @@ class MemoryStore:
             Root directory of the auto_memory run.
         resume : bool, optional
             When ``True``, preserve any existing feedback file.
+        external_memory_dir : Path | None, optional
+            If provided, use this directory as the memory root instead of
+            ``<run_dir>/memory/``. The directory is created if missing.
+            Non-feedback files (e.g. trained notes) are never modified.
 
         Raises
         ------
         MemoryStoreError
             If the memory directory cannot be created.
         """
-        memory_dir = run_dir / "memory"
+        memory_dir = (
+            Path(external_memory_dir) if external_memory_dir is not None
+            else run_dir / "memory"
+        )
         try:
             memory_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -75,7 +94,10 @@ class MemoryStore:
             self.clear()
 
         logger.debug(
-            "MemoryStore mounted at %s (resume=%s)", memory_dir, resume
+            "MemoryStore mounted at %s (resume=%s, external=%s)",
+            memory_dir,
+            resume,
+            external_memory_dir is not None,
         )
 
     # ------------------------------------------------------------------

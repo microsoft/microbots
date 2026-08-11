@@ -57,6 +57,29 @@ class TestBuildIterationContextNoFeedback:
 
 @pytest.mark.unit
 class TestBuildIterationContextWithFeedback:
+    def test_default_template_renders_task_inputs_and_feedback(self):
+        cfg = TaskConfig(
+            task_definition="Fix the auth bug",
+            callbacks=[CallbackSpec(name="tests", command="pytest")],
+            reference_inputs=[ReferenceInput(name="spec", value="./spec.md")],
+        )
+        feedback = Feedback(
+            iteration_idx=0,
+            summary="Authentication test failed",
+            root_causes=["Missing token validation"],
+            validator_failures=["test_auth.py failed"],
+            suggested_actions=["Validate the token before use"],
+        )
+
+        result = build_iteration_context(cfg, 1, feedback=feedback)
+
+        assert "Fix the auth bug" in result
+        assert "spec: ./spec.md" in result
+        assert "Authentication test failed" in result
+        assert "Missing token validation" in result
+        assert "test_auth.py failed" in result
+        assert "Validate the token before use" in result
+
     def test_feedback_summary_rendered(self):
         cfg = _config(
             "Goal: {{ task }}\n{% if feedback %}Feedback: {{ feedback.summary }}{% endif %}"

@@ -102,7 +102,18 @@ class ShellCallbackRunner(CallbackRunner):
         list[CallbackResult]
             One result per spec, in the same order as *specs*.
         """
-        return [self._run_one(spec, logs_dir, candidate_path) for spec in specs]
+        logger.info(
+            "Running %d callback(s) against candidate at %s", len(specs), candidate_path
+        )
+        results = [self._run_one(spec, logs_dir, candidate_path) for spec in specs]
+        passed = sum(1 for r in results if r.passed)
+        logger.info(
+            "Callback batch finished: %d/%d passed (%.1fs total)",
+            passed,
+            len(results),
+            sum(r.duration_s for r in results),
+        )
+        return results
 
     # ------------------------------------------------------------------
     # Internal
@@ -140,16 +151,19 @@ class ShellCallbackRunner(CallbackRunner):
         timed_out: bool = False
         start = time.monotonic()
 
+        logger.info(
+            "Callback %r starting: cmd=%s (timeout=%ds, expected_rc=%d)",
+            spec.name,
+            _preview(spec.command),
+            spec.timeout_s,
+            spec.expected_return_code,
+        )
         try:
             with (
                 stdout_path.open("w", encoding="utf-8") as out_fh,
                 stderr_path.open("w", encoding="utf-8") as err_fh,
             ):
-                # Security note: spec.command is intentionally run with
-                # shell=True for developer convenience (supports pipes,
-                # redirects, etc.).  This runner assumes configs are loaded
-                # from trusted local files only.  Do NOT use with configs
-                # sourced from untrusted input.
+                # spec.command runs with shell=True; assumes configs come from trusted local files.
                 proc = subprocess.run(
                     spec.command,
                     shell=True,
@@ -173,6 +187,25 @@ class ShellCallbackRunner(CallbackRunner):
         duration_s = time.monotonic() - start
         passed = (not timed_out) and (return_code == spec.expected_return_code)
 
+        logger.info(
+            "Callback %r finished: rc=%d elapsed=%.1fs passed=%s stdout=%s stderr=%s",
+            spec.name,
+            return_code,
+            duration_s,
+            passed,
+            stdout_path,
+            stderr_path,
+        )
+        if not passed and not timed_out:
+            tail = _tail_lines(stderr_path, 15) or _tail_lines(stdout_path, 15)
+            if tail:
+                logger.info(
+                    "Callback %r output tail (%d lines):\n%s",
+                    spec.name,
+                    len(tail),
+                    "\n".join(tail),
+                )
+
         return CallbackResult(
             spec=spec,
             return_code=return_code,
@@ -182,3 +215,47 @@ class ShellCallbackRunner(CallbackRunner):
             timed_out=timed_out,
             duration_s=duration_s,
         )
+
+
+def _preview(cmd: str, limit: int = 160) -> str:
+    """Truncate long callback commands so a single log line stays readable.
+
+    Parameters
+    ----------
+    cmd : str
+        Callback command to normalize and preview.
+    limit : int, optional
+        Maximum preview length before truncation.
+
+    Returns
+    -------
+    str
+        Single-line command preview.
+    """
+    single = " ".join(cmd.split())
+    if len(single) <= limit:
+        return single
+    return single[:limit] + f"... [{len(single) - limit} more chars]"
+
+
+def _tail_lines(path: Path, n: int) -> list[str]:
+    """Read the last non-empty lines from a text file.
+
+    Parameters
+    ----------
+    path : Path
+        Text file to read.
+    n : int
+        Maximum number of trailing non-empty lines to return.
+
+    Returns
+    -------
+    list[str]
+        Trailing non-empty lines, or an empty list on an I/O error.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return lines[-n:]

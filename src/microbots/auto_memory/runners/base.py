@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 
 from microbots.auto_memory.data_models import IterationStatus
 
@@ -59,10 +59,10 @@ class AgentResult:
     log_path: str | None = None
 
 
-@runtime_checkable
-class AgentRunner(Protocol):
-    """Structural protocol satisfied by any object with a matching ``run`` method."""
+class AgentRunner(ABC):
+    """Abstract base class for one auto-memory agent invocation."""
 
+    @abstractmethod
     def run(self, ctx: IterationContext, timeout_s: int) -> AgentResult:
         """Run the agent described by *ctx* and return a normalised result.
 

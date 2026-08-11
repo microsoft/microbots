@@ -8,8 +8,7 @@ Exported names:
 
 * ``IterationContext`` — immutable context passed to every :class:`AgentRunner`.
 * ``AgentResult`` — normalised result returned by every runner.
-* ``AgentRunner`` — structural protocol satisfied by any runner with a matching
-  ``run`` method.
+* ``AgentRunner`` — abstract base class implemented by every runner.
 """
 
 from microbots.auto_memory.runners.base import AgentResult, AgentRunner, IterationContext
