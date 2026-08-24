@@ -1,7 +1,11 @@
 """Command-line interface for the repository training agent."""
 
 import argparse
+import logging
+
 from .runner import run_training
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -22,6 +26,7 @@ def parse_args():
 
 def main():
     """Run repository training from command-line arguments."""
+    logging.basicConfig(level=logging.INFO)
     args = parse_args()
     result = run_training(
         repo_path=args.repo,
@@ -29,10 +34,11 @@ def main():
         memory_dir=args.memory_dir,
         model=args.model,
     )
-    print(f"status={result.status} memory_dir={args.memory_dir}")
+    logger.info("status=%s memory_dir=%s", result.status, args.memory_dir)
     if not result.status:
-        print(f"error={result.error}")
+        logger.error("error=%s", result.error)
 
 
 if __name__ == "__main__":
     main()
+

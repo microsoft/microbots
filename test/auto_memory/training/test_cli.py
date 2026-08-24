@@ -57,7 +57,7 @@ def test_main_calls_run_training_with_parsed_args():
 
 
 @pytest.mark.unit
-def test_main_prints_error_on_failure(capsys):
+def test_main_logs_status_and_error_on_failure(caplog):
     argv = [
         "cli.py",
         "--repo",
@@ -70,9 +70,8 @@ def test_main_prints_error_on_failure(capsys):
     with patch.object(sys, "argv", argv), patch(
         "microbots.auto_memory.training.cli.run_training",
         return_value=fake_result,
-    ):
+    ), caplog.at_level("INFO", logger="microbots.auto_memory.training.cli"):
         main()
 
-    captured = capsys.readouterr()
-    assert "status=False" in captured.out
-    assert "error=boom" in captured.out
+    assert "status=False" in caplog.text
+    assert "error=boom" in caplog.text

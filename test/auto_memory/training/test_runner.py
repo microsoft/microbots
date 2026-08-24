@@ -10,6 +10,7 @@ model deployment.
 import os
 from pathlib import Path
 from subprocess import CalledProcessError
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,6 +37,7 @@ from microbots.MicroBot import BotRunResult
         ("/home/user/some/local/repo", False),
         ("some-local-dir-without-scheme", False),
         ("relative/local/path.git", True),  # ends with .git -> treated as git
+        ("git@github.com:pytest-dev/pytest", True),  # SCP-style, no .git suffix
     ],
 )
 def test_is_git_url(repo, expected):
@@ -215,6 +217,81 @@ def test_run_training_returns_bot_result(tmp_path):
     assert result is expected_result
 
 
+@pytest.mark.unit
+def test_run_training_cleans_up_workdir_after_git_clone(tmp_path):
+    """When repo_path is a git URL, the temp workdir it clones into should
+    be removed once the run finishes."""
+    memory_dir = tmp_path / "memory"
+    repo_url = "https://github.com/pytest-dev/pytest.git"
+
+    created_workdirs = []
+
+    def fake_clone(cmd, check):
+        # cmd = ["git", "clone", "--depth", "1", repo_url, dest]
+        dest = Path(cmd[-1])
+        dest.mkdir(parents=True, exist_ok=True)
+
+    mock_bot_instance = MagicMock()
+    mock_bot_instance.run.return_value = BotRunResult(
+        status=True, result="ok", error=None
+    )
+
+    real_mkdtemp = tempfile.mkdtemp
+
+    def tracking_mkdtemp(*args, **kwargs):
+        path = real_mkdtemp(*args, **kwargs)
+        created_workdirs.append(Path(path))
+        return path
+
+    with patch(
+        "microbots.auto_memory.training.runner.subprocess.run",
+        side_effect=fake_clone,
+    ), patch(
+        "microbots.auto_memory.training.runner.tempfile.mkdtemp",
+        side_effect=tracking_mkdtemp,
+    ), patch(
+        "microbots.auto_memory.training.runner.ReadingBot",
+        return_value=mock_bot_instance,
+    ), patch("microbots.auto_memory.training.runner.MemoryTool"):
+        run_training(
+            repo_path=repo_url,
+            feedback="",
+            memory_dir=str(memory_dir),
+            model="azure-openai/gpt-4o",
+        )
+
+    assert len(created_workdirs) == 1
+    assert not created_workdirs[0].exists()
+
+
+@pytest.mark.unit
+def test_run_training_keeps_local_repo_untouched(tmp_path):
+    """When repo_path is a local directory, it must never be deleted,
+    even though the (unused) temp workdir is still cleaned up."""
+    local_repo = tmp_path / "repo"
+    local_repo.mkdir()
+    (local_repo / "marker.txt").write_text("keep me")
+    memory_dir = tmp_path / "memory"
+
+    mock_bot_instance = MagicMock()
+    mock_bot_instance.run.return_value = BotRunResult(
+        status=True, result="ok", error=None
+    )
+
+    with patch(
+        "microbots.auto_memory.training.runner.ReadingBot",
+        return_value=mock_bot_instance,
+    ), patch("microbots.auto_memory.training.runner.MemoryTool"):
+        run_training(
+            repo_path=str(local_repo),
+            feedback="",
+            memory_dir=str(memory_dir),
+            model="azure-openai/gpt-4o",
+        )
+
+    assert (local_repo / "marker.txt").exists()
+
+
 # ---------------------------------------------------------------------------
 # End-to-end integration test (real Docker + real LLM deployment required)
 # ---------------------------------------------------------------------------
@@ -227,8 +304,8 @@ def test_run_training_end_to_end(test_repo, tmp_path):
 
     Requires Docker and a working model deployment (same env vars used by
     test/bot/test_reading_bot.py). This is a smoke test, not a
-    completion test: max_iterations is intentionally kept small so it
-    's fast to run locally. It only asserts the flow executes end-to-end
+    completion test: max_iterations is intentionally kept small so it's
+    fast to run locally. It only asserts the flow executes end-to-end
     (clone -> mount -> bot run) without asserting the agent reached
     task_done, since that may need more iterations than we want to spend
     here.
@@ -252,7 +329,7 @@ def test_run_training_end_to_end(test_repo, tmp_path):
         f"Training run failed unexpectedly: {result.error}"
     )
 
-    # With only 5 iterations the agent may not fully finish the task, but
+    # With only 8 iterations the agent may not fully finish the task, but
     # it should still persist at least one memory file along the way.
     memory_files = [f for f in memory_dir.rglob("*") if f.is_file()]
     assert memory_files, (
