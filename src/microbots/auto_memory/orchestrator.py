@@ -11,7 +11,7 @@ from pathlib import Path
 
 from microbots.auto_memory.analyzer import build_feedback
 from microbots.auto_memory.task import EvalOutcome, EvalTask
-from microbots.auto_memory.training.runner import run_training
+from microbots.auto_memory.training.runner import run_training_loop
 
 logger = getLogger(__name__)
 
@@ -42,13 +42,15 @@ def run_train_eval_loop(
     model: str,
     task: EvalTask,
     max_rounds: int = 5,
+    training_iterations: int = 1,
 ) -> LoopResult:
     """Run an eval task in a loop, retraining on failure until it passes.
 
     Each round runs ``task.run(...)``. If the task passes, the loop
     returns immediately. If it fails, feedback is built from the round's
-    log and used to retrain via ``run_training`` before the next round.
-    The round's log file is always deleted before the next round starts.
+    log and used to retrain via ``run_training_loop`` before the next
+    round. The round's log file is always deleted before the next round
+    starts.
 
     Parameters
     ----------
@@ -62,6 +64,9 @@ def run_train_eval_loop(
         The eval task to run each round.
     max_rounds : int
         Maximum number of train/eval rounds to attempt. Defaults to 5.
+    training_iterations : int
+        Number of training passes to run per retraining round, each
+        reusing the same ``memory_dir``. Defaults to 1.
 
     Returns
     -------
@@ -98,11 +103,12 @@ def run_train_eval_loop(
             try:
                 feedback = build_feedback(task, outcome, repo_path, model)
 
-                run_training(
+                run_training_loop(
                     repo_path=repo_path,
                     feedback=feedback,
                     memory_dir=memory_dir,
                     model=model,
+                    iterations=training_iterations,
                 )
             except Exception:
                 logger.exception(
