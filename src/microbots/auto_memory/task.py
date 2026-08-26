@@ -12,7 +12,7 @@ from logging import getLogger
 from pathlib import Path
 
 from microbots.bot.WritingBot import WritingBot
-from microbots.tools.MemoryTool import MemoryTool
+from microbots.tools.tool_definitions.memory_tool import MemoryTool
 
 logger = getLogger(__name__)
 
