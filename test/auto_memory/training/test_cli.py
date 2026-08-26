@@ -57,6 +57,32 @@ def test_main_calls_run_training_with_parsed_args():
 
 
 @pytest.mark.unit
+def test_main_runs_multiple_iterations_with_same_memory_dir():
+    argv = [
+        "cli.py",
+        "--repo",
+        "/some/repo",
+        "--memory-dir",
+        "/some/memory",
+        "--model",
+        "azure-openai/gpt-4o",
+        "--iterations",
+        "3",
+    ]
+    fake_result = BotRunResult(status=True, result="ok", error=None)
+
+    with patch.object(sys, "argv", argv), patch(
+        "microbots.auto_memory.training.cli.run_training",
+        return_value=fake_result,
+    ) as mock_run_training:
+        main()
+
+    assert mock_run_training.call_count == 3
+    for call in mock_run_training.call_args_list:
+        assert call.kwargs["memory_dir"] == "/some/memory"
+
+
+@pytest.mark.unit
 def test_main_logs_status_and_error_on_failure(caplog):
     argv = [
         "cli.py",

@@ -44,6 +44,31 @@ non-duplicative, and easy for a cold-start agent to navigate.
 
 ---
 
+## Handling Feedback
+
+Each run may include a `## Feedback` section appended after these
+instructions. This feedback comes from a prior evaluation attempt that
+**failed** using the memory notes as they currently stand.
+
+1. **Treat feedback as the highest-priority gap.** It is direct evidence that
+   something in `/memories/` was missing, wrong, or misleading — investigate
+   and correct it before exploring anything else this iteration.
+2. **Read the current memory first.** Check whether the failure relates to an
+   existing note (it was incomplete or incorrect) or a missing note (the area
+   was never covered).
+3. **Update memory to close the gap**, not just to acknowledge the feedback.
+   Add the missing fact, correct the wrong one, or add a caveat/edge case
+   that explains why the previous approach failed.
+4. **If feedback is empty or missing** (`"No feedback provided for this run."`),
+   there is no prior failure to address — proceed with the normal working
+   loop below and continue building out the maintainer mental model.
+5. **Never leave feedback unaddressed.** If you cannot fully resolve the
+   underlying gap this iteration, record what you learned and what remains
+   unresolved as an explicit open question in memory, so the next iteration
+   picks it up.
+
+---
+
 ## Working Loop
 
 For each iteration:
