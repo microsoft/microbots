@@ -44,7 +44,7 @@ def build_feedback(
         file_name=outcome.log_path,
         user_prompt=(
             "This log was produced while verifying whether an "
-            "automated agent completed its task correctly. Identify "
+            "agent completed its task correctly. Identify "
             "the root cause of the failure and describe concretely "
             "what the agent's memory notes should cover next time to "
             "avoid this failure."

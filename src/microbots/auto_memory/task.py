@@ -57,19 +57,19 @@ class EvalOutcome:
 class EvalTask(ABC):
     """Base class for a single evaluation task in the train <-> eval loop.
 
-    Subclasses must implement ``build_prompt`` and ``check``, and may
-    override ``setup``, ``teardown``, and ``run`` as needed.
+    Subclasses must implement ``setup``, ``build_prompt``, and ``check``,
+    and may override ``teardown`` and ``run`` as needed.
     """
 
+    @abstractmethod
     def setup(self, repo_path: str) -> None:
-        """Optional. Prepare repo/environment before the agent runs.
+        """Required. Prepare repo/environment before the agent runs.
 
         Parameters
         ----------
         repo_path : str
             Absolute path to the repo to prepare.
         """
-        pass
 
     @abstractmethod
     def build_prompt(self, repo_path: str) -> str:
