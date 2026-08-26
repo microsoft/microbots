@@ -128,3 +128,69 @@ def run_training(
         if _is_git_url(repo_path):
             logger.info("Cleaning up training workdir %s", workdir)
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def run_training_loop(
+    repo_path: str,
+    feedback: str,
+    memory_dir: str,
+    model: str,
+    iterations: int = 1,
+    max_iterations: int = 20,
+    timeout_in_seconds: int = 600,
+) -> BotRunResult:
+    """Run repeated training passes over the same memory directory.
+
+    Each pass reuses ``memory_dir`` from the previous one, allowing the
+    agent to progressively refine its notes. The real output of this
+    function is the accumulated state on disk under ``memory_dir``; the
+    returned :class:`~microbots.MicroBot.BotRunResult` is only a health
+    signal for the *last* iteration, since individual iteration failures
+    are logged and do not stop the loop.
+
+    Parameters
+    ----------
+    repo_path : str
+        Local repository path or Git URL to learn from.
+    feedback : str
+        Optional feedback to include in the training prompt, applied to
+        every iteration.
+    memory_dir : str
+        Directory in which the memory tool stores its memory, shared and
+        accumulated across all iterations.
+    model : str
+        Model identifier used by the reading bot.
+    iterations : int, default=1
+        Number of training passes to run in sequence.
+    max_iterations : int, default=20
+        Maximum number of bot iterations per training pass.
+    timeout_in_seconds : int, default=600
+        Maximum duration of each training pass in seconds.
+
+    Returns
+    -------
+    microbots.MicroBot.BotRunResult
+        Result of the last training pass.
+    """
+    result: BotRunResult | None = None
+    for iteration in range(1, iterations + 1):
+        logger.info("training iteration %d/%d starting", iteration, iterations)
+        result = run_training(
+            repo_path=repo_path,
+            feedback=feedback,
+            memory_dir=memory_dir,
+            model=model,
+            max_iterations=max_iterations,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+        logger.info(
+            "training iteration %d/%d: status=%s memory_dir=%s",
+            iteration,
+            iterations,
+            result.status,
+            memory_dir,
+        )
+        if not result.status:
+            logger.error("iteration %d/%d error=%s", iteration, iterations, result.error)
+
+    return result

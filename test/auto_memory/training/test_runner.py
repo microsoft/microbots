@@ -19,6 +19,7 @@ from microbots.auto_memory.training.runner import (
     _is_git_url,
     _prepare_source_dir,
     run_training,
+    run_training_loop,
 )
 from microbots.MicroBot import BotRunResult
 
@@ -293,9 +294,102 @@ def test_run_training_keeps_local_repo_untouched(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# End-to-end integration test (real Docker + real LLM deployment required)
+# run_training_loop
 # ---------------------------------------------------------------------------
 
+@pytest.mark.unit
+def test_run_training_loop_calls_run_training_n_times_with_same_memory_dir():
+    fake_result = BotRunResult(status=True, result="ok", error=None)
+
+    with patch(
+        "microbots.auto_memory.training.runner.run_training",
+        return_value=fake_result,
+    ) as mock_run_training:
+        run_training_loop(
+            repo_path="/some/repo",
+            feedback="fb",
+            memory_dir="/some/memory",
+            model="azure-openai/gpt-4o",
+            iterations=3,
+        )
+
+    assert mock_run_training.call_count == 3
+    for call in mock_run_training.call_args_list:
+        assert call.kwargs["memory_dir"] == "/some/memory"
+        assert call.kwargs["feedback"] == "fb"
+        assert call.kwargs["repo_path"] == "/some/repo"
+        assert call.kwargs["model"] == "azure-openai/gpt-4o"
+
+
+@pytest.mark.unit
+def test_run_training_loop_returns_last_result():
+    results = [
+        BotRunResult(status=True, result="first", error=None),
+        BotRunResult(status=False, result=None, error="second failed"),
+        BotRunResult(status=True, result="third", error=None),
+    ]
+
+    with patch(
+        "microbots.auto_memory.training.runner.run_training",
+        side_effect=results,
+    ):
+        result = run_training_loop(
+            repo_path="/some/repo",
+            feedback="",
+            memory_dir="/some/memory",
+            model="azure-openai/gpt-4o",
+            iterations=3,
+        )
+
+    assert result is results[-1]
+
+
+@pytest.mark.unit
+def test_run_training_loop_continues_after_a_failed_iteration():
+    """A failure on iteration N must not stop iteration N+1 from running."""
+    results = [
+        BotRunResult(status=False, result=None, error="boom"),
+        BotRunResult(status=True, result="ok", error=None),
+    ]
+
+    with patch(
+        "microbots.auto_memory.training.runner.run_training",
+        side_effect=results,
+    ) as mock_run_training:
+        result = run_training_loop(
+            repo_path="/some/repo",
+            feedback="",
+            memory_dir="/some/memory",
+            model="azure-openai/gpt-4o",
+            iterations=2,
+        )
+
+    assert mock_run_training.call_count == 2
+    assert result is results[-1]
+
+
+@pytest.mark.unit
+def test_run_training_loop_default_single_iteration():
+    fake_result = BotRunResult(status=True, result="ok", error=None)
+
+    with patch(
+        "microbots.auto_memory.training.runner.run_training",
+        return_value=fake_result,
+    ) as mock_run_training:
+        result = run_training_loop(
+            repo_path="/some/repo",
+            feedback="",
+            memory_dir="/some/memory",
+            model="azure-openai/gpt-4o",
+        )
+
+    mock_run_training.assert_called_once()
+    assert result is fake_result
+
+
+# ---------------------------------------------------------------------------
+# End-to-end integration test (real Docker + real LLM deployment required)
+# ---------------------------------------------------------------------------
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.docker

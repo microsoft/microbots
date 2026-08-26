@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from .runner import run_training
+from .runner import run_training_loop
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +35,15 @@ def main():
     logging.basicConfig(level=logging.INFO)
     args = parse_args()
 
-    for iteration in range(1, args.iterations + 1):
-        logger.info("training iteration %d/%d starting", iteration, args.iterations)
-        result = run_training(
-            repo_path=args.repo,
-            feedback=args.feedback,
-            memory_dir=args.memory_dir,
-            model=args.model,
-        )
-        logger.info(
-            "training iteration %d/%d: status=%s memory_dir=%s",
-            iteration,
-            args.iterations,
-            result.status,
-            args.memory_dir,
-        )
-        if not result.status:
-            logger.error("iteration %d/%d error=%s", iteration, args.iterations, result.error)
+    result = run_training_loop(
+        repo_path=args.repo,
+        feedback=args.feedback,
+        memory_dir=args.memory_dir,
+        model=args.model,
+        iterations=args.iterations,
+    )
+    if not result.status:
+        logger.error("training loop finished with failure: %s", result.error)
 
 
 if __name__ == "__main__":

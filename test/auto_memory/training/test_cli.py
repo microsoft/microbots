@@ -25,10 +25,11 @@ def test_parse_args_defaults():
     assert args.model == "azure-openai/gpt-4o"
     assert args.feedback == ""
     assert args.memory_dir == "./memory"
+    assert args.iterations == 1
 
 
 @pytest.mark.unit
-def test_main_calls_run_training_with_parsed_args():
+def test_main_calls_run_training_loop_with_parsed_args():
     argv = [
         "cli.py",
         "--repo",
@@ -39,51 +40,28 @@ def test_main_calls_run_training_with_parsed_args():
         "/some/memory",
         "--model",
         "azure-openai/gpt-4o",
-    ]
-    fake_result = BotRunResult(status=True, result="ok", error=None)
-
-    with patch.object(sys, "argv", argv), patch(
-        "microbots.auto_memory.training.cli.run_training",
-        return_value=fake_result,
-    ) as mock_run_training:
-        main()
-
-    mock_run_training.assert_called_once_with(
-        repo_path="/some/repo",
-        feedback="some feedback",
-        memory_dir="/some/memory",
-        model="azure-openai/gpt-4o",
-    )
-
-
-@pytest.mark.unit
-def test_main_runs_multiple_iterations_with_same_memory_dir():
-    argv = [
-        "cli.py",
-        "--repo",
-        "/some/repo",
-        "--memory-dir",
-        "/some/memory",
-        "--model",
-        "azure-openai/gpt-4o",
         "--iterations",
         "3",
     ]
     fake_result = BotRunResult(status=True, result="ok", error=None)
 
     with patch.object(sys, "argv", argv), patch(
-        "microbots.auto_memory.training.cli.run_training",
+        "microbots.auto_memory.training.cli.run_training_loop",
         return_value=fake_result,
-    ) as mock_run_training:
+    ) as mock_run_training_loop:
         main()
 
-    assert mock_run_training.call_count == 3
-    for call in mock_run_training.call_args_list:
-        assert call.kwargs["memory_dir"] == "/some/memory"
+    mock_run_training_loop.assert_called_once_with(
+        repo_path="/some/repo",
+        feedback="some feedback",
+        memory_dir="/some/memory",
+        model="azure-openai/gpt-4o",
+        iterations=3,
+    )
 
 
 @pytest.mark.unit
-def test_main_logs_status_and_error_on_failure(caplog):
+def test_main_logs_error_when_loop_fails_on_last_iteration(caplog):
     argv = [
         "cli.py",
         "--repo",
@@ -94,10 +72,29 @@ def test_main_logs_status_and_error_on_failure(caplog):
     fake_result = BotRunResult(status=False, result=None, error="boom")
 
     with patch.object(sys, "argv", argv), patch(
-        "microbots.auto_memory.training.cli.run_training",
+        "microbots.auto_memory.training.cli.run_training_loop",
         return_value=fake_result,
-    ), caplog.at_level("INFO", logger="microbots.auto_memory.training.cli"):
+    ), caplog.at_level("ERROR", logger="microbots.auto_memory.training.cli"):
         main()
 
-    assert "status=False" in caplog.text
-    assert "error=boom" in caplog.text
+    assert "boom" in caplog.text
+
+
+@pytest.mark.unit
+def test_main_does_not_log_error_when_loop_succeeds(caplog):
+    argv = [
+        "cli.py",
+        "--repo",
+        "/some/repo",
+        "--model",
+        "azure-openai/gpt-4o",
+    ]
+    fake_result = BotRunResult(status=True, result="ok", error=None)
+
+    with patch.object(sys, "argv", argv), patch(
+        "microbots.auto_memory.training.cli.run_training_loop",
+        return_value=fake_result,
+    ), caplog.at_level("ERROR", logger="microbots.auto_memory.training.cli"):
+        main()
+
+    assert caplog.text == ""
