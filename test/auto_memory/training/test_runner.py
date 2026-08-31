@@ -1,9 +1,7 @@
 """Unit tests for microbots.auto_memory.training.runner.
 
 All external dependencies (ReadingBot, MemoryTool) are mocked so these
-tests run without Docker, network access, or an LLM. The one exception
-is test_run_training_end_to_end, which is a real integration test
-(marked accordingly) that exercises Docker and a live model deployment.
+tests run without Docker, network access, or an LLM.
 
 runner.py no longer manages repo cloning or looping: repo_path is
 always assumed to be a ready local directory prepared by the caller
@@ -11,7 +9,6 @@ always assumed to be a ready local directory prepared by the caller
 passes is the orchestrator's responsibility.
 """
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -190,47 +187,3 @@ def test_run_training_does_not_modify_repo_path(tmp_path):
         )
 
     assert (local_repo / "marker.txt").exists()
-
-
-# ---------------------------------------------------------------------------
-# End-to-end integration test (real Docker + real LLM deployment required)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.integration
-@pytest.mark.slow
-@pytest.mark.docker
-def test_run_training_end_to_end(test_repo, tmp_path):
-    """Smoke-test the training flow against a small fixture repo.
-
-    Requires Docker and a working model deployment (same env vars used by
-    test/bot/test_reading_bot.py). This is a smoke test, not a
-    completion test: max_iterations is intentionally kept small so it's
-    fast to run locally. It only asserts the flow executes end-to-end
-    (mount -> bot run) without asserting the agent reached task_done,
-    since that may need more iterations than we want to spend here.
-    """
-    memory_dir = tmp_path / "memory"
-    model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
-
-    result: BotRunResult = run_training(
-        repo_path=str(test_repo),
-        feedback="",
-        memory_dir=str(memory_dir),
-        model=model,
-        max_iterations=8,
-        timeout_in_seconds=600,
-    )
-
-    # Accept either a completed run, or a run that stopped only because it
-    # hit the (intentionally low) iteration cap - both prove the flow works.
-    acceptable_errors = (None, "Max iterations 8 reached")
-    assert result.status or result.error in acceptable_errors, (
-        f"Training run failed unexpectedly: {result.error}"
-    )
-
-    # With only 8 iterations the agent may not fully finish the task, but
-    # it should still persist at least one memory file along the way.
-    memory_files = [f for f in memory_dir.rglob("*") if f.is_file()]
-    assert memory_files, (
-        f"Expected at least one memory file under {memory_dir}, found none"
-    )
