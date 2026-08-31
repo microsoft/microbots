@@ -31,7 +31,7 @@ markdown-it-py==4.0.0
 mdurl==0.1.2
 multidict==6.6.4
 multiprocess==0.70.18
-numpy==1.26.4
+numpy==2.2.6
 openai==1.107.3
 packaging==25.0
 pandas==3.0.0
