@@ -11,7 +11,7 @@ from pathlib import Path
 
 from microbots.auto_memory.analyzer import build_feedback
 from microbots.auto_memory.task import EvalOutcome, EvalTask
-from microbots.auto_memory.training.runner import run_training_loop
+from microbots.auto_memory.training.runner import run_training
 
 logger = getLogger(__name__)
 
@@ -36,6 +36,45 @@ class LoopResult:
     final_outcome: EvalOutcome
     outcomes: list[EvalOutcome] = field(default_factory=list)
 
+def run_training_loop(
+    repo_path: str,
+    feedback: str,
+    memory_dir: str,
+    model: str,
+    iterations: int = 1,
+) -> None:
+    """Run ``run_training`` ``iterations`` times, reusing the same memory dir.
+
+    Shared by the eval-loop's retrain step and any training-only entry
+    point (e.g. a CLI) that needs to run training without an eval task.
+
+    Parameters
+    ----------
+    repo_path : str
+        Absolute path to the repo to train against.
+    feedback : str
+        Feedback from a prior failed eval attempt, or ``""`` if none.
+    memory_dir : str
+        Directory where the training agent reads/writes memory files.
+    model : str
+        The model to use, in the format ``<provider>/<model_name>``.
+    iterations : int
+        Number of training passes to run, each reusing the same
+        ``memory_dir``. Defaults to 1.
+    """
+    for iteration in range(1, iterations + 1):
+        logger.info(
+            "run_training_loop: training iteration %d/%d",
+            iteration,
+            iterations,
+        )
+        run_training(
+            repo_path=repo_path,
+            feedback=feedback,
+            memory_dir=memory_dir,
+            model=model,
+        )
+
 def run_train_eval_loop(
     repo_path: str,
     memory_dir: str,
@@ -48,9 +87,10 @@ def run_train_eval_loop(
 
     Each round runs ``task.run(...)``. If the task passes, the loop
     returns immediately. If it fails, feedback is built from the round's
-    log and used to retrain via ``run_training_loop`` before the next
-    round. The round's log file is always deleted before the next round
-    starts.
+    log and used to retrain via ``run_training`` (called
+    ``training_iterations`` times, each pass reusing the same
+    ``memory_dir``) before the next round. The round's log file is
+    always deleted before the next round starts.
 
     Parameters
     ----------
@@ -102,7 +142,6 @@ def run_train_eval_loop(
             )
             try:
                 feedback = build_feedback(task, outcome, repo_path, model)
-
                 run_training_loop(
                     repo_path=repo_path,
                     feedback=feedback,

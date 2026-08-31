@@ -1,10 +1,11 @@
-"""Minimal SWE-bench-verified eval task.
+"""SWE-bench-verified eval task.
 
 Loads instances from the SWE-bench-verified dataset, checks out each
 instance's repo at its base commit, has the agent attempt a fix, and
 verifies the result via ``swebench.harness.run_evaluation``.
 """
 
+import argparse
 import json
 import shutil
 import subprocess
@@ -16,9 +17,10 @@ from logging import getLogger
 from pathlib import Path
 
 from datasets import load_dataset
-import argparse
-from microbots.auto_memory.task import CallbackResult, EvalTask
-from microbots.auto_memory.orchestrator import run_train_eval_loop
+from microbots.auto_memory.task import CallbackResult, EvalOutcome, EvalTask
+from microbots.auto_memory.task_registry import register_task
+from microbots.bot.WritingBot import WritingBot
+from microbots.tools.tool_definitions.memory_tool import MemoryTool
 
 logger = getLogger(__name__)
 
@@ -114,6 +116,7 @@ def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_SUITE
             )
     raise ValueError(f"instance_id not found: {instance_id}")
 
+@register_task("swebenchverified")
 class SweBenchVerifiedTask(EvalTask):
     """Eval task that verifies a fix against one SWE-bench-verified instance.
 
@@ -136,6 +139,47 @@ class SweBenchVerifiedTask(EvalTask):
             The dataset instance this task evaluates against.
         """
         self.instance = instance
+
+    @staticmethod
+    def add_cli_args(parser: argparse.ArgumentParser) -> None:
+        """Register this task's CLI flags on ``parser``.
+
+        Parameters
+        ----------
+        parser : argparse.ArgumentParser
+            The CLI's argument parser to add task-specific flags to.
+        """
+        parser.add_argument(
+            "--instance-id",
+            help='SWE-bench-verified instance ID, e.g. "django__django-11099".',
+        )
+        parser.add_argument(
+            "--swebench-repo",
+            help='Restrict to instances for this repo, e.g. "django/django". '
+            "Ignored if --instance-id is given.",
+        )
+
+    @classmethod
+    def from_cli_args(cls, args: argparse.Namespace) -> list["SweBenchVerifiedTask"]:
+        """Build task(s) from parsed CLI args.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed CLI args, expected to include ``instance_id`` and/or
+            ``swebench_repo`` (see ``add_cli_args``).
+
+        Returns
+        -------
+        list[SweBenchVerifiedTask]
+            One task per matching dataset instance. A single-element
+            list when ``--instance-id`` is given.
+        """
+        if getattr(args, "instance_id", None):
+            instances = [load_instance_using_id(args.instance_id)]
+        else:
+            instances = load_instances_of_repo(repo=getattr(args, "swebench_repo", None))
+        return [cls(instance) for instance in instances]
 
     def setup(self, repo_path: str) -> None:
         """Clone the instance's repo and check out its base commit.
@@ -242,29 +286,74 @@ class SweBenchVerifiedTask(EvalTask):
         """
         subprocess.run(["rm", "-rf", repo_path], check=False)
 
+    def run(self, repo_path: str, memory_dir: str, model: str) -> EvalOutcome:
+        """Run one eval iteration: setup -> build_prompt -> WritingBot -> check -> teardown.
 
-if __name__ == "__main__":
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--repo", help='e.g. "django/django"')
-    parser.add_argument("--instance-id", help='e.g. "django__django-11099"')
-    parser.add_argument("--model", default="azure-openai/gpt-5.5")
+        Parameters
+        ----------
+        repo_path : str
+            Absolute path to the repo to run the eval round against.
+        memory_dir : str
+            Directory containing memory files to give the agent via
+            ``MemoryTool``.
+        model : str
+            The model to use, in the format ``<provider>/<model_name>``.
 
-    parser.add_argument("--max-rounds", type=int, default=5)
-    args = parser.parse_args()
+        Returns
+        -------
+        EvalOutcome
+            The result of this eval round, including the agent's output,
+            the check verdict, and the round's log file path.
+        """
+        self.setup(repo_path)
+        log_path = tempfile.mktemp(suffix=".log")
+        Path(log_path).write_text("")
 
-    if args.instance_id:
-        instances = [load_instance_using_id(args.instance_id)]
-    else:
-        instances = load_instances_of_repo(repo=args.repo)
+        try:
+            try:
+                prompt = self.build_prompt(repo_path)
+                bot = WritingBot(
+                    model=model,
+                    folder_to_mount=repo_path,
+                    additional_tools=[MemoryTool(memory_dir=memory_dir)],
+                )
+                bot_result = bot.run(prompt)
 
-    for instance in instances:
-        task = SweBenchVerifiedTask(instance)
-        result = run_train_eval_loop(
-            repo_path=tempfile.mkdtemp(),
-            memory_dir="memory",
-            model=args.model,
-            task=task,
-            max_rounds=args.max_rounds,
-        )
-        logger.info("%s: passed=%s", instance.instance_id, result.passed)
+                with open(log_path, "a") as f:
+                    f.write(f"Agent output:\n{bot_result.result}\n")
+
+                if not bot_result.status:
+                    reason = f"Bot run failed: {bot_result.error}"
+                    with open(log_path, "a") as f:
+                        f.write(f"\n{reason}\n")
+                    result = CallbackResult(passed=False, reason=reason)
+                else:
+                    result = self.check(repo_path, bot_result.result or "", log_path)
+
+                return EvalOutcome(
+                    passed=result.passed,
+                    output=bot_result.result,
+                    result=result,
+                    log_path=log_path,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "SweBenchVerifiedTask.run: iteration raised %s", type(exc).__name__
+                )
+                with open(log_path, "a") as f:
+                    f.write(f"\nException during eval iteration: {type(exc).__name__}: {exc}\n")
+                return EvalOutcome(
+                    passed=False,
+                    output=None,
+                    result=CallbackResult(
+                        passed=False, reason=f"{type(exc).__name__}: {exc}"
+                    ),
+                    log_path=log_path,
+                )
+        finally:
+            try:
+                self.teardown(repo_path)
+            except Exception:
+                logger.exception("SweBenchVerifiedTask.run: teardown() raised exception; ignoring")
+
+

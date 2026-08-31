@@ -9,7 +9,7 @@ import pytest
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src/")))
 
-from microbots.auto_memory.orchestrator import LoopResult, run_train_eval_loop
+from microbots.auto_memory.orchestrator import LoopResult, run_train_eval_loop, run_training_loop
 from microbots.auto_memory.task import CallbackResult, EvalOutcome
 
 
@@ -183,3 +183,37 @@ def test_run_training_exception_does_not_crash_loop(mock_build_feedback, mock_ru
     assert result.passed is True
     assert result.rounds_run == 2
     assert not Path(log1).exists()
+
+
+@pytest.mark.unit
+@patch("microbots.auto_memory.orchestrator.run_training")
+def test_run_training_loop_calls_run_training_once_by_default(mock_run_training):
+    run_training_loop(repo_path="/repo", feedback="fb", memory_dir="/memory", model="azure-openai/gpt-4o")
+
+    mock_run_training.assert_called_once_with(
+        repo_path="/repo", feedback="fb", memory_dir="/memory", model="azure-openai/gpt-4o"
+    )
+
+
+@pytest.mark.unit
+@patch("microbots.auto_memory.orchestrator.run_training")
+def test_run_training_loop_calls_run_training_n_times(mock_run_training):
+    run_training_loop(
+        repo_path="/repo", feedback="fb", memory_dir="/memory", model="azure-openai/gpt-4o", iterations=3
+    )
+
+    assert mock_run_training.call_count == 3
+    mock_run_training.assert_called_with(
+        repo_path="/repo", feedback="fb", memory_dir="/memory", model="azure-openai/gpt-4o"
+    )
+
+
+@pytest.mark.unit
+@patch("microbots.auto_memory.orchestrator.run_training")
+def test_run_training_loop_reuses_same_memory_dir_each_pass(mock_run_training):
+    run_training_loop(
+        repo_path="/repo", feedback="fb", memory_dir="/memory", model="azure-openai/gpt-4o", iterations=4
+    )
+
+    memory_dirs = {call.kwargs["memory_dir"] for call in mock_run_training.call_args_list}
+    assert memory_dirs == {"/memory"}

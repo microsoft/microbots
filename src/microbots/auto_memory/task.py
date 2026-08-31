@@ -5,16 +5,8 @@ prompt to give the agent, how to verify the agent's output, and how to
 clean up afterward.
 """
 
-import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from logging import getLogger
-from pathlib import Path
-
-from microbots.bot.WritingBot import WritingBot
-from microbots.tools.tool_definitions.memory_tool import MemoryTool
-
-logger = getLogger(__name__)
 
 @dataclass
 class CallbackResult:
@@ -57,23 +49,31 @@ class EvalOutcome:
 class EvalTask(ABC):
     """Base class for a single evaluation task in the train <-> eval loop.
 
-    Subclasses must implement ``setup``, ``build_prompt``, and ``check``,
-    and may override ``teardown`` and ``run`` as needed.
+    Subclasses must implement ``run``. ``setup``, ``build_prompt``,
+    ``check``, and ``teardown`` are optional hooks subclasses may use
+    to structure their own ``run`` implementation (see
+    ``SweBenchVerifiedTask`` for an example), but nothing in this base
+    class calls them automatically.
     """
 
-    @abstractmethod
     def setup(self, repo_path: str) -> None:
-        """Required. Prepare repo/environment before the agent runs.
+        """Optional. Prepare repo/environment before the agent runs.
+
+        Not called automatically; only useful if your ``run``
+        implementation calls it.
 
         Parameters
         ----------
         repo_path : str
             Absolute path to the repo to prepare.
         """
+        pass
 
-    @abstractmethod
     def build_prompt(self, repo_path: str) -> str:
-        """Required. Return the task prompt/instructions for the agent.
+        """Optional. Return the task prompt/instructions for the agent.
+
+        Not called automatically; only useful if your ``run``
+        implementation calls it.
 
         Parameters
         ----------
@@ -83,12 +83,16 @@ class EvalTask(ABC):
         Returns
         -------
         str
-            The prompt/instructions to give the agent.
+            The prompt/instructions to give the agent. Empty string by
+            default.
         """
+        return ""
 
-    @abstractmethod
     def check(self, repo_path: str, agent_output: str, log_path: str) -> CallbackResult:
-        """Required. Verify whether the task was actually completed correctly.
+        """Optional. Verify whether the task was actually completed correctly.
+
+        Not called automatically; only useful if your ``run``
+        implementation calls it.
 
         Parameters
         ----------
@@ -103,8 +107,10 @@ class EvalTask(ABC):
         Returns
         -------
         CallbackResult
-            The pass/fail verdict and its reason.
+            The pass/fail verdict and its reason. Passes by default.
         """
+        return CallbackResult(passed=True, reason="not checked")
+
 
     def teardown(self, repo_path: str) -> None:
         """Optional. Clean up anything setup() created.
@@ -116,10 +122,9 @@ class EvalTask(ABC):
         """
         pass
 
+    @abstractmethod
     def run(self, repo_path: str, memory_dir: str, model: str) -> EvalOutcome:
-        """Default eval iteration: setup -> build_prompt -> WritingBot -> check -> teardown.
-        Override this entirely if your task needs a different bot type,
-        additional tools, or custom retry/orchestration logic.
+        """Required. Run one eval iteration and return its outcome.
 
         Parameters
         ----------
@@ -137,53 +142,3 @@ class EvalTask(ABC):
             The result of this eval round, including the agent's output,
             the check verdict, and the round's log file path.
         """
-        self.setup(repo_path)
-        log_path = tempfile.mktemp(suffix=".log")
-        Path(log_path).write_text("")
-
-        try:
-            try:
-                prompt = self.build_prompt(repo_path)
-                bot = WritingBot(
-                    model=model,
-                    folder_to_mount=repo_path,
-                    additional_tools=[MemoryTool(memory_dir=memory_dir)],
-                )
-                bot_result = bot.run(prompt)
-
-                with open(log_path, "a") as f:
-                    f.write(f"Agent output:\n{bot_result.result}\n")
-
-                if not bot_result.status:
-                    reason = f"Bot run failed: {bot_result.error}"
-                    with open(log_path, "a") as f:
-                        f.write(f"\n{reason}\n")
-                    result = CallbackResult(passed=False, reason=reason)
-                else:
-                    result = self.check(repo_path, bot_result.result or "", log_path)
-
-                return EvalOutcome(
-                    passed=result.passed,
-                    output=bot_result.result,
-                    result=result,
-                    log_path=log_path,
-                )
-            except Exception as exc:
-                logger.exception(
-                    "EvalTask.run: iteration raised %s", type(exc).__name__
-                )
-                with open(log_path, "a") as f:
-                    f.write(f"\nException during eval iteration: {type(exc).__name__}: {exc}\n")
-                return EvalOutcome(
-                    passed=False,
-                    output=None,
-                    result=CallbackResult(
-                        passed=False, reason=f"{type(exc).__name__}: {exc}"
-                    ),
-                    log_path=log_path,
-                )
-        finally:
-            try:
-                self.teardown(repo_path)
-            except Exception:
-                logger.exception("EvalTask.run: teardown() raised exception; ignoring")
