@@ -1,106 +1,23 @@
 """Unit tests for microbots.auto_memory.training.runner.
 
-All external dependencies (subprocess/git, ReadingBot, MemoryTool) are
-mocked so these tests run without Docker, network access, or an LLM.
-The one exception is test_run_training_end_to_end, which is a real
-integration test (marked accordingly) that exercises Docker and a live
-model deployment.
+All external dependencies (ReadingBot, MemoryTool) are mocked so these
+tests run without Docker, network access, or an LLM. The one exception
+is test_run_training_end_to_end, which is a real integration test
+(marked accordingly) that exercises Docker and a live model deployment.
+
+runner.py no longer manages repo cloning or looping: repo_path is
+always assumed to be a ready local directory prepared by the caller
+(e.g. the orchestrator or an EvalTask's setup), and iterating training
+passes is the orchestrator's responsibility.
 """
 
-from pathlib import Path
-from subprocess import CalledProcessError
-import tempfile
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from microbots.auto_memory.training.runner import (
-    _is_git_url,
-    _prepare_source_dir,
-    run_training,
-    run_training_loop,
-)
+from microbots.auto_memory.training.runner import run_training
 from microbots.MicroBot import BotRunResult
-
-
-# ---------------------------------------------------------------------------
-# _is_git_url
-# ---------------------------------------------------------------------------
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "repo, expected",
-    [
-        ("https://github.com/pytest-dev/pytest.git", True),
-        ("git@github.com:pytest-dev/pytest.git", True),
-        ("ssh://git@github.com/pytest-dev/pytest.git", True),
-        ("/home/user/some/local/repo", False),
-        ("some-local-dir-without-scheme", False),
-        ("relative/local/path.git", True),  # ends with .git -> treated as git
-        ("git@github.com:pytest-dev/pytest", True),  # SCP-style, no .git suffix
-    ],
-)
-def test_is_git_url(repo, expected):
-    assert _is_git_url(repo) is expected
-
-
-# ---------------------------------------------------------------------------
-# _prepare_source_dir
-# ---------------------------------------------------------------------------
-
-@pytest.mark.unit
-def test_prepare_source_dir_local_path_passthrough(tmp_path):
-    local_repo = tmp_path / "local_repo"
-    local_repo.mkdir()
-
-    with patch("microbots.auto_memory.training.runner.subprocess.run") as mock_run:
-        result = _prepare_source_dir(str(local_repo), tmp_path / "workdir")
-
-    assert result == Path(local_repo)
-    mock_run.assert_not_called()
-
-
-@pytest.mark.unit
-def test_prepare_source_dir_clones_git_url(tmp_path):
-    workdir = tmp_path / "workdir"
-    repo_url = "https://github.com/pytest-dev/pytest.git"
-    expected_dest = workdir / "source"
-
-    with patch("microbots.auto_memory.training.runner.subprocess.run") as mock_run:
-        result = _prepare_source_dir(repo_url, workdir)
-
-    mock_run.assert_called_once_with(
-        ["git", "clone", "--depth", "1", repo_url, str(expected_dest)],
-        check=True,
-    )
-    assert result == expected_dest
-
-
-@pytest.mark.unit
-def test_prepare_source_dir_reuses_existing_clone(tmp_path):
-    workdir = tmp_path / "workdir"
-    dest = workdir / "source"
-    dest.mkdir(parents=True)
-    repo_url = "https://github.com/pytest-dev/pytest.git"
-
-    with patch("microbots.auto_memory.training.runner.subprocess.run") as mock_run:
-        result = _prepare_source_dir(repo_url, workdir)
-
-    mock_run.assert_not_called()
-    assert result == dest
-
-
-@pytest.mark.unit
-def test_prepare_source_dir_clone_failure_propagates(tmp_path):
-    workdir = tmp_path / "workdir"
-    repo_url = "https://github.com/pytest-dev/pytest.git"
-
-    with patch(
-        "microbots.auto_memory.training.runner.subprocess.run",
-        side_effect=CalledProcessError(returncode=1, cmd=["git", "clone"]),
-    ):
-        with pytest.raises(CalledProcessError):
-            _prepare_source_dir(repo_url, workdir)
 
 
 # ---------------------------------------------------------------------------
@@ -189,8 +106,38 @@ def test_run_training_passes_correct_args_to_reading_bot(tmp_path):
 
     _, kwargs = mock_reading_bot.call_args
     assert kwargs["model"] == "azure-openai/gpt-4o"
+    # repo_path is used directly as folder_to_mount now; no cloning/staging.
     assert kwargs["folder_to_mount"] == str(local_repo)
     assert kwargs["additional_tools"] == [mock_memory_tool_instance]
+
+
+@pytest.mark.unit
+def test_run_training_passes_max_iterations_and_timeout_to_bot_run(tmp_path):
+    local_repo = tmp_path / "repo"
+    local_repo.mkdir()
+    memory_dir = tmp_path / "memory"
+
+    mock_bot_instance = MagicMock()
+    mock_bot_instance.run.return_value = BotRunResult(
+        status=True, result="ok", error=None
+    )
+
+    with patch(
+        "microbots.auto_memory.training.runner.ReadingBot",
+        return_value=mock_bot_instance,
+    ), patch("microbots.auto_memory.training.runner.MemoryTool"):
+        run_training(
+            repo_path=str(local_repo),
+            feedback="",
+            memory_dir=str(memory_dir),
+            model="azure-openai/gpt-4o",
+            max_iterations=5,
+            timeout_in_seconds=42,
+        )
+
+    _, kwargs = mock_bot_instance.run.call_args
+    assert kwargs["max_iterations"] == 5
+    assert kwargs["timeout_in_seconds"] == 42
 
 
 @pytest.mark.unit
@@ -218,56 +165,9 @@ def test_run_training_returns_bot_result(tmp_path):
 
 
 @pytest.mark.unit
-def test_run_training_cleans_up_workdir_after_git_clone(tmp_path):
-    """When repo_path is a git URL, the temp workdir it clones into should
-    be removed once the run finishes."""
-    memory_dir = tmp_path / "memory"
-    repo_url = "https://github.com/pytest-dev/pytest.git"
-
-    created_workdirs = []
-
-    def fake_clone(cmd, check):
-        # cmd = ["git", "clone", "--depth", "1", repo_url, dest]
-        dest = Path(cmd[-1])
-        dest.mkdir(parents=True, exist_ok=True)
-
-    mock_bot_instance = MagicMock()
-    mock_bot_instance.run.return_value = BotRunResult(
-        status=True, result="ok", error=None
-    )
-
-    real_mkdtemp = tempfile.mkdtemp
-
-    def tracking_mkdtemp(*args, **kwargs):
-        path = real_mkdtemp(*args, **kwargs)
-        created_workdirs.append(Path(path))
-        return path
-
-    with patch(
-        "microbots.auto_memory.training.runner.subprocess.run",
-        side_effect=fake_clone,
-    ), patch(
-        "microbots.auto_memory.training.runner.tempfile.mkdtemp",
-        side_effect=tracking_mkdtemp,
-    ), patch(
-        "microbots.auto_memory.training.runner.ReadingBot",
-        return_value=mock_bot_instance,
-    ), patch("microbots.auto_memory.training.runner.MemoryTool"):
-        run_training(
-            repo_path=repo_url,
-            feedback="",
-            memory_dir=str(memory_dir),
-            model="azure-openai/gpt-4o",
-        )
-
-    assert len(created_workdirs) == 1
-    assert not created_workdirs[0].exists()
-
-
-@pytest.mark.unit
-def test_run_training_keeps_local_repo_untouched(tmp_path):
-    """When repo_path is a local directory, it must never be deleted,
-    even though the (unused) temp workdir is still cleaned up."""
+def test_run_training_does_not_modify_repo_path(tmp_path):
+    """run_training must never delete/modify repo_path itself - it does
+    not own the repo's lifecycle anymore (no cloning, no cleanup)."""
     local_repo = tmp_path / "repo"
     local_repo.mkdir()
     (local_repo / "marker.txt").write_text("keep me")
@@ -293,94 +193,44 @@ def test_run_training_keeps_local_repo_untouched(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# run_training_loop
+# End-to-end integration test (real Docker + real LLM deployment required)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.unit
-def test_run_training_loop_calls_run_training_n_times_with_same_memory_dir():
-    fake_result = BotRunResult(status=True, result="ok", error=None)
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.docker
+def test_run_training_end_to_end(test_repo, tmp_path):
+    """Smoke-test the training flow against a small fixture repo.
 
-    with patch(
-        "microbots.auto_memory.training.runner.run_training",
-        return_value=fake_result,
-    ) as mock_run_training:
-        run_training_loop(
-            repo_path="/some/repo",
-            feedback="fb",
-            memory_dir="/some/memory",
-            model="azure-openai/gpt-4o",
-            iterations=3,
-        )
+    Requires Docker and a working model deployment (same env vars used by
+    test/bot/test_reading_bot.py). This is a smoke test, not a
+    completion test: max_iterations is intentionally kept small so it's
+    fast to run locally. It only asserts the flow executes end-to-end
+    (mount -> bot run) without asserting the agent reached task_done,
+    since that may need more iterations than we want to spend here.
+    """
+    memory_dir = tmp_path / "memory"
+    model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
 
-    assert mock_run_training.call_count == 3
-    for call in mock_run_training.call_args_list:
-        assert call.kwargs["memory_dir"] == "/some/memory"
-        assert call.kwargs["feedback"] == "fb"
-        assert call.kwargs["repo_path"] == "/some/repo"
-        assert call.kwargs["model"] == "azure-openai/gpt-4o"
+    result: BotRunResult = run_training(
+        repo_path=str(test_repo),
+        feedback="",
+        memory_dir=str(memory_dir),
+        model=model,
+        max_iterations=8,
+        timeout_in_seconds=600,
+    )
 
+    # Accept either a completed run, or a run that stopped only because it
+    # hit the (intentionally low) iteration cap - both prove the flow works.
+    acceptable_errors = (None, "Max iterations 8 reached")
+    assert result.status or result.error in acceptable_errors, (
+        f"Training run failed unexpectedly: {result.error}"
+    )
 
-@pytest.mark.unit
-def test_run_training_loop_returns_last_result():
-    results = [
-        BotRunResult(status=True, result="first", error=None),
-        BotRunResult(status=False, result=None, error="second failed"),
-        BotRunResult(status=True, result="third", error=None),
-    ]
-
-    with patch(
-        "microbots.auto_memory.training.runner.run_training",
-        side_effect=results,
-    ):
-        result = run_training_loop(
-            repo_path="/some/repo",
-            feedback="",
-            memory_dir="/some/memory",
-            model="azure-openai/gpt-4o",
-            iterations=3,
-        )
-
-    assert result is results[-1]
-
-
-@pytest.mark.unit
-def test_run_training_loop_continues_after_a_failed_iteration():
-    """A failure on iteration N must not stop iteration N+1 from running."""
-    results = [
-        BotRunResult(status=False, result=None, error="boom"),
-        BotRunResult(status=True, result="ok", error=None),
-    ]
-
-    with patch(
-        "microbots.auto_memory.training.runner.run_training",
-        side_effect=results,
-    ) as mock_run_training:
-        result = run_training_loop(
-            repo_path="/some/repo",
-            feedback="",
-            memory_dir="/some/memory",
-            model="azure-openai/gpt-4o",
-            iterations=2,
-        )
-
-    assert mock_run_training.call_count == 2
-    assert result is results[-1]
-
-
-@pytest.mark.unit
-def test_run_training_loop_default_single_iteration():
-    fake_result = BotRunResult(status=True, result="ok", error=None)
-
-    with patch(
-        "microbots.auto_memory.training.runner.run_training",
-        return_value=fake_result,
-    ) as mock_run_training:
-        result = run_training_loop(
-            repo_path="/some/repo",
-            feedback="",
-            memory_dir="/some/memory",
-            model="azure-openai/gpt-4o",
-        )
-
-    mock_run_training.assert_called_once()
-    assert result is fake_result
+    # With only 8 iterations the agent may not fully finish the task, but
+    # it should still persist at least one memory file along the way.
+    memory_files = [f for f in memory_dir.rglob("*") if f.is_file()]
+    assert memory_files, (
+        f"Expected at least one memory file under {memory_dir}, found none"
+    )
