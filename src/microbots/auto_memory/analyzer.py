@@ -12,7 +12,7 @@ from microbots.bot.LogAnalysisBot import LogAnalysisBot
 from microbots.MicroBot import BotRunResult
 
 logger = getLogger(__name__)
-
+#make this abstract
 def build_feedback(
     task: EvalTask,
     outcome: EvalOutcome,
