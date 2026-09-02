@@ -8,7 +8,7 @@ Callers (e.g. a CLI) look tasks up by name via ``create_task``.
 import importlib
 import pkgutil
 
-from microbots.auto_memory.task import EvalTask
+from microbots.auto_memory.evalTask import EvalTask
 
 TASK_REGISTRY: dict[str, type[EvalTask]] = {}
 
@@ -46,6 +46,7 @@ def register_task(name: str):
 
     return decorator
 
+# Not being used currently, but kept it for future use if required.
 def create_task(name: str, **kwargs) -> EvalTask:
     """Construct a registered ``EvalTask`` by name.
 

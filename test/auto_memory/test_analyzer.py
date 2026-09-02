@@ -9,7 +9,7 @@ import pytest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src/")))
 
 from microbots.auto_memory.analyzer import build_feedback
-from microbots.auto_memory.task import CallbackResult, EvalOutcome
+from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome
 from microbots.MicroBot import BotRunResult
 
 

@@ -1,4 +1,4 @@
-"""Unit tests for microbots.auto_memory.task."""
+"""Unit tests for microbots.auto_memory.evalTask."""
 
 import os
 import sys
@@ -7,13 +7,13 @@ import pytest
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src/")))
 
-from microbots.auto_memory.task import CallbackResult, EvalOutcome, EvalTask
+from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome, EvalTask
 
 
 class _RunOnlyTask(EvalTask):
     """A task that overrides only run(), never touching the optional hooks."""
 
-    def run(self, repo_path, memory_dir, model):
+    def run(self, repo_path, memory_dir, model, log_path):
         return EvalOutcome(
             passed=True,
             output="custom output",
@@ -31,7 +31,7 @@ def test_run_is_abstract():
 @pytest.mark.unit
 def test_subclass_overriding_only_run_is_instantiable():
     task = _RunOnlyTask()
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", "/log")
 
     assert outcome.passed is True
     assert outcome.output == "custom output"
@@ -51,7 +51,7 @@ def test_default_teardown_is_a_noop():
 
 @pytest.mark.unit
 def test_default_build_prompt_returns_empty_string():
-    assert _RunOnlyTask().build_prompt("/repo") == ""
+    assert _RunOnlyTask().build_prompt() == ""
 
 
 @pytest.mark.unit
@@ -60,3 +60,20 @@ def test_default_check_passes_by_default():
 
     assert isinstance(result, CallbackResult)
     assert result.passed is True
+
+
+@pytest.mark.unit
+def test_default_task_id_is_class_name():
+    assert _RunOnlyTask().task_id == "_RunOnlyTask"
+
+
+@pytest.mark.unit
+def test_default_build_result_returns_passed_and_reason():
+    outcome = EvalOutcome(
+        passed=False,
+        output="agent output",
+        result=CallbackResult(passed=False, reason="check failed"),
+        log_path="/dev/null",
+    )
+
+    assert _RunOnlyTask().build_result(outcome) == {"passed": False, "reason": "check failed"}

@@ -9,7 +9,7 @@ import pytest
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src/")))
 
-from microbots.auto_memory.task import EvalTask
+from microbots.auto_memory.evalTask import EvalTask
 from microbots.auto_memory.task_registry import TASK_REGISTRY, create_task, discover_tasks, register_task
 
 MODULE_PATH = "microbots.auto_memory.task_registry"

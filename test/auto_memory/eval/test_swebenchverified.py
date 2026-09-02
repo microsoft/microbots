@@ -13,12 +13,21 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from microbots.auto_memory.eval.swebenchverified import (
     SweBenchInstance,
     SweBenchVerifiedTask,
+    _load_dataset_rows,
     load_instance_using_id,
     load_instances_of_repo,
 )
-from microbots.auto_memory.task import CallbackResult
+from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome
 
 MODULE = "microbots.auto_memory.eval.swebenchverified"
+
+
+@pytest.fixture(autouse=True)
+def _clear_dataset_cache():
+    """Clear ``_load_dataset_rows``'s cache so each test's ``load_dataset`` mock takes effect."""
+    _load_dataset_rows.cache_clear()
+    yield
+    _load_dataset_rows.cache_clear()
 
 
 def _fake_rows():
@@ -89,6 +98,20 @@ def test_load_instance_using_id_raises_when_not_found(mock_load_dataset):
         load_instance_using_id("does-not-exist")
 
 
+@pytest.mark.unit
+@patch(f"{MODULE}.load_dataset")
+def test_dataset_rows_are_cached_across_repeated_calls(mock_load_dataset):
+    """``load_dataset`` should only be called once per ``dataset_name``, even
+    across multiple ``load_instances_of_repo``/``load_instance_using_id`` calls."""
+    mock_load_dataset.return_value = _fake_rows()
+
+    load_instances_of_repo(repo="django/django")
+    load_instances_of_repo(repo=None)
+    load_instance_using_id("astropy__astropy-1")
+
+    mock_load_dataset.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # SweBenchVerifiedTask.setup / build_prompt / teardown
 # ---------------------------------------------------------------------------
@@ -117,7 +140,32 @@ def test_setup_clones_and_checks_out_base_commit(mock_run):
 @pytest.mark.unit
 def test_build_prompt_returns_problem_statement():
     task = SweBenchVerifiedTask(_instance())
-    assert task.build_prompt("/repo") == "fix the bug"
+    assert task.build_prompt() == "fix the bug"
+
+
+@pytest.mark.unit
+def test_task_id_is_instance_id():
+    task = SweBenchVerifiedTask(_instance())
+    assert task.task_id == "django__django-1"
+
+
+@pytest.mark.unit
+def test_build_result_includes_dataset_fields():
+    task = SweBenchVerifiedTask(_instance())
+    outcome = EvalOutcome(
+        passed=True,
+        output="agent output",
+        result=CallbackResult(passed=True, reason="resolved"),
+        log_path="/dev/null",
+    )
+
+    assert task.build_result(outcome) == {
+        "passed": True,
+        "reason": "resolved",
+        "instance_id": "django__django-1",
+        "repo": "django/django",
+        "base_commit": "abc123",
+    }
 
 
 @pytest.mark.unit
@@ -251,7 +299,7 @@ def test_check_cleans_up_even_when_harness_raises(mock_run, mock_rmtree, tmp_pat
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock_memory_tool):
+def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock_memory_tool, tmp_path):
     from microbots.MicroBot import BotRunResult
 
     mock_bot = MagicMock()
@@ -261,14 +309,14 @@ def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock
     task = SweBenchVerifiedTask(_instance())
     calls = []
     task.setup = lambda repo_path: calls.append(("setup", repo_path))
-    task.build_prompt = lambda repo_path: "do the task"
+    task.build_prompt = lambda: "do the task"
     task.check = lambda repo_path, agent_output, log_path: (
         calls.append(("check", repo_path, agent_output, log_path))
         or CallbackResult(passed=True, reason="ok")
     )
     task.teardown = lambda repo_path: calls.append(("teardown", repo_path))
 
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert calls[0] == ("setup", "/repo")
     assert calls[1] == ("check", "/repo", "agent did stuff", outcome.log_path)
@@ -280,7 +328,7 @@ def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_creates_log_file_before_check_is_called(mock_bot_cls, mock_memory_tool):
+def test_run_creates_log_file_before_check_is_called(mock_bot_cls, mock_memory_tool, tmp_path):
     from microbots.MicroBot import BotRunResult
 
     mock_bot = MagicMock()
@@ -289,7 +337,7 @@ def test_run_creates_log_file_before_check_is_called(mock_bot_cls, mock_memory_t
 
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
-    task.build_prompt = lambda repo_path: "do the task"
+    task.build_prompt = lambda: "do the task"
     task.teardown = lambda repo_path: None
     seen_log_exists = {}
 
@@ -299,7 +347,7 @@ def test_run_creates_log_file_before_check_is_called(mock_bot_cls, mock_memory_t
 
     task.check = _check
 
-    task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert seen_log_exists["exists"] is True
 
@@ -307,7 +355,7 @@ def test_run_creates_log_file_before_check_is_called(mock_bot_cls, mock_memory_t
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_skips_check_when_bot_status_is_false(mock_bot_cls, mock_memory_tool):
+def test_run_skips_check_when_bot_status_is_false(mock_bot_cls, mock_memory_tool, tmp_path):
     from microbots.MicroBot import BotRunResult
 
     mock_bot = MagicMock()
@@ -317,11 +365,11 @@ def test_run_skips_check_when_bot_status_is_false(mock_bot_cls, mock_memory_tool
     task = SweBenchVerifiedTask(_instance())
     check_calls = []
     task.setup = lambda repo_path: None
-    task.build_prompt = lambda repo_path: "do the task"
+    task.build_prompt = lambda: "do the task"
     task.check = lambda *a: check_calls.append(a)
     task.teardown = lambda repo_path: None
 
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert check_calls == []
     assert outcome.passed is False
@@ -331,17 +379,17 @@ def test_run_skips_check_when_bot_status_is_false(mock_bot_cls, mock_memory_tool
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_converts_build_prompt_exception_to_failed_outcome(mock_bot_cls, mock_memory_tool):
+def test_run_converts_build_prompt_exception_to_failed_outcome(mock_bot_cls, mock_memory_tool, tmp_path):
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
     task.teardown = lambda repo_path: None
 
-    def _build_prompt(repo_path):
+    def _build_prompt():
         raise ValueError("bad prompt")
 
     task.build_prompt = _build_prompt
 
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert outcome.passed is False
     assert "bad prompt" in outcome.result.reason
@@ -352,7 +400,7 @@ def test_run_converts_build_prompt_exception_to_failed_outcome(mock_bot_cls, moc
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memory_tool):
+def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memory_tool, tmp_path):
     from microbots.MicroBot import BotRunResult
 
     mock_bot = MagicMock()
@@ -361,7 +409,7 @@ def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memor
 
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
-    task.build_prompt = lambda repo_path: "do the task"
+    task.build_prompt = lambda: "do the task"
     task.teardown = lambda repo_path: None
 
     def _check(repo_path, agent_output, log_path):
@@ -369,7 +417,7 @@ def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memor
 
     task.check = _check
 
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert outcome.passed is False
     assert "check exploded" in outcome.result.reason
@@ -378,16 +426,16 @@ def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memor
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_still_calls_teardown_when_body_raises(mock_bot_cls, mock_memory_tool):
+def test_run_still_calls_teardown_when_body_raises(mock_bot_cls, mock_memory_tool, tmp_path):
     mock_bot_cls.side_effect = RuntimeError("bot construction failed")
 
     task = SweBenchVerifiedTask(_instance())
     teardown_calls = []
     task.setup = lambda repo_path: None
-    task.build_prompt = lambda repo_path: "do the task"
+    task.build_prompt = lambda: "do the task"
     task.teardown = lambda repo_path: teardown_calls.append(repo_path)
 
-    task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert teardown_calls == ["/repo"]
 
@@ -395,7 +443,7 @@ def test_run_still_calls_teardown_when_body_raises(mock_bot_cls, mock_memory_too
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_teardown_exception_does_not_clobber_returned_outcome(mock_bot_cls, mock_memory_tool):
+def test_run_teardown_exception_does_not_clobber_returned_outcome(mock_bot_cls, mock_memory_tool, tmp_path):
     from microbots.MicroBot import BotRunResult
 
     mock_bot = MagicMock()
@@ -404,7 +452,7 @@ def test_run_teardown_exception_does_not_clobber_returned_outcome(mock_bot_cls, 
 
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
-    task.build_prompt = lambda repo_path: "do the task"
+    task.build_prompt = lambda: "do the task"
     task.check = lambda repo_path, agent_output, log_path: CallbackResult(passed=True, reason="ok")
 
     def _teardown(repo_path):
@@ -412,7 +460,7 @@ def test_run_teardown_exception_does_not_clobber_returned_outcome(mock_bot_cls, 
 
     task.teardown = _teardown
 
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o")
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     # teardown() raised, but the already-computed EvalOutcome must still be returned
     assert outcome.passed is True

@@ -56,6 +56,41 @@ class EvalTask(ABC):
     class calls them automatically.
     """
 
+    @property
+    def task_id(self) -> str:
+        """Identifier for this task instance, used to name its output folder.
+
+        Defaults to the class name, which is fine for tasks with only
+        one instance per run. Override for tasks with several distinct
+        instances per class (e.g. ``SweBenchVerifiedTask``, where each
+        dataset row needs its own folder).
+
+        Returns
+        -------
+        str
+            This task instance's identifier.
+        """
+        return type(self).__name__
+
+    def build_result(self, outcome: EvalOutcome) -> dict:
+        """Optional. Build the dict written to this round's ``result.json``.
+
+        Not called automatically; the orchestrator calls this after
+        each round to decide what to persist. Override to include
+        task-specific details (e.g. dataset fields, repo info).
+
+        Parameters
+        ----------
+        outcome : EvalOutcome
+            The round's outcome to summarize.
+
+        Returns
+        -------
+        dict
+            JSON-serializable summary. Defaults to ``passed``/``reason``.
+        """
+        return {"passed": outcome.result.passed, "reason": outcome.result.reason}
+
     def setup(self, repo_path: str) -> None:
         """Optional. Prepare repo/environment before the agent runs.
 
@@ -69,16 +104,11 @@ class EvalTask(ABC):
         """
         pass
 
-    def build_prompt(self, repo_path: str) -> str:
+    def build_prompt(self) -> str:
         """Optional. Return the task prompt/instructions for the agent.
 
         Not called automatically; only useful if your ``run``
         implementation calls it.
-
-        Parameters
-        ----------
-        repo_path : str
-            Absolute path to the repo the agent will operate on.
 
         Returns
         -------
@@ -123,7 +153,7 @@ class EvalTask(ABC):
         pass
 
     @abstractmethod
-    def run(self, repo_path: str, memory_dir: str, model: str) -> EvalOutcome:
+    def run(self, repo_path: str, memory_dir: str, model: str, log_path: str) -> EvalOutcome:
         """Required. Run one eval iteration and return its outcome.
 
         Parameters
@@ -135,6 +165,10 @@ class EvalTask(ABC):
             ``MemoryTool``.
         model : str
             The model to use, in the format ``<provider>/<model_name>``.
+        log_path : str
+            Path to write this round's log to. Caller-provided (e.g. a
+            workdir-managed path) so logs persist under the run's
+            layout instead of each task inventing its own temp file.
 
         Returns
         -------

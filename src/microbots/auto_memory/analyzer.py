@@ -7,7 +7,7 @@ training agent as ``feedback`` for the next round.
 
 from logging import getLogger
 
-from microbots.auto_memory.task import EvalOutcome, EvalTask
+from microbots.auto_memory.evalTask import EvalOutcome, EvalTask
 from microbots.bot.LogAnalysisBot import LogAnalysisBot
 from microbots.MicroBot import BotRunResult
 

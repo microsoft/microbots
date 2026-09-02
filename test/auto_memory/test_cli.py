@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,27 +13,25 @@ from microbots.auto_memory.cli import main, parse_args
 
 MODULE = "microbots.auto_memory.cli"
 
-BASE_ARGS = ["--repo", "/repo", "--memory-dir", "/memory", "--model", "azure-openai/gpt-4o"]
+BASE_ARGS = ["--model", "azure-openai/gpt-4o"]
+FAKE_WORKDIR = Path("/workdir")
 
 
 @pytest.mark.unit
 def test_parse_args_defaults():
     args = parse_args(BASE_ARGS)
 
-    assert args.repo == "/repo"
-    assert args.memory_dir == "/memory"
     assert args.model == "azure-openai/gpt-4o"
     assert args.task is None
     assert args.max_rounds == 5
-    assert args.training_iterations == 1
+    assert args.training_iterations == 10
 
 
 @pytest.mark.unit
-def test_parse_args_with_known_task_adds_its_flags():
-    args = parse_args(BASE_ARGS + ["--task", "swebenchverified", "--instance-id", "django__django-1"])
+def test_parse_args_accepts_known_task():
+    args = parse_args(BASE_ARGS + ["--task", "swebenchverified"])
 
     assert args.task == "swebenchverified"
-    assert args.instance_id == "django__django-1"
 
 
 @pytest.mark.unit
@@ -42,67 +41,107 @@ def test_parse_args_rejects_unknown_task():
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.run_training_loop")
-def test_main_runs_training_only_when_task_omitted(mock_run_training_loop):
-    main(BASE_ARGS)
+def test_parse_args_workdir_defaults_to_none():
+    args = parse_args(BASE_ARGS)
 
-    mock_run_training_loop.assert_called_once_with(
-        repo_path="/repo",
-        feedback="",
-        memory_dir="/memory",
+    assert args.workdir is None
+
+
+@pytest.mark.unit
+def test_parse_args_picks_up_explicit_workdir():
+    args = parse_args(BASE_ARGS + ["--workdir", "/custom/workdir"])
+
+    assert args.workdir == "/custom/workdir"
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.require_workdir")
+@patch(f"{MODULE}.resolve_workdir")
+@patch(f"{MODULE}.load_config", return_value={})
+@patch(f"{MODULE}.run")
+def test_main_uses_explicit_workdir_over_resolve_workdir(
+    mock_run, mock_load_config, mock_resolve_workdir, mock_require_workdir
+):
+    main(BASE_ARGS + ["--workdir", "/custom/workdir"])
+
+    mock_resolve_workdir.assert_not_called()
+    mock_require_workdir.assert_called_once_with(Path("/custom/workdir"))
+    mock_run.assert_called_once_with(
+        workdir=Path("/custom/workdir"),
         model="azure-openai/gpt-4o",
-        iterations=1,
+        task=None,
+        max_rounds=5,
+        training_iterations=10,
+        config={},
     )
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.run_train_eval_loop")
-@patch(f"{MODULE}.run_training_loop")
-def test_main_does_not_run_eval_loop_when_task_omitted(mock_run_training_loop, mock_run_train_eval_loop):
+@patch(f"{MODULE}.require_workdir")
+@patch(f"{MODULE}.resolve_workdir", return_value=FAKE_WORKDIR)
+@patch(f"{MODULE}.load_config", return_value={})
+@patch(f"{MODULE}.run")
+def test_main_falls_back_to_resolve_workdir_when_not_given(
+    mock_run, mock_load_config, mock_resolve_workdir, mock_require_workdir
+):
     main(BASE_ARGS)
 
-    mock_run_train_eval_loop.assert_not_called()
+    mock_resolve_workdir.assert_called_once_with()
+    mock_require_workdir.assert_called_once_with(FAKE_WORKDIR)
+    mock_run.assert_called_once_with(
+        workdir=FAKE_WORKDIR,
+        model="azure-openai/gpt-4o",
+        task=None,
+        max_rounds=5,
+        training_iterations=10,
+        config={},
+    )
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.run_train_eval_loop")
-def test_main_runs_eval_loop_for_each_task_when_task_given(mock_run_train_eval_loop):
-    fake_task = MagicMock()
-    mock_run_train_eval_loop.return_value = MagicMock(passed=True, rounds_run=1)
+@patch(f"{MODULE}.require_workdir")
+@patch(f"{MODULE}.resolve_workdir", return_value=FAKE_WORKDIR)
+@patch(f"{MODULE}.run")
+def test_main_calls_run_with_task_none_when_task_omitted(mock_run, mock_resolve_workdir, mock_require_workdir):
+    main(BASE_ARGS)
 
-    with patch(f"{MODULE}.TASK_REGISTRY", {"swebenchverified": MagicMock(from_cli_args=lambda args: [fake_task])}):
+    assert mock_run.call_args.kwargs["task"] is None
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.require_workdir")
+@patch(f"{MODULE}.resolve_workdir", return_value=FAKE_WORKDIR)
+@patch(f"{MODULE}.load_config", return_value={})
+@patch(f"{MODULE}.run")
+def test_main_calls_run_for_each_task_when_task_given(
+    mock_run, mock_load_config, mock_resolve_workdir, mock_require_workdir
+):
+    fake_task = MagicMock()
+    mock_run.return_value = MagicMock(passed=True, rounds_run=1)
+
+    with patch(f"{MODULE}.TASK_REGISTRY", {"swebenchverified": MagicMock(from_config=lambda task_args: [fake_task])}):
         main(BASE_ARGS + ["--task", "swebenchverified"])
 
-    mock_run_train_eval_loop.assert_called_once_with(
-        repo_path="/repo",
-        memory_dir="/memory",
+    mock_run.assert_called_once_with(
+        workdir=FAKE_WORKDIR,
         model="azure-openai/gpt-4o",
         task=fake_task,
         max_rounds=5,
-        training_iterations=1,
+        training_iterations=10,
+        config={},
     )
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.run_training_loop")
-def test_main_does_not_run_training_only_path_when_task_given(mock_run_training_loop):
-    fake_task = MagicMock()
-
-    with patch(f"{MODULE}.TASK_REGISTRY", {"swebenchverified": MagicMock(from_cli_args=lambda args: [fake_task])}):
-        with patch(f"{MODULE}.run_train_eval_loop") as mock_run_train_eval_loop:
-            mock_run_train_eval_loop.return_value = MagicMock(passed=True, rounds_run=1)
-            main(BASE_ARGS + ["--task", "swebenchverified"])
-
-    mock_run_training_loop.assert_not_called()
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.run_train_eval_loop")
-def test_main_runs_eval_loop_once_per_returned_task(mock_run_train_eval_loop):
+@patch(f"{MODULE}.require_workdir")
+@patch(f"{MODULE}.resolve_workdir", return_value=FAKE_WORKDIR)
+@patch(f"{MODULE}.load_config", return_value={})
+@patch(f"{MODULE}.run")
+def test_main_runs_once_per_returned_task(mock_run, mock_load_config, mock_resolve_workdir, mock_require_workdir):
     fake_tasks = [MagicMock(), MagicMock()]
-    mock_run_train_eval_loop.return_value = MagicMock(passed=False, rounds_run=5)
+    mock_run.return_value = MagicMock(passed=False, rounds_run=5)
 
-    with patch(f"{MODULE}.TASK_REGISTRY", {"swebenchverified": MagicMock(from_cli_args=lambda args: fake_tasks)}):
+    with patch(f"{MODULE}.TASK_REGISTRY", {"swebenchverified": MagicMock(from_config=lambda task_args: fake_tasks)}):
         main(BASE_ARGS + ["--task", "swebenchverified"])
 
-    assert mock_run_train_eval_loop.call_count == 2
+    assert mock_run.call_count == 2

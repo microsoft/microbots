@@ -13,18 +13,44 @@ import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 from logging import getLogger
 from pathlib import Path
 
 from datasets import load_dataset
-from microbots.auto_memory.task import CallbackResult, EvalOutcome, EvalTask
+from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome, EvalTask
 from microbots.auto_memory.task_registry import register_task
 from microbots.bot.WritingBot import WritingBot
 from microbots.tools.tool_definitions.memory_tool import MemoryTool
 
 logger = getLogger(__name__)
 
-SWE_BENCH_SUITE = "SWE-bench/SWE-bench_Verified"
+SWE_BENCH_VERIFIED = "SWE-bench/SWE-bench_Verified"
+EVAL_AGENT_MODEL_NAME = "microbots-eval-agent"
+
+
+@lru_cache(maxsize=None)
+def _load_dataset_rows(dataset_name: str):
+    """Load and cache ``dataset_name``'s ``test`` split for the process's lifetime.
+
+    ``load_dataset`` caches the downloaded files on disk, but still
+    re-reads and rebuilds the in-memory ``Dataset`` object on every
+    call. Since ``load_instances_of_repo``/``load_instance_using_id``
+    may each be called many times (e.g. once per eval task instance),
+    this wraps ``load_dataset`` with an in-memory cache keyed by
+    ``dataset_name``, so the dataset is only loaded once per process.
+
+    Parameters
+    ----------
+    dataset_name : str
+        Hugging Face dataset name to load.
+
+    Returns
+    -------
+    datasets.Dataset
+        The loaded ``test`` split.
+    """
+    return load_dataset(dataset_name, split="test")
 
 
 @dataclass
@@ -50,7 +76,7 @@ class SweBenchInstance:
 
 
 def load_instances_of_repo(
-    dataset_name: str = SWE_BENCH_SUITE,
+    dataset_name: str = SWE_BENCH_VERIFIED,
     repo: str | None = None,
 ) -> list[SweBenchInstance]:
     """Load all dataset instances, optionally filtered to a single repo.
@@ -59,7 +85,7 @@ def load_instances_of_repo(
     ----------
     dataset_name : str
         Hugging Face dataset name to load. Defaults to
-        ``SWE_BENCH_SUITE``.
+        ``SWE_BENCH_VERIFIED``.
     repo : str | None
         If given, only instances whose ``repo`` matches this value are
         returned, e.g. ``"django/django"``. If ``None``, all instances
@@ -70,7 +96,7 @@ def load_instances_of_repo(
     list[SweBenchInstance]
         The matching instances.
     """
-    rows = load_dataset(dataset_name, split="test")
+    rows = _load_dataset_rows(dataset_name)
     instances = [
         SweBenchInstance(
             instance_id=row["instance_id"],
@@ -83,7 +109,7 @@ def load_instances_of_repo(
     ]
     return instances
 
-def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_SUITE) -> SweBenchInstance:
+def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_VERIFIED) -> SweBenchInstance:
     """Load a single dataset instance by its instance ID.
 
     Parameters
@@ -92,7 +118,7 @@ def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_SUITE
         The instance ID to look up, e.g. ``"django__django-11099"``.
     dataset_name : str
         Hugging Face dataset name to load. Defaults to
-        ``SWE_BENCH_SUITE``.
+        ``SWE_BENCH_VERIFIED``.
 
     Returns
     -------
@@ -105,7 +131,7 @@ def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_SUITE
         If no instance with the given ``instance_id`` exists in the
         dataset.
     """
-    rows = load_dataset(dataset_name, split="test")
+    rows = _load_dataset_rows(dataset_name)
     for row in rows:
         if row["instance_id"] == instance_id:
             return SweBenchInstance(
@@ -130,13 +156,15 @@ class SweBenchVerifiedTask(EvalTask):
         The dataset instance this task evaluates against.
     """
 
-    def __init__(self, instance: SweBenchInstance):
-        """Initialize the task for a single dataset instance.
+    def __init__(self, instance: SweBenchInstance | None = None):
+        """Initialize the task, optionally for a single dataset instance.
 
         Parameters
         ----------
-        instance : SweBenchInstance
-            The dataset instance this task evaluates against.
+        instance : SweBenchInstance | None
+            The dataset instance this task evaluates against. May be
+            omitted and set later via ``self.instance``, but must be
+            set before any other method on this task is called.
         """
         self.instance = instance
 
@@ -181,6 +209,62 @@ class SweBenchVerifiedTask(EvalTask):
             instances = load_instances_of_repo(repo=getattr(args, "swebench_repo", None))
         return [cls(instance) for instance in instances]
 
+    @classmethod
+    def from_config(cls, task_args: dict) -> list["SweBenchVerifiedTask"]:
+        """Build task(s) from a config's ``task_args`` dict.
+
+        Parameters
+        ----------
+        task_args : dict
+            Task-specific config values, expected to include
+            ``instance_id`` and/or ``swebench_repo`` (mirrors
+            ``add_cli_args``'s flags).
+
+        Returns
+        -------
+        list[SweBenchVerifiedTask]
+            One task per matching dataset instance. A single-element
+            list when ``instance_id`` is given.
+        """
+        if task_args.get("instance_id"):
+            instances = [load_instance_using_id(task_args["instance_id"])]
+        else:
+            instances = load_instances_of_repo(repo=task_args.get("swebench_repo"))
+        return [cls(instance) for instance in instances]
+
+    @property
+    def task_id(self) -> str:
+        """Return this instance's SWE-bench-verified ``instance_id``.
+
+        Returns
+        -------
+        str
+            The dataset instance's ``instance_id``.
+        """
+        return self.instance.instance_id
+
+    def build_result(self, outcome: EvalOutcome) -> dict:
+        """Summarize a round's outcome, including the instance's dataset fields.
+
+        Parameters
+        ----------
+        outcome : EvalOutcome
+            The round's outcome to summarize.
+
+        Returns
+        -------
+        dict
+            ``passed``/``reason`` plus ``instance_id``, ``repo``, and
+            ``base_commit`` identifying which dataset row this is.
+        """
+        return {
+            "passed": outcome.result.passed,
+            "reason": outcome.result.reason,
+            "instance_id": self.instance.instance_id,
+            "repo": self.instance.repo,
+            "base_commit": self.instance.base_commit,
+        }
+
     def setup(self, repo_path: str) -> None:
         """Clone the instance's repo and check out its base commit.
 
@@ -197,13 +281,8 @@ class SweBenchVerifiedTask(EvalTask):
             ["git", "checkout", self.instance.base_commit], cwd=repo_path, check=True
         )
 
-    def build_prompt(self, repo_path: str) -> str:
+    def build_prompt(self) -> str:
         """Return the instance's issue text as the agent's prompt.
-
-        Parameters
-        ----------
-        repo_path : str
-            Absolute path to the repo the agent will operate on.
 
         Returns
         -------
@@ -240,7 +319,7 @@ class SweBenchVerifiedTask(EvalTask):
         ).stdout
 
         run_id = f"microbots-{uuid.uuid4().hex[:8]}"
-        model_name_or_path = "microbots-eval-agent"
+        model_name_or_path = EVAL_AGENT_MODEL_NAME
         pred_path = Path(tempfile.mktemp(suffix=".json"))
         report_dir = Path(tempfile.mkdtemp())
         pred_path.write_text(json.dumps([{
@@ -252,7 +331,7 @@ class SweBenchVerifiedTask(EvalTask):
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "swebench.harness.run_evaluation",
-                 "--dataset_name", SWE_BENCH_SUITE,
+                 "--dataset_name", SWE_BENCH_VERIFIED,
                  "--max_workers", "1",
                  "--predictions_path", str(pred_path),
                  "--run_id", run_id,
@@ -286,7 +365,7 @@ class SweBenchVerifiedTask(EvalTask):
         """
         subprocess.run(["rm", "-rf", repo_path], check=False)
 
-    def run(self, repo_path: str, memory_dir: str, model: str) -> EvalOutcome:
+    def run(self, repo_path: str, memory_dir: str, model: str, log_path: str) -> EvalOutcome:
         """Run one eval iteration: setup -> build_prompt -> WritingBot -> check -> teardown.
 
         Parameters
@@ -298,6 +377,9 @@ class SweBenchVerifiedTask(EvalTask):
             ``MemoryTool``.
         model : str
             The model to use, in the format ``<provider>/<model_name>``.
+        log_path : str
+            Path to write this round's log to. Caller-provided, so the
+            log persists under the run's own layout.
 
         Returns
         -------
@@ -306,12 +388,12 @@ class SweBenchVerifiedTask(EvalTask):
             the check verdict, and the round's log file path.
         """
         self.setup(repo_path)
-        log_path = tempfile.mktemp(suffix=".log")
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
         Path(log_path).write_text("")
 
         try:
             try:
-                prompt = self.build_prompt(repo_path)
+                prompt = self.build_prompt()
                 bot = WritingBot(
                     model=model,
                     folder_to_mount=repo_path,
