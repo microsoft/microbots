@@ -523,3 +523,45 @@ def test_from_cli_args_handles_missing_attrs_gracefully(mock_load_instances_of_r
 
     mock_load_instances_of_repo.assert_called_once_with(repo=None)
     assert len(tasks) == 1
+
+
+# ---------------------------------------------------------------------------
+# SweBenchVerifiedTask.from_config
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+@patch(f"{MODULE}.load_instance_using_id")
+def test_from_config_uses_instance_id_when_given(mock_load_instance_using_id):
+    mock_load_instance_using_id.return_value = _instance()
+
+    tasks = SweBenchVerifiedTask.from_config(
+        {"instance_id": "django__django-1", "swebench_repo": None}
+    )
+
+    mock_load_instance_using_id.assert_called_once_with("django__django-1")
+    assert len(tasks) == 1
+    assert isinstance(tasks[0], SweBenchVerifiedTask)
+    assert tasks[0].instance == _instance()
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.load_instances_of_repo")
+def test_from_config_falls_back_to_repo_filter_when_no_instance_id(mock_load_instances_of_repo):
+    mock_load_instances_of_repo.return_value = [_instance(), _instance()]
+
+    tasks = SweBenchVerifiedTask.from_config({"swebench_repo": "django/django"})
+
+    mock_load_instances_of_repo.assert_called_once_with(repo="django/django")
+    assert len(tasks) == 2
+    assert all(isinstance(t, SweBenchVerifiedTask) for t in tasks)
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.load_instances_of_repo")
+def test_from_config_handles_empty_dict_gracefully(mock_load_instances_of_repo):
+    mock_load_instances_of_repo.return_value = [_instance()]
+
+    tasks = SweBenchVerifiedTask.from_config({})
+
+    mock_load_instances_of_repo.assert_called_once_with(repo=None)
+    assert len(tasks) == 1

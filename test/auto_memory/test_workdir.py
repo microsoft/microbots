@@ -9,10 +9,21 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../s
 
 from microbots.auto_memory.workdir import (
     CONFIG_FILENAME,
+    eval_dir,
+    eval_log_path,
+    eval_patch_path,
+    eval_result_path,
     load_config,
     load_round_memory,
     memory_dir,
+    repo_dir,
+    require_workdir,
+    resolve_workdir,
+    round_dir,
+    round_log_path,
     round_memory_dir,
+    round_patch_path,
+    run_log_path,
     save_round_memory,
 )
 
@@ -92,3 +103,116 @@ def test_save_round_memory_overwrites_stale_top_level_files(tmp_path):
     save_round_memory(tmp_path, 1)
 
     assert (top_memory / "notes.md").read_text() == "new"
+
+
+@pytest.mark.unit
+def test_resolve_workdir_defaults_to_cwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    assert resolve_workdir() == tmp_path / "workdir"
+
+
+@pytest.mark.unit
+def test_resolve_workdir_uses_given_base(tmp_path):
+    assert resolve_workdir(tmp_path) == tmp_path / "workdir"
+
+
+@pytest.mark.unit
+def test_require_workdir_raises_when_missing(tmp_path):
+    missing = tmp_path / "nope"
+
+    with pytest.raises(FileNotFoundError):
+        require_workdir(missing)
+
+
+@pytest.mark.unit
+def test_require_workdir_passes_when_present(tmp_path):
+    require_workdir(tmp_path)
+
+
+@pytest.mark.unit
+def test_repo_dir_returns_workdir_repo(tmp_path):
+    assert repo_dir(tmp_path) == tmp_path / "repo"
+
+
+@pytest.mark.unit
+def test_run_log_path_returns_workdir_run_log(tmp_path):
+    assert run_log_path(tmp_path) == tmp_path / "run.log"
+
+
+@pytest.mark.unit
+def test_round_dir_creates_directory_when_requested(tmp_path):
+    path = round_dir(tmp_path, 1, create=True)
+
+    assert path == tmp_path / "rounds" / "round_1"
+    assert path.is_dir()
+
+
+@pytest.mark.unit
+def test_round_dir_does_not_create_directory_by_default(tmp_path):
+    path = round_dir(tmp_path, 1)
+
+    assert path == tmp_path / "rounds" / "round_1"
+    assert not path.exists()
+
+
+@pytest.mark.unit
+def test_round_dir_uses_per_instance_dir_when_instance_id_given(tmp_path):
+    path = round_dir(tmp_path, 1, instance_id="task-1")
+
+    assert path == tmp_path / "rounds_task-1" / "round_1"
+
+
+@pytest.mark.unit
+def test_round_log_path_returns_round_log(tmp_path):
+    assert round_log_path(tmp_path, 2) == round_dir(tmp_path, 2) / "round.log"
+
+
+@pytest.mark.unit
+def test_round_log_path_with_instance_id(tmp_path):
+    assert round_log_path(tmp_path, 2, instance_id="task-1") == round_dir(
+        tmp_path, 2, instance_id="task-1"
+    ) / "round.log"
+
+
+@pytest.mark.unit
+def test_round_patch_path_returns_repo_patch(tmp_path):
+    assert round_patch_path(tmp_path, 2) == round_dir(tmp_path, 2) / "repo.patch"
+
+
+@pytest.mark.unit
+def test_round_patch_path_with_instance_id(tmp_path):
+    assert round_patch_path(tmp_path, 2, instance_id="task-1") == round_dir(
+        tmp_path, 2, instance_id="task-1"
+    ) / "repo.patch"
+
+
+@pytest.mark.unit
+def test_eval_dir_creates_directory_when_requested(tmp_path):
+    path = eval_dir(tmp_path, 1, "task-1", create=True)
+
+    assert path == tmp_path / "rounds_task-1" / "round_1" / "eval"
+    assert path.is_dir()
+
+
+@pytest.mark.unit
+def test_eval_dir_does_not_create_directory_by_default(tmp_path):
+    path = eval_dir(tmp_path, 1, "task-1")
+
+    assert path == tmp_path / "rounds_task-1" / "round_1" / "eval"
+    assert not path.exists()
+
+
+@pytest.mark.unit
+def test_eval_result_path_returns_result_json(tmp_path):
+    assert eval_result_path(tmp_path, 1, "task-1") == eval_dir(tmp_path, 1, "task-1") / "result.json"
+
+
+@pytest.mark.unit
+def test_eval_log_path_returns_eval_log(tmp_path):
+    assert eval_log_path(tmp_path, 1, "task-1") == eval_dir(tmp_path, 1, "task-1") / "eval.log"
+
+
+@pytest.mark.unit
+def test_eval_patch_path_returns_repo_patch(tmp_path):
+    assert eval_patch_path(tmp_path, 1, "task-1") == eval_dir(tmp_path, 1, "task-1") / "repo.patch"
