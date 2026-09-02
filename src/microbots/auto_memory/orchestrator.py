@@ -11,7 +11,6 @@ from pathlib import Path
 import json
 import subprocess
 
-from microbots.auto_memory.analyzer import build_feedback
 from microbots.auto_memory.evalTask import EvalOutcome, EvalTask
 from microbots.auto_memory.training.runner import run_training
 from microbots.auto_memory.workdir import (
@@ -197,9 +196,8 @@ def run_train_eval_loop(
             "run_train_eval_loop: round %d/%d starting", round_idx, max_rounds
         )
         memory_dir = str(load_round_memory(workdir, round_idx, instance_id=task.task_id))
-        outcome = task.run(
-            repo_path, memory_dir, model, str(eval_log_path(workdir, round_idx, task.task_id))
-        )
+        log_path = str(eval_log_path(workdir, round_idx, task.task_id))
+        outcome = task.run(repo_path, memory_dir, model, log_path)
         outcomes.append(outcome)
 
         try:
@@ -220,7 +218,7 @@ def run_train_eval_loop(
                 outcome.result.reason,
             )
             try:
-                feedback = build_feedback(task, outcome, repo_path, model)
+                feedback = task.build_feedback(outcome, repo_path, model, log_path)
                 run_training_loop(
                     repo_path=repo_path,
                     feedback=feedback,

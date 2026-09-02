@@ -11,21 +11,33 @@ from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome, EvalTask
 
 
 class _RunOnlyTask(EvalTask):
-    """A task that overrides only run(), never touching the optional hooks."""
+    """A task that overrides only run()/build_feedback(), never touching the optional hooks."""
 
     def run(self, repo_path, memory_dir, model, log_path):
         return EvalOutcome(
             passed=True,
             output="custom output",
             result=None,
-            log_path="/dev/null",
         )
+
+    def build_feedback(self, outcome, repo_path, model, log_path):
+        return "feedback text"
 
 
 @pytest.mark.unit
 def test_run_is_abstract():
     with pytest.raises(TypeError):
         EvalTask()
+
+
+@pytest.mark.unit
+def test_build_feedback_is_abstract():
+    class _MissingBuildFeedback(EvalTask):
+        def run(self, repo_path, memory_dir, model, log_path):
+            raise NotImplementedError
+
+    with pytest.raises(TypeError):
+        _MissingBuildFeedback()
 
 
 @pytest.mark.unit
@@ -73,7 +85,6 @@ def test_default_build_result_returns_passed_and_reason():
         passed=False,
         output="agent output",
         result=CallbackResult(passed=False, reason="check failed"),
-        log_path="/dev/null",
     )
 
     assert _RunOnlyTask().build_result(outcome) == {"passed": False, "reason": "check failed"}

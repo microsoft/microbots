@@ -275,27 +275,6 @@ def round_log_path(workdir: Path, round_num: int, *, instance_id: str | None = N
     return round_dir(workdir, round_num, instance_id=instance_id) / ROUND_LOG_FILENAME
 
 
-def round_patch_path(workdir: Path, round_num: int, *, instance_id: str | None = None) -> Path:
-    """Return the path to a round's captured repo diff.
-
-    Parameters
-    ----------
-    workdir : Path
-        The run's workdir.
-    round_num : int
-        1-based round number.
-    instance_id : str | None
-        The eval task's ``task_id``, if running an eval task (see
-        ``round_dir``). Omit for training-only mode.
-
-    Returns
-    -------
-    Path
-        This round's ``repo.patch``.
-    """
-    return round_dir(workdir, round_num, instance_id=instance_id) / ROUND_PATCH_FILENAME
-
-
 def eval_dir(
     workdir: Path, round_num: int, instance_id: str, *, create: bool = False
 ) -> Path:

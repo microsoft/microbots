@@ -18,6 +18,7 @@ from microbots.auto_memory.eval.swebenchverified import (
     load_instances_of_repo,
 )
 from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome
+from microbots.MicroBot import BotRunResult
 
 MODULE = "microbots.auto_memory.eval.swebenchverified"
 
@@ -156,7 +157,6 @@ def test_build_result_includes_dataset_fields():
         passed=True,
         output="agent output",
         result=CallbackResult(passed=True, reason="resolved"),
-        log_path="/dev/null",
     )
 
     assert task.build_result(outcome) == {
@@ -175,6 +175,85 @@ def test_teardown_removes_repo_path(mock_run):
     task.teardown("/repo")
 
     mock_run.assert_called_once_with(["rm", "-rf", "/repo"], check=False)
+
+
+# ---------------------------------------------------------------------------
+# SweBenchVerifiedTask.build_feedback
+# ---------------------------------------------------------------------------
+
+def _failed_outcome(reason: str = "tests failed", output: str = "agent output") -> EvalOutcome:
+    return EvalOutcome(
+        passed=False,
+        output=output,
+        result=CallbackResult(passed=False, reason=reason),
+    )
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.LogAnalysisBot")
+def test_build_feedback_returns_bot_result_on_success(mock_bot_cls):
+    mock_bot = MagicMock()
+    mock_bot.run.return_value = BotRunResult(
+        status=True, result="root cause: missing edge case handling", error=None
+    )
+    mock_bot_cls.return_value = mock_bot
+
+    task = SweBenchVerifiedTask(_instance())
+    outcome = _failed_outcome()
+
+    feedback = task.build_feedback(outcome, "/repo", "azure-openai/gpt-4o", "/tmp/some.log")
+
+    assert feedback == "root cause: missing edge case handling"
+    mock_bot_cls.assert_called_once_with(model="azure-openai/gpt-4o", folder_to_mount="/repo")
+    mock_bot.run.assert_called_once()
+    assert mock_bot.run.call_args.kwargs["file_name"] == "/tmp/some.log"
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.LogAnalysisBot")
+def test_build_feedback_falls_back_when_bot_status_false(mock_bot_cls):
+    mock_bot = MagicMock()
+    mock_bot.run.return_value = BotRunResult(status=False, result=None, error="bot crashed")
+    mock_bot_cls.return_value = mock_bot
+
+    task = SweBenchVerifiedTask(_instance())
+    outcome = _failed_outcome(reason="tests failed", output="some output")
+
+    feedback = task.build_feedback(outcome, "/repo", "azure-openai/gpt-4o", "/tmp/some.log")
+
+    assert "some output" in feedback
+    assert "tests failed" in feedback
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.LogAnalysisBot")
+def test_build_feedback_falls_back_when_result_is_empty(mock_bot_cls):
+    mock_bot = MagicMock()
+    mock_bot.run.return_value = BotRunResult(status=True, result="", error=None)
+    mock_bot_cls.return_value = mock_bot
+
+    task = SweBenchVerifiedTask(_instance())
+    outcome = _failed_outcome(reason="assertion error", output="agent tried X")
+
+    feedback = task.build_feedback(outcome, "/repo", "azure-openai/gpt-4o", "/tmp/some.log")
+
+    assert "agent tried X" in feedback
+    assert "assertion error" in feedback
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.LogAnalysisBot")
+def test_build_feedback_falls_back_when_result_is_none(mock_bot_cls):
+    mock_bot = MagicMock()
+    mock_bot.run.return_value = BotRunResult(status=True, result=None, error=None)
+    mock_bot_cls.return_value = mock_bot
+
+    task = SweBenchVerifiedTask(_instance())
+    outcome = _failed_outcome()
+
+    feedback = task.build_feedback(outcome, "/repo", "azure-openai/gpt-4o", "/tmp/some.log")
+
+    assert "Evaluation failed" in feedback
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +398,7 @@ def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock
     outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert calls[0] == ("setup", "/repo")
-    assert calls[1] == ("check", "/repo", "agent did stuff", outcome.log_path)
+    assert calls[1] == ("check", "/repo", "agent did stuff", str(tmp_path / "eval.log"))
     assert calls[2] == ("teardown", "/repo")
     assert outcome.passed is True
     assert outcome.output == "agent did stuff"
@@ -393,7 +472,7 @@ def test_run_converts_build_prompt_exception_to_failed_outcome(mock_bot_cls, moc
 
     assert outcome.passed is False
     assert "bad prompt" in outcome.result.reason
-    with open(outcome.log_path) as f:
+    with open(str(tmp_path / "eval.log")) as f:
         assert "bad prompt" in f.read()
 
 
@@ -466,63 +545,6 @@ def test_run_teardown_exception_does_not_clobber_returned_outcome(mock_bot_cls, 
     assert outcome.passed is True
 
 
-
-# ---------------------------------------------------------------------------
-# SweBenchVerifiedTask.add_cli_args / from_cli_args
-# ---------------------------------------------------------------------------
-
-@pytest.mark.unit
-def test_add_cli_args_registers_instance_id_and_repo_flags():
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    SweBenchVerifiedTask.add_cli_args(parser)
-
-    args = parser.parse_args(["--instance-id", "django__django-1", "--swebench-repo", "django/django"])
-    assert args.instance_id == "django__django-1"
-    assert args.swebench_repo == "django/django"
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.load_instance_using_id")
-def test_from_cli_args_uses_instance_id_when_given(mock_load_instance_using_id):
-    mock_load_instance_using_id.return_value = _instance()
-    args = MagicMock(instance_id="django__django-1", swebench_repo=None)
-
-    tasks = SweBenchVerifiedTask.from_cli_args(args)
-
-    mock_load_instance_using_id.assert_called_once_with("django__django-1")
-    assert len(tasks) == 1
-    assert isinstance(tasks[0], SweBenchVerifiedTask)
-    assert tasks[0].instance == _instance()
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.load_instances_of_repo")
-def test_from_cli_args_falls_back_to_repo_filter_when_no_instance_id(mock_load_instances_of_repo):
-    mock_load_instances_of_repo.return_value = [_instance(), _instance()]
-    args = MagicMock(instance_id=None, swebench_repo="django/django")
-
-    tasks = SweBenchVerifiedTask.from_cli_args(args)
-
-    mock_load_instances_of_repo.assert_called_once_with(repo="django/django")
-    assert len(tasks) == 2
-    assert all(isinstance(t, SweBenchVerifiedTask) for t in tasks)
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.load_instances_of_repo")
-def test_from_cli_args_handles_missing_attrs_gracefully(mock_load_instances_of_repo):
-    """Namespace without instance_id/swebench_repo attrs at all (not just None)."""
-    mock_load_instances_of_repo.return_value = [_instance()]
-
-    class _EmptyArgs:
-        pass
-
-    tasks = SweBenchVerifiedTask.from_cli_args(_EmptyArgs())
-
-    mock_load_instances_of_repo.assert_called_once_with(repo=None)
-    assert len(tasks) == 1
 
 
 # ---------------------------------------------------------------------------

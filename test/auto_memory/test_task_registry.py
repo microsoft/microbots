@@ -31,6 +31,9 @@ class _DummyTask(EvalTask):
     def teardown(self, repo_path):
         pass
 
+    def build_feedback(self, outcome, repo_path, model, log_path):
+        return "feedback"
+
     def run(self, repo_path, memory_dir, model):
         return super().run(repo_path, memory_dir, model)
 

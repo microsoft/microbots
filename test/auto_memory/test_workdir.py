@@ -22,7 +22,6 @@ from microbots.auto_memory.workdir import (
     round_dir,
     round_log_path,
     round_memory_dir,
-    round_patch_path,
     run_log_path,
     save_round_memory,
 )
@@ -173,18 +172,6 @@ def test_round_log_path_with_instance_id(tmp_path):
     assert round_log_path(tmp_path, 2, instance_id="task-1") == round_dir(
         tmp_path, 2, instance_id="task-1"
     ) / "round.log"
-
-
-@pytest.mark.unit
-def test_round_patch_path_returns_repo_patch(tmp_path):
-    assert round_patch_path(tmp_path, 2) == round_dir(tmp_path, 2) / "repo.patch"
-
-
-@pytest.mark.unit
-def test_round_patch_path_with_instance_id(tmp_path):
-    assert round_patch_path(tmp_path, 2, instance_id="task-1") == round_dir(
-        tmp_path, 2, instance_id="task-1"
-    ) / "repo.patch"
 
 
 @pytest.mark.unit

@@ -5,7 +5,6 @@ instance's repo at its base commit, has the agent attempt a fix, and
 verifies the result via ``swebench.harness.run_evaluation``.
 """
 
-import argparse
 import json
 import shutil
 import subprocess
@@ -20,7 +19,9 @@ from pathlib import Path
 from datasets import load_dataset
 from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome, EvalTask
 from microbots.auto_memory.task_registry import register_task
+from microbots.bot.LogAnalysisBot import LogAnalysisBot
 from microbots.bot.WritingBot import WritingBot
+from microbots.MicroBot import BotRunResult
 from microbots.tools.tool_definitions.memory_tool import MemoryTool
 
 logger = getLogger(__name__)
@@ -168,47 +169,6 @@ class SweBenchVerifiedTask(EvalTask):
         """
         self.instance = instance
 
-    @staticmethod
-    def add_cli_args(parser: argparse.ArgumentParser) -> None:
-        """Register this task's CLI flags on ``parser``.
-
-        Parameters
-        ----------
-        parser : argparse.ArgumentParser
-            The CLI's argument parser to add task-specific flags to.
-        """
-        parser.add_argument(
-            "--instance-id",
-            help='SWE-bench-verified instance ID, e.g. "django__django-11099".',
-        )
-        parser.add_argument(
-            "--swebench-repo",
-            help='Restrict to instances for this repo, e.g. "django/django". '
-            "Ignored if --instance-id is given.",
-        )
-
-    @classmethod
-    def from_cli_args(cls, args: argparse.Namespace) -> list["SweBenchVerifiedTask"]:
-        """Build task(s) from parsed CLI args.
-
-        Parameters
-        ----------
-        args : argparse.Namespace
-            Parsed CLI args, expected to include ``instance_id`` and/or
-            ``swebench_repo`` (see ``add_cli_args``).
-
-        Returns
-        -------
-        list[SweBenchVerifiedTask]
-            One task per matching dataset instance. A single-element
-            list when ``--instance-id`` is given.
-        """
-        if getattr(args, "instance_id", None):
-            instances = [load_instance_using_id(args.instance_id)]
-        else:
-            instances = load_instances_of_repo(repo=getattr(args, "swebench_repo", None))
-        return [cls(instance) for instance in instances]
-
     @classmethod
     def from_config(cls, task_args: dict) -> list["SweBenchVerifiedTask"]:
         """Build task(s) from a config's ``task_args`` dict.
@@ -217,8 +177,7 @@ class SweBenchVerifiedTask(EvalTask):
         ----------
         task_args : dict
             Task-specific config values, expected to include
-            ``instance_id`` and/or ``swebench_repo`` (mirrors
-            ``add_cli_args``'s flags).
+            ``instance_id`` and/or ``swebench_repo``.
 
         Returns
         -------
@@ -365,6 +324,51 @@ class SweBenchVerifiedTask(EvalTask):
         """
         subprocess.run(["rm", "-rf", repo_path], check=False)
 
+    def build_feedback(self, outcome: EvalOutcome, repo_path: str, model: str, log_path: str) -> str:
+        """Analyze a failed round's log via ``LogAnalysisBot`` for training feedback.
+
+        Parameters
+        ----------
+        outcome : EvalOutcome
+            The failed outcome to analyze.
+        repo_path : str
+            Absolute path to the repo the task was evaluated against.
+        model : str
+            The model to use, in the format ``<provider>/<model_name>``.
+        log_path : str
+            Path to the round's log file (the same path passed to
+            ``run``), analyzed by ``LogAnalysisBot``.
+
+        Returns
+        -------
+        str
+            Feedback text describing the root cause of the failure and
+            what the agent's memory notes should cover next time.
+        """
+        bot = LogAnalysisBot(model=model, folder_to_mount=repo_path)
+        result: BotRunResult = bot.run(
+            file_name=log_path,
+            user_prompt=(
+                "This log was produced while verifying whether an "
+                "agent completed its task correctly. Identify "
+                "the root cause of the failure and describe concretely "
+                "what the agent's memory notes should cover next time to "
+                "avoid this failure."
+            ),
+        )
+
+        if result.status and result.result:
+            return result.result
+
+        logger.warning(
+            "LogAnalysisBot failed to analyze failure (%s); falling back to plain feedback",
+            result.error,
+        )
+        return (
+            f"Evaluation failed. Agent output: {outcome.output}\n"
+            f"Callback reason: {outcome.result.reason}"
+        )
+
     def run(self, repo_path: str, memory_dir: str, model: str, log_path: str) -> EvalOutcome:
         """Run one eval iteration: setup -> build_prompt -> WritingBot -> check -> teardown.
 
@@ -385,7 +389,7 @@ class SweBenchVerifiedTask(EvalTask):
         -------
         EvalOutcome
             The result of this eval round, including the agent's output,
-            the check verdict, and the round's log file path.
+            the check verdict.
         """
         self.setup(repo_path)
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -416,7 +420,6 @@ class SweBenchVerifiedTask(EvalTask):
                     passed=result.passed,
                     output=bot_result.result,
                     result=result,
-                    log_path=log_path,
                 )
             except Exception as exc:
                 logger.exception(
@@ -430,7 +433,6 @@ class SweBenchVerifiedTask(EvalTask):
                     result=CallbackResult(
                         passed=False, reason=f"{type(exc).__name__}: {exc}"
                     ),
-                    log_path=log_path,
                 )
         finally:
             try:

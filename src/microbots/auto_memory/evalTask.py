@@ -35,15 +35,11 @@ class EvalOutcome:
         The agent's raw output for the round, if any.
     result : CallbackResult
         The verdict produced by ``EvalTask.check``.
-    log_path : str
-        Path to the round's log file, containing the agent output and
-        any failure/exception details recorded during the round.
     """
 
     passed: bool
     output: str | None
     result: CallbackResult
-    log_path: str
 
 
 class EvalTask(ABC):
@@ -153,6 +149,35 @@ class EvalTask(ABC):
         pass
 
     @abstractmethod
+    def build_feedback(self, outcome: EvalOutcome, repo_path: str, model: str, log_path: str) -> str:
+        """Required. Analyze a failed eval outcome and produce training feedback.
+
+        Called by the orchestrator after a failed round, before
+        retraining, to turn the round's outcome/log into concrete
+        feedback text describing what went wrong and what the agent's
+        memory notes should cover next time.
+
+        Parameters
+        ----------
+        outcome : EvalOutcome
+            The failed outcome to analyze.
+        repo_path : str
+            Absolute path to the repo the task was evaluated against.
+        model : str
+            The model to use, in the format ``<provider>/<model_name>``.
+        log_path : str
+            Path to the round's log file, containing the agent output
+            and any failure/exception details recorded during the
+            round (the same path passed to ``run``).
+
+        Returns
+        -------
+        str
+            Feedback text to pass as ``feedback`` to the next round's
+            training.
+        """
+
+    @abstractmethod
     def run(self, repo_path: str, memory_dir: str, model: str, log_path: str) -> EvalOutcome:
         """Required. Run one eval iteration and return its outcome.
 
@@ -174,5 +199,5 @@ class EvalTask(ABC):
         -------
         EvalOutcome
             The result of this eval round, including the agent's output,
-            the check verdict, and the round's log file path.
+            the check verdict.
         """
