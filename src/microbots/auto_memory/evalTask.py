@@ -7,6 +7,7 @@ clean up afterward.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 @dataclass
 class CallbackResult:
@@ -45,11 +46,11 @@ class EvalOutcome:
 class EvalTask(ABC):
     """Base class for a single evaluation task in the train <-> eval loop.
 
-    Subclasses must implement ``run``. ``setup``, ``build_prompt``,
-    ``check``, and ``teardown`` are optional hooks subclasses may use
-    to structure their own ``run`` implementation (see
-    ``SweBenchVerifiedTask`` for an example), but nothing in this base
-    class calls them automatically.
+    Subclasses must implement ``run`` and ``from_config``. ``setup``,
+    ``build_prompt``, ``check``, and ``teardown`` are optional hooks
+    subclasses may use to structure their own ``run`` implementation
+    (see ``SweBenchVerifiedTask`` for an example), but nothing in this
+    base class calls them automatically.
     """
 
     @property
@@ -147,6 +148,35 @@ class EvalTask(ABC):
             Absolute path to the repo that was prepared by ``setup``.
         """
         pass
+
+    @classmethod
+    @abstractmethod
+    def from_config(cls, task_args: dict[str, Any]) -> list["EvalTask"]:
+        """Required. Build task instance(s) from a config's ``task_args`` dict.
+
+        Called by the CLI at runtime (driven by ``--task``) to
+        construct the actual task object(s) to run, using whatever
+        config values the task needs (e.g. a dataset instance ID, a
+        repo filter). Object creation must go through this method
+        rather than being constructed elsewhere, so behavior stays
+        driven by the CLI/config at runtime.
+
+        Parameters
+        ----------
+        task_args : dict[str, Any]
+            Task-specific config values (the config file's
+            ``task_args`` section).
+
+        Returns
+        -------
+        list[EvalTask]
+            One task instance per unit of work this config describes
+            (often just one, but e.g. ``SweBenchVerifiedTask`` returns
+            one per matching dataset instance).
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} must implement from_config() to be usable via --task"
+        )
 
     @abstractmethod
     def build_feedback(self, outcome: EvalOutcome, repo_path: str, model: str, log_path: str) -> str:

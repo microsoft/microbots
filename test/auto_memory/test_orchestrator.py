@@ -13,7 +13,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../s
 from microbots.auto_memory.orchestrator import (
     LoopResult,
     clone_repo,
-    reset_repo,
     run,
     run_train_eval_loop,
     run_training_loop,
@@ -55,7 +54,7 @@ def test_loop_returns_immediately_when_first_round_passes(mock_run_training_loop
     task = _make_task()
     task.run.return_value = _make_outcome(passed=True)
 
-    result = run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    result = run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert isinstance(result, LoopResult)
     assert result.passed is True
@@ -75,7 +74,7 @@ def test_loop_retrains_and_continues_on_failure_then_passes(mock_run_training_lo
     ]
     task.build_feedback.return_value = "feedback text"
 
-    result = run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    result = run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert result.passed is True
     assert result.rounds_run == 2
@@ -99,7 +98,7 @@ def test_loop_exhausts_max_rounds_without_passing(mock_run_training_loop, tmp_pa
     ]
     task.build_feedback.return_value = "feedback text"
 
-    result = run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=3)
+    result = run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=3)
 
     assert result.passed is False
     assert result.rounds_run == 3
@@ -116,7 +115,7 @@ def test_log_path_persists_after_passing_round(mock_run_training_loop, tmp_path)
     task = _make_task()
     task.run.return_value = _make_outcome(passed=True)
 
-    run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert Path(log_path).exists()
 
@@ -133,7 +132,7 @@ def test_log_path_persists_after_failing_round(mock_run_training_loop, tmp_path)
     ]
     task.build_feedback.return_value = "feedback text"
 
-    run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert Path(log1).exists()
     assert Path(log2).exists()
@@ -150,7 +149,7 @@ def test_build_feedback_exception_does_not_crash_loop(mock_run_training_loop, tm
     ]
     task.build_feedback.side_effect = RuntimeError("analysis bot crashed")
 
-    result = run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    result = run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert result.passed is True
     assert result.rounds_run == 2
@@ -169,7 +168,7 @@ def test_loop_forwards_training_iterations_to_run_training_loop(mock_run_trainin
     task.build_feedback.return_value = "feedback text"
 
     run_train_eval_loop(
-        "/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5, training_iterations=4
+        "/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5, training_iterations=4
     )
 
     mock_run_training_loop.assert_called_once_with(
@@ -193,7 +192,7 @@ def test_run_training_exception_does_not_crash_loop(mock_run_training_loop, tmp_
     task.build_feedback.return_value = "feedback text"
     mock_run_training_loop.side_effect = RuntimeError("training crashed")
 
-    result = run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    result = run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert result.passed is True
     assert result.rounds_run == 2
@@ -259,19 +258,6 @@ def test_clone_repo_is_noop_when_already_present(mock_run, tmp_path):
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.subprocess.run")
-def test_reset_repo_runs_hard_reset_then_clean(mock_run, tmp_path):
-    repo_path = tmp_path / "repo"
-
-    reset_repo(repo_path, "abc123")
-
-    assert mock_run.call_args_list == [
-        call(["git", "reset", "--hard", "abc123"], cwd=repo_path, check=True),
-        call(["git", "clean", "-fd"], cwd=repo_path, check=True),
-    ]
-
-
-@pytest.mark.unit
 def test_write_eval_result_writes_task_build_result_as_json(tmp_path):
     task = MagicMock()
     task.task_id = "django__django-1"
@@ -307,7 +293,7 @@ def test_loop_writes_eval_result_for_every_round(tmp_path):
     task.build_feedback.return_value = "feedback text"
 
     with patch(f"{MODULE}.run_training_loop"):
-        run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+        run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert eval_result_path(tmp_path, 1, "task-1").exists()
     assert eval_result_path(tmp_path, 2, "task-1").exists()
@@ -347,7 +333,8 @@ def test_run_calls_run_train_eval_loop_when_task_given(mock_run_train_eval_loop,
     )
 
     mock_run_train_eval_loop.assert_called_once_with(
-        repo_path=str(tmp_path / "repo"),
+        training_repo_path=str(tmp_path / "repo"),
+        eval_repo_path=str(tmp_path / "eval_repo"),
         workdir=tmp_path,
         model="azure-openai/gpt-4o",
         task=fake_task,
@@ -410,6 +397,24 @@ def test_run_promotes_round1_memory_to_top_level_for_train_only_mode(mock_run_tr
 
 @pytest.mark.unit
 @patch(f"{MODULE}.run_training_loop")
+def test_run_preserves_original_memory_as_a_seed_snapshot(mock_run_training_loop, tmp_path):
+    memory_dir(tmp_path).mkdir(parents=True)
+    (memory_dir(tmp_path) / "notes.md").write_text("original seed")
+
+    def fake_train(repo_path, feedback, memory_dir, model, iterations=1):
+        Path(memory_dir, "notes.md").write_text("overwritten by training")
+
+    mock_run_training_loop.side_effect = fake_train
+
+    run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None)
+
+    assert (memory_dir(tmp_path) / "notes.md").read_text() == "overwritten by training"
+    assert (tmp_path / "memory_seed" / "notes.md").read_text() == "original seed"
+
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.run_training_loop")
 def test_loop_carries_memory_forward_between_rounds(mock_run_training_loop, tmp_path):
     seen_memory_dirs = []
 
@@ -426,6 +431,6 @@ def test_loop_carries_memory_forward_between_rounds(mock_run_training_loop, tmp_
     task.run.side_effect = fake_run
     task.build_feedback.return_value = "feedback text"
 
-    run_train_eval_loop("/repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
+    run_train_eval_loop("/repo", "/eval_repo", tmp_path, "azure-openai/gpt-4o", task, max_rounds=5)
 
     assert (memory_dir(tmp_path) / "notes.md").read_text() == "round 2 progress"

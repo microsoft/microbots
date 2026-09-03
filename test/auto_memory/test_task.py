@@ -13,6 +13,10 @@ from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome, EvalTask
 class _RunOnlyTask(EvalTask):
     """A task that overrides only run()/build_feedback(), never touching the optional hooks."""
 
+    @classmethod
+    def from_config(cls, task_args):
+        return [cls()]
+
     def run(self, repo_path, memory_dir, model, log_path):
         return EvalOutcome(
             passed=True,
@@ -33,11 +37,34 @@ def test_run_is_abstract():
 @pytest.mark.unit
 def test_build_feedback_is_abstract():
     class _MissingBuildFeedback(EvalTask):
+        @classmethod
+        def from_config(cls, task_args):
+            return [cls()]
+
         def run(self, repo_path, memory_dir, model, log_path):
             raise NotImplementedError
 
     with pytest.raises(TypeError):
         _MissingBuildFeedback()
+
+
+@pytest.mark.unit
+def test_from_config_is_abstract():
+    class _MissingFromConfig(EvalTask):
+        def run(self, repo_path, memory_dir, model, log_path):
+            raise NotImplementedError
+
+        def build_feedback(self, outcome, repo_path, model, log_path):
+            raise NotImplementedError
+
+    with pytest.raises(TypeError):
+        _MissingFromConfig()
+
+
+@pytest.mark.unit
+def test_from_config_default_body_raises_not_implemented_error():
+    with pytest.raises(NotImplementedError):
+        EvalTask.from_config({})
 
 
 @pytest.mark.unit

@@ -13,8 +13,9 @@ import yaml
 WORKDIR_NAME = "workdir"
 CONFIG_FILENAME = "config.yaml"
 REPO_DIRNAME = "repo"
-RUN_LOG_FILENAME = "run.log"
+EVAL_REPO_DIRNAME = "eval_repo"
 MEMORY_DIRNAME = "memory"
+MEMORY_SEED_DIRNAME = "memory_seed"
 ROUNDS_DIRNAME = "rounds"
 ROUND_LOG_FILENAME = "round.log"
 ROUND_PATCH_FILENAME = "repo.patch"
@@ -96,6 +97,13 @@ def load_config(workdir: Path) -> dict:
 def repo_dir(workdir: Path) -> Path:
     """Return the path to the single cloned repo shared across rounds.
 
+    Used only for training (both train-only mode and the eval loop's
+    retrain step): a persistent checkout that stays in place across
+    rounds. Eval tasks that manage their own repo checkout (e.g.
+    ``SweBenchVerifiedTask``, which clones a different repo/commit per
+    dataset instance) use ``eval_repo_dir`` instead, so the two never
+    collide.
+
     Parameters
     ----------
     workdir : Path
@@ -109,8 +117,14 @@ def repo_dir(workdir: Path) -> Path:
     return workdir / REPO_DIRNAME
 
 
-def run_log_path(workdir: Path) -> Path:
-    """Return the path to the top-level orchestrator log.
+def eval_repo_dir(workdir: Path) -> Path:
+    """Return the path to the repo an eval task clones/manages itself.
+
+    Kept separate from ``repo_dir`` (the training repo) because a
+    task's ``setup`` may clone or reset this directory every round
+    (e.g. ``SweBenchVerifiedTask`` checks out a different repo/commit
+    per dataset instance), which would otherwise conflict with the
+    persistent training checkout at ``repo_dir``.
 
     Parameters
     ----------
@@ -120,9 +134,9 @@ def run_log_path(workdir: Path) -> Path:
     Returns
     -------
     Path
-        ``workdir/run.log``.
+        ``workdir/eval_repo``.
     """
-    return workdir / RUN_LOG_FILENAME
+    return workdir / EVAL_REPO_DIRNAME
 
 
 def memory_dir(workdir: Path) -> Path:
@@ -139,6 +153,42 @@ def memory_dir(workdir: Path) -> Path:
         ``workdir/memory``.
     """
     return workdir / MEMORY_DIRNAME
+
+
+def snapshot_seed_memory(workdir: Path) -> Path:
+    """Snapshot the current top-level memory dir as the run's restorable baseline.
+
+    ``memory_dir`` is shared and mutated in place across every
+    training/eval round and every eval task instance (so later
+    instances benefit from what earlier ones learned), which means the
+    original, pre-run memory is otherwise overwritten and lost with no
+    way to get back to it. Call this once, before anything trains,
+    to preserve that original state at ``workdir/memory_seed``. A
+    no-op if a snapshot already exists, so later calls (e.g. once per
+    eval task instance in the same run) never clobber the very first
+    snapshot with already-mutated memory.
+
+    Parameters
+    ----------
+    workdir : Path
+        The run's workdir.
+
+    Returns
+    -------
+    Path
+        ``workdir/memory_seed``, containing a copy of whatever
+        ``memory_dir`` held the first time this was called (or empty,
+        if there was no pre-existing memory).
+    """
+    dst = workdir / MEMORY_SEED_DIRNAME
+    if dst.exists():
+        return dst
+    src = memory_dir(workdir)
+    if src.is_dir():
+        shutil.copytree(src, dst)
+    else:
+        dst.mkdir(parents=True, exist_ok=True)
+    return dst
 
 
 def round_dir(

@@ -19,6 +19,10 @@ class _DummyTask(EvalTask):
     def __init__(self, value=None):
         self.value = value
 
+    @classmethod
+    def from_config(cls, task_args):
+        return [cls(**task_args)]
+
     def setup(self, repo_path):
         pass
 

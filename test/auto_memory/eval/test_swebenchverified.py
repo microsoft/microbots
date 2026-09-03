@@ -114,7 +114,7 @@ def test_dataset_rows_are_cached_across_repeated_calls(mock_load_dataset):
 
 
 # ---------------------------------------------------------------------------
-# SweBenchVerifiedTask.setup / build_prompt / teardown
+# SweBenchVerifiedTask.setup / build_prompt
 # ---------------------------------------------------------------------------
 
 def _instance():
@@ -128,14 +128,75 @@ def _instance():
 
 @pytest.mark.unit
 @patch(f"{MODULE}.subprocess.run")
-def test_setup_clones_and_checks_out_base_commit(mock_run):
+def test_setup_clones_and_checks_out_base_commit_when_repo_missing(mock_run, tmp_path):
+    repo_path = tmp_path / "repo"
     task = SweBenchVerifiedTask(_instance())
-    task.setup("/repo")
+    task.setup(str(repo_path))
 
     clone_call, checkout_call = mock_run.call_args_list
-    assert clone_call.args[0] == ["git", "clone", "https://github.com/django/django.git", "/repo"]
+    assert clone_call.args[0] == [
+        "git", "clone", "https://github.com/django/django.git", str(repo_path)
+    ]
     assert checkout_call.args[0] == ["git", "checkout", "abc123"]
-    assert checkout_call.kwargs["cwd"] == "/repo"
+    assert checkout_call.kwargs["cwd"] == str(repo_path)
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_setup_resets_instead_of_recloning_when_origin_matches(mock_run, tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    mock_run.return_value = MagicMock(
+        returncode=0, stdout="https://github.com/django/django.git\n"
+    )
+    task = SweBenchVerifiedTask(_instance())
+    task.setup(str(repo_path))
+
+    origin_call, reset_call, clean_call = mock_run.call_args_list
+    assert origin_call.args[0] == ["git", "remote", "get-url", "origin"]
+    assert origin_call.kwargs["cwd"] == str(repo_path)
+    assert reset_call.args[0] == ["git", "reset", "--hard", "abc123"]
+    assert reset_call.kwargs["cwd"] == str(repo_path)
+    assert clean_call.args[0] == ["git", "clean", "-fd"]
+    assert clean_call.kwargs["cwd"] == str(repo_path)
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_setup_removes_and_reclones_when_origin_mismatched(mock_run, tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / "stale_file.txt").write_text("leftover from a different repo")
+    mock_run.return_value = MagicMock(
+        returncode=0, stdout="https://github.com/other/repo.git\n"
+    )
+    task = SweBenchVerifiedTask(_instance())
+    task.setup(str(repo_path))
+
+    assert not (repo_path / "stale_file.txt").exists()
+    origin_call, clone_call, checkout_call = mock_run.call_args_list
+    assert origin_call.args[0] == ["git", "remote", "get-url", "origin"]
+    assert clone_call.args[0] == [
+        "git", "clone", "https://github.com/django/django.git", str(repo_path)
+    ]
+    assert checkout_call.args[0] == ["git", "checkout", "abc123"]
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_setup_removes_and_reclones_when_repo_path_not_a_git_repo(mock_run, tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    mock_run.return_value = MagicMock(returncode=128, stdout="")
+    task = SweBenchVerifiedTask(_instance())
+    task.setup(str(repo_path))
+
+    assert not repo_path.exists()
+    origin_call, clone_call, checkout_call = mock_run.call_args_list
+    assert origin_call.args[0] == ["git", "remote", "get-url", "origin"]
+    assert clone_call.args[0] == [
+        "git", "clone", "https://github.com/django/django.git", str(repo_path)
+    ]
 
 
 @pytest.mark.unit
@@ -166,15 +227,6 @@ def test_build_result_includes_dataset_fields():
         "repo": "django/django",
         "base_commit": "abc123",
     }
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.subprocess.run")
-def test_teardown_removes_repo_path(mock_run):
-    task = SweBenchVerifiedTask(_instance())
-    task.teardown("/repo")
-
-    mock_run.assert_called_once_with(["rm", "-rf", "/repo"], check=False)
 
 
 # ---------------------------------------------------------------------------
@@ -270,10 +322,15 @@ def _make_fake_subprocess_run(resolved: bool, raise_on_harness: bool = False):
             if raise_on_harness:
                 raise RuntimeError("harness crashed")
             run_id = cmd[cmd.index("--run_id") + 1]
-            report_dir = kwargs["cwd"]
+            report_dir = Path(kwargs["cwd"])
             instance_id = cmd[cmd.index("--instance_ids") + 1]
-            report = {"resolved_ids": [instance_id] if resolved else []}
-            (Path(report_dir) / f"microbots-eval-agent.{run_id}.json").write_text(json.dumps(report))
+            instance_log_dir = (
+                report_dir / "logs" / "run_evaluation" / run_id
+                / "microbots-eval-agent" / instance_id
+            )
+            instance_log_dir.mkdir(parents=True)
+            report = {instance_id: {"resolved": resolved}}
+            (instance_log_dir / "report.json").write_text(json.dumps(report))
             return MagicMock(stdout="harness ran\n", stderr="", returncode=0)
         return MagicMock(stdout="", stderr="", returncode=0)
 
@@ -282,7 +339,7 @@ def _make_fake_subprocess_run(resolved: bool, raise_on_harness: bool = False):
 
 @pytest.mark.unit
 @patch(f"{MODULE}.subprocess.run")
-def test_check_passed_true_when_instance_in_resolved_ids(mock_run, tmp_path):
+def test_check_passed_true_when_report_marks_resolved(mock_run, tmp_path):
     mock_run.side_effect = _make_fake_subprocess_run(resolved=True)
     log_path = tmp_path / "check.log"
     log_path.write_text("")
@@ -296,7 +353,7 @@ def test_check_passed_true_when_instance_in_resolved_ids(mock_run, tmp_path):
 
 @pytest.mark.unit
 @patch(f"{MODULE}.subprocess.run")
-def test_check_passed_false_when_instance_not_in_resolved_ids(mock_run, tmp_path):
+def test_check_passed_false_when_report_marks_not_resolved(mock_run, tmp_path):
     mock_run.side_effect = _make_fake_subprocess_run(resolved=False)
     log_path = tmp_path / "check.log"
     log_path.write_text("")
@@ -343,6 +400,44 @@ def test_check_appends_to_log_file_without_truncating_existing_content(mock_run,
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_check_appends_instance_log_and_test_output_when_present(mock_run, tmp_path):
+    def _fake_run(cmd, **kwargs):
+        if cmd[:2] == ["git", "diff"]:
+            return MagicMock(stdout="diff", stderr="", returncode=0)
+        if "swebench.harness.run_evaluation" in cmd:
+            run_id = cmd[cmd.index("--run_id") + 1]
+            report_dir = Path(kwargs["cwd"])
+            instance_id = cmd[cmd.index("--instance_ids") + 1]
+
+            instance_log_dir = (
+                report_dir / "logs" / "run_evaluation" / run_id
+                / "microbots-eval-agent" / instance_id
+            )
+            instance_log_dir.mkdir(parents=True)
+            report = {instance_id: {"resolved": True}}
+            (instance_log_dir / "report.json").write_text(json.dumps(report))
+            (instance_log_dir / "run_instance.log").write_text("build+test steps")
+            (instance_log_dir / "test_output.txt").write_text("FAILED test_foo")
+
+            return MagicMock(stdout="harness ran\n", stderr="", returncode=0)
+        return MagicMock(stdout="", stderr="", returncode=0)
+
+    mock_run.side_effect = _fake_run
+    log_path = tmp_path / "check.log"
+    log_path.write_text("")
+
+    task = SweBenchVerifiedTask(_instance())
+    task.check("/repo", "agent output", str(log_path))
+
+    content = log_path.read_text()
+    assert "run_instance.log" in content
+    assert "build+test steps" in content
+    assert "test_output.txt" in content
+    assert "FAILED test_foo" in content
+
+
+@pytest.mark.unit
 @patch(f"{MODULE}.shutil.rmtree")
 @patch(f"{MODULE}.subprocess.run")
 def test_check_cleans_up_pred_path_and_report_dir_on_success(mock_run, mock_rmtree, tmp_path):
@@ -378,7 +473,7 @@ def test_check_cleans_up_even_when_harness_raises(mock_run, mock_rmtree, tmp_pat
 @pytest.mark.unit
 @patch(f"{MODULE}.MemoryTool")
 @patch(f"{MODULE}.WritingBot")
-def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock_memory_tool, tmp_path):
+def test_run_calls_setup_build_prompt_check_in_order(mock_bot_cls, mock_memory_tool, tmp_path):
     from microbots.MicroBot import BotRunResult
 
     mock_bot = MagicMock()
@@ -393,13 +488,11 @@ def test_run_calls_setup_build_prompt_check_teardown_in_order(mock_bot_cls, mock
         calls.append(("check", repo_path, agent_output, log_path))
         or CallbackResult(passed=True, reason="ok")
     )
-    task.teardown = lambda repo_path: calls.append(("teardown", repo_path))
 
     outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
     assert calls[0] == ("setup", "/repo")
     assert calls[1] == ("check", "/repo", "agent did stuff", str(tmp_path / "eval.log"))
-    assert calls[2] == ("teardown", "/repo")
     assert outcome.passed is True
     assert outcome.output == "agent did stuff"
 
@@ -417,7 +510,6 @@ def test_run_creates_log_file_before_check_is_called(mock_bot_cls, mock_memory_t
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
     task.build_prompt = lambda: "do the task"
-    task.teardown = lambda repo_path: None
     seen_log_exists = {}
 
     def _check(repo_path, agent_output, log_path):
@@ -446,7 +538,6 @@ def test_run_skips_check_when_bot_status_is_false(mock_bot_cls, mock_memory_tool
     task.setup = lambda repo_path: None
     task.build_prompt = lambda: "do the task"
     task.check = lambda *a: check_calls.append(a)
-    task.teardown = lambda repo_path: None
 
     outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
 
@@ -461,7 +552,6 @@ def test_run_skips_check_when_bot_status_is_false(mock_bot_cls, mock_memory_tool
 def test_run_converts_build_prompt_exception_to_failed_outcome(mock_bot_cls, mock_memory_tool, tmp_path):
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
-    task.teardown = lambda repo_path: None
 
     def _build_prompt():
         raise ValueError("bad prompt")
@@ -489,7 +579,6 @@ def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memor
     task = SweBenchVerifiedTask(_instance())
     task.setup = lambda repo_path: None
     task.build_prompt = lambda: "do the task"
-    task.teardown = lambda repo_path: None
 
     def _check(repo_path, agent_output, log_path):
         raise RuntimeError("check exploded")
@@ -500,51 +589,6 @@ def test_run_converts_check_exception_to_failed_outcome(mock_bot_cls, mock_memor
 
     assert outcome.passed is False
     assert "check exploded" in outcome.result.reason
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.MemoryTool")
-@patch(f"{MODULE}.WritingBot")
-def test_run_still_calls_teardown_when_body_raises(mock_bot_cls, mock_memory_tool, tmp_path):
-    mock_bot_cls.side_effect = RuntimeError("bot construction failed")
-
-    task = SweBenchVerifiedTask(_instance())
-    teardown_calls = []
-    task.setup = lambda repo_path: None
-    task.build_prompt = lambda: "do the task"
-    task.teardown = lambda repo_path: teardown_calls.append(repo_path)
-
-    task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
-
-    assert teardown_calls == ["/repo"]
-
-
-@pytest.mark.unit
-@patch(f"{MODULE}.MemoryTool")
-@patch(f"{MODULE}.WritingBot")
-def test_run_teardown_exception_does_not_clobber_returned_outcome(mock_bot_cls, mock_memory_tool, tmp_path):
-    from microbots.MicroBot import BotRunResult
-
-    mock_bot = MagicMock()
-    mock_bot.run.return_value = BotRunResult(status=True, result="output", error=None)
-    mock_bot_cls.return_value = mock_bot
-
-    task = SweBenchVerifiedTask(_instance())
-    task.setup = lambda repo_path: None
-    task.build_prompt = lambda: "do the task"
-    task.check = lambda repo_path, agent_output, log_path: CallbackResult(passed=True, reason="ok")
-
-    def _teardown(repo_path):
-        raise RuntimeError("teardown boom")
-
-    task.teardown = _teardown
-
-    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
-
-    # teardown() raised, but the already-computed EvalOutcome must still be returned
-    assert outcome.passed is True
-
-
 
 
 # ---------------------------------------------------------------------------

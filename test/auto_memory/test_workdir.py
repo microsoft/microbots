@@ -12,6 +12,7 @@ from microbots.auto_memory.workdir import (
     eval_dir,
     eval_log_path,
     eval_patch_path,
+    eval_repo_dir,
     eval_result_path,
     load_config,
     load_round_memory,
@@ -22,8 +23,8 @@ from microbots.auto_memory.workdir import (
     round_dir,
     round_log_path,
     round_memory_dir,
-    run_log_path,
     save_round_memory,
+    snapshot_seed_memory,
 )
 
 
@@ -105,6 +106,41 @@ def test_save_round_memory_overwrites_stale_top_level_files(tmp_path):
 
 
 @pytest.mark.unit
+def test_snapshot_seed_memory_creates_empty_dir_when_no_top_level_memory(tmp_path):
+    result = snapshot_seed_memory(tmp_path)
+
+    assert result == tmp_path / "memory_seed"
+    assert result.is_dir()
+    assert list(result.iterdir()) == []
+
+
+@pytest.mark.unit
+def test_snapshot_seed_memory_copies_current_top_level_memory(tmp_path):
+    top_memory = memory_dir(tmp_path)
+    top_memory.mkdir(parents=True)
+    (top_memory / "notes.md").write_text("original seed")
+
+    result = snapshot_seed_memory(tmp_path)
+
+    assert (result / "notes.md").read_text() == "original seed"
+
+
+@pytest.mark.unit
+def test_snapshot_seed_memory_is_a_noop_once_a_snapshot_exists(tmp_path):
+    top_memory = memory_dir(tmp_path)
+    top_memory.mkdir(parents=True)
+    (top_memory / "notes.md").write_text("original seed")
+    snapshot_seed_memory(tmp_path)
+
+    # Mutate top-level memory as later rounds/instances would.
+    (top_memory / "notes.md").write_text("overwritten by later training")
+
+    result = snapshot_seed_memory(tmp_path)
+
+    assert (result / "notes.md").read_text() == "original seed"
+
+
+@pytest.mark.unit
 def test_resolve_workdir_defaults_to_cwd(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
@@ -135,8 +171,8 @@ def test_repo_dir_returns_workdir_repo(tmp_path):
 
 
 @pytest.mark.unit
-def test_run_log_path_returns_workdir_run_log(tmp_path):
-    assert run_log_path(tmp_path) == tmp_path / "run.log"
+def test_eval_repo_dir_returns_workdir_eval_repo(tmp_path):
+    assert eval_repo_dir(tmp_path) == tmp_path / "eval_repo"
 
 
 @pytest.mark.unit

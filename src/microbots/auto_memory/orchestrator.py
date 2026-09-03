@@ -15,11 +15,13 @@ from microbots.auto_memory.evalTask import EvalOutcome, EvalTask
 from microbots.auto_memory.training.runner import run_training
 from microbots.auto_memory.workdir import (
     eval_log_path,
+    eval_repo_dir,
     eval_result_path,
     load_config,
     load_round_memory,
     repo_dir,
     save_round_memory,
+    snapshot_seed_memory,
 )
 
 logger = getLogger(__name__)
@@ -59,24 +61,6 @@ def clone_repo(url: str, repo_path: Path) -> None:
     if repo_path.exists():
         return
     subprocess.run(["git", "clone", url, str(repo_path)], check=True)
-
-def reset_repo(repo_path: Path, base_commit: str) -> None:
-    """Reset ``repo_path`` to ``base_commit``, discarding all local changes.
-
-    Runs ``git reset --hard <base_commit>`` followed by ``git clean -fd``,
-    so every round/instance starts from the same pristine state instead
-    of carrying forward whatever a previous round or eval attempt left
-    behind.
-
-    Parameters
-    ----------
-    repo_path : Path
-        Path to the repo to reset.
-    base_commit : str
-        Commit-ish to reset to.
-    """
-    subprocess.run(["git", "reset", "--hard", base_commit], cwd=repo_path, check=True)
-    subprocess.run(["git", "clean", "-fd"], cwd=repo_path, check=True)
 
 def write_eval_result(workdir: Path, round_num: int, task: EvalTask, outcome: EvalOutcome) -> None:
     """Write a round's eval result to ``result.json``.
@@ -141,7 +125,8 @@ def run_training_loop(
         )
 
 def run_train_eval_loop(
-    repo_path: str,
+    training_repo_path: str,
+    eval_repo_path: str,
     workdir: Path,
     model: str,
     task: EvalTask,
@@ -168,8 +153,15 @@ def run_train_eval_loop(
 
     Parameters
     ----------
-    repo_path : str
-        Absolute path to the repo to evaluate and train against.
+    training_repo_path : str
+        Absolute path to the persistent repo checkout used only for
+        retraining (``run_training_loop``). Kept separate from
+        ``eval_repo_path`` since the task manages the latter's
+        lifecycle itself (clone/teardown each round).
+    eval_repo_path : str
+        Absolute path to the repo the task clones/manages itself (via
+        its own ``setup``) and runs/checks the agent against each
+        round.
     workdir : Path
         This run's workdir, used to carry memory forward between rounds
         (see ``microbots.auto_memory.workdir``).
@@ -197,7 +189,7 @@ def run_train_eval_loop(
         )
         memory_dir = str(load_round_memory(workdir, round_idx, instance_id=task.task_id))
         log_path = str(eval_log_path(workdir, round_idx, task.task_id))
-        outcome = task.run(repo_path, memory_dir, model, log_path)
+        outcome = task.run(eval_repo_path, memory_dir, model, log_path)
         outcomes.append(outcome)
 
         try:
@@ -218,9 +210,9 @@ def run_train_eval_loop(
                 outcome.result.reason,
             )
             try:
-                feedback = task.build_feedback(outcome, repo_path, model, log_path)
+                feedback = task.build_feedback(outcome, eval_repo_path, model, log_path)
                 run_training_loop(
-                    repo_path=repo_path,
+                    repo_path=training_repo_path,
                     feedback=feedback,
                     memory_dir=memory_dir,
                     model=model,
@@ -290,14 +282,16 @@ def run(
     if repo_url:
         clone_repo(repo_url, repo_dir(workdir))
 
-    repo_path = str(repo_dir(workdir))
+    snapshot_seed_memory(workdir)
+
+    training_repo_path = str(repo_dir(workdir))
 
     if task is None:
         # Train-only mode has no rounds of its own; round 1 is just a
         # scratch dir seeded from (and saved back to) top-level memory.
         memory_dir = str(load_round_memory(workdir, 1))
         run_training_loop(
-            repo_path=repo_path,
+            repo_path=training_repo_path,
             feedback="",
             memory_dir=memory_dir,
             model=model,
@@ -307,7 +301,8 @@ def run(
         return None
 
     return run_train_eval_loop(
-        repo_path=repo_path,
+        training_repo_path=training_repo_path,
+        eval_repo_path=str(eval_repo_dir(workdir)),
         workdir=workdir,
         model=model,
         task=task,

@@ -54,32 +54,10 @@ def _load_dataset_rows(dataset_name: str):
     return load_dataset(dataset_name, split="test")
 
 
-@dataclass
-class SweBenchInstance:
-    """A single SWE-bench-verified dataset row.
-
-    Attributes
-    ----------
-    instance_id : str
-        Unique identifier for the instance, e.g. ``"django__django-11099"``.
-    repo : str
-        The GitHub repo this instance belongs to, e.g. ``"django/django"``.
-    base_commit : str
-        Commit hash representing the repo state before the issue's fix.
-    problem_statement : str
-        The GitHub issue title and body describing the bug to fix.
-    """
-
-    instance_id: str
-    repo: str
-    base_commit: str
-    problem_statement: str
-
-
 def load_instances_of_repo(
     dataset_name: str = SWE_BENCH_VERIFIED,
     repo: str | None = None,
-) -> list[SweBenchInstance]:
+) -> list["SweBenchInstance"]:
     """Load all dataset instances, optionally filtered to a single repo.
 
     Parameters
@@ -110,7 +88,7 @@ def load_instances_of_repo(
     ]
     return instances
 
-def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_VERIFIED) -> SweBenchInstance:
+def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_VERIFIED) -> "SweBenchInstance":
     """Load a single dataset instance by its instance ID.
 
     Parameters
@@ -142,6 +120,27 @@ def load_instance_using_id(instance_id: str, dataset_name: str = SWE_BENCH_VERIF
                 problem_statement=row["problem_statement"],
             )
     raise ValueError(f"instance_id not found: {instance_id}")
+
+@dataclass
+class SweBenchInstance:
+    """A single SWE-bench-verified dataset row.
+
+    Attributes
+    ----------
+    instance_id : str
+        Unique identifier for the instance, e.g. ``"django__django-11099"``.
+    repo : str
+        The GitHub repo this instance belongs to, e.g. ``"django/django"``.
+    base_commit : str
+        Commit hash representing the repo state before the issue's fix.
+    problem_statement : str
+        The GitHub issue title and body describing the bug to fix.
+    """
+
+    instance_id: str
+    repo: str
+    base_commit: str
+    problem_statement: str
 
 @register_task("swebenchverified")
 class SweBenchVerifiedTask(EvalTask):
@@ -225,17 +224,48 @@ class SweBenchVerifiedTask(EvalTask):
         }
 
     def setup(self, repo_path: str) -> None:
-        """Clone the instance's repo and check out its base commit.
+        """Clone the instance's repo, or reset it, to its base commit.
+
+        Clones fresh on first use. If ``repo_path`` already exists
+        (e.g. left behind by a previous round) *and* its ``origin``
+        remote matches this instance's repo, it's reset instead of
+        re-cloned: ``git reset --hard <base_commit>`` followed by
+        ``git clean -fd`` discards whatever the agent changed, without
+        the cost of a full re-clone and without deleting the directory
+        ``build_feedback`` may still need to inspect afterward. If
+        ``repo_path`` exists but isn't a checkout of this repo (e.g. a
+        stale directory left over from a different run/task), it's
+        removed and cloned fresh instead, to avoid silently operating
+        on the wrong codebase.
 
         Parameters
         ----------
         repo_path : str
-            Absolute path to clone the repo into.
+            Absolute path to clone (or reset) the repo into.
         """
-        subprocess.run(
-            ["git", "clone", f"https://github.com/{self.instance.repo}.git", repo_path],
-            check=True,
-        )
+        expected_url = f"https://github.com/{self.instance.repo}.git"
+
+        if Path(repo_path).exists():
+            origin = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=repo_path, capture_output=True, text=True,
+            )
+            if origin.returncode == 0 and origin.stdout.strip() == expected_url:
+                subprocess.run(
+                    ["git", "reset", "--hard", self.instance.base_commit],
+                    cwd=repo_path, check=True,
+                )
+                subprocess.run(["git", "clean", "-fd"], cwd=repo_path, check=True)
+                return
+
+            logger.warning(
+                "SweBenchVerifiedTask.setup: %s exists but isn't a checkout of %s "
+                "(origin=%r); removing and re-cloning",
+                repo_path, expected_url, origin.stdout.strip(),
+            )
+            shutil.rmtree(repo_path)
+
+        subprocess.run(["git", "clone", expected_url, repo_path], check=True)
         subprocess.run(
             ["git", "checkout", self.instance.base_commit], cwd=repo_path, check=True
         )
@@ -266,7 +296,10 @@ class SweBenchVerifiedTask(EvalTask):
             verification is based on the repo's git diff, not the
             agent's textual output.
         log_path : str
-            Path to a log file to append the harness's output to.
+            Path to a log file to append the harness's output to,
+            including the per-instance ``run_instance.log`` and
+            ``test_output.txt`` artifacts if the harness produced them
+            (read before the harness's ``report_dir`` is cleaned up).
 
         Returns
         -------
@@ -280,6 +313,8 @@ class SweBenchVerifiedTask(EvalTask):
         run_id = f"microbots-{uuid.uuid4().hex[:8]}"
         model_name_or_path = EVAL_AGENT_MODEL_NAME
         pred_path = Path(tempfile.mktemp(suffix=".json"))
+        #will need to update when upgraded to ~5.0.2 , removed this flag in the new version
+        #https://github.com/SWE-bench/SWE-bench/commit/e2c13307b6cf7764a50958b9c8bfbfb3f72cb70a
         report_dir = Path(tempfile.mkdtemp())
         pred_path.write_text(json.dumps([{
             "instance_id": self.instance.instance_id,
@@ -300,29 +335,28 @@ class SweBenchVerifiedTask(EvalTask):
                 capture_output=True, text=True,
                 cwd=report_dir,
             )
+            #need to update this instance_log_dir path when swebench is upgraded
+            instance_log_dir = (
+                report_dir / "logs" / "run_evaluation" / run_id
+                / model_name_or_path / self.instance.instance_id
+            )
             with open(log_path, "a") as f:
                 f.write(proc.stdout + proc.stderr)
+                for log_filename in ("run_instance.log", "test_output.txt"):
+                    log_file = instance_log_dir / log_filename
+                    if log_file.exists():
+                        f.write(f"\n--- {log_filename} ---\n{log_file.read_text()}\n")
 
-            report_file = report_dir / f"{model_name_or_path}.{run_id}.json"
+            report_file = instance_log_dir / "report.json"
             passed = False
             if report_file.exists():
                 report = json.loads(report_file.read_text())
-                passed = self.instance.instance_id in report.get("resolved_ids", [])
+                passed = report.get(self.instance.instance_id, {}).get("resolved", False)
         finally:
             pred_path.unlink(missing_ok=True)
             shutil.rmtree(report_dir, ignore_errors=True)
 
         return CallbackResult(passed=passed, reason="resolved" if passed else "not resolved")
-
-    def teardown(self, repo_path: str) -> None:
-        """Remove the cloned repo working directory.
-
-        Parameters
-        ----------
-        repo_path : str
-            Absolute path to the repo cloned by ``setup``.
-        """
-        subprocess.run(["rm", "-rf", repo_path], check=False)
 
     def build_feedback(self, outcome: EvalOutcome, repo_path: str, model: str, log_path: str) -> str:
         """Analyze a failed round's log via ``LogAnalysisBot`` for training feedback.
@@ -370,7 +404,7 @@ class SweBenchVerifiedTask(EvalTask):
         )
 
     def run(self, repo_path: str, memory_dir: str, model: str, log_path: str) -> EvalOutcome:
-        """Run one eval iteration: setup -> build_prompt -> WritingBot -> check -> teardown.
+        """Run one eval iteration: setup -> build_prompt -> WritingBot -> check.
 
         Parameters
         ----------
@@ -396,48 +430,42 @@ class SweBenchVerifiedTask(EvalTask):
         Path(log_path).write_text("")
 
         try:
-            try:
-                prompt = self.build_prompt()
-                bot = WritingBot(
-                    model=model,
-                    folder_to_mount=repo_path,
-                    additional_tools=[MemoryTool(memory_dir=memory_dir)],
-                )
-                bot_result = bot.run(prompt)
+            prompt = self.build_prompt()
+            bot = WritingBot(
+                model=model,
+                folder_to_mount=repo_path,
+                additional_tools=[MemoryTool(memory_dir=memory_dir)],
+            )
+            bot_result = bot.run(prompt)
 
+            with open(log_path, "a") as f:
+                f.write(f"Agent output:\n{bot_result.result}\n")
+
+            if not bot_result.status:
+                reason = f"Bot run failed: {bot_result.error}"
                 with open(log_path, "a") as f:
-                    f.write(f"Agent output:\n{bot_result.result}\n")
+                    f.write(f"\n{reason}\n")
+                result = CallbackResult(passed=False, reason=reason)
+            else:
+                result = self.check(repo_path, bot_result.result or "", log_path)
 
-                if not bot_result.status:
-                    reason = f"Bot run failed: {bot_result.error}"
-                    with open(log_path, "a") as f:
-                        f.write(f"\n{reason}\n")
-                    result = CallbackResult(passed=False, reason=reason)
-                else:
-                    result = self.check(repo_path, bot_result.result or "", log_path)
-
-                return EvalOutcome(
-                    passed=result.passed,
-                    output=bot_result.result,
-                    result=result,
-                )
-            except Exception as exc:
-                logger.exception(
-                    "SweBenchVerifiedTask.run: iteration raised %s", type(exc).__name__
-                )
-                with open(log_path, "a") as f:
-                    f.write(f"\nException during eval iteration: {type(exc).__name__}: {exc}\n")
-                return EvalOutcome(
-                    passed=False,
-                    output=None,
-                    result=CallbackResult(
-                        passed=False, reason=f"{type(exc).__name__}: {exc}"
-                    ),
-                )
-        finally:
-            try:
-                self.teardown(repo_path)
-            except Exception:
-                logger.exception("SweBenchVerifiedTask.run: teardown() raised exception; ignoring")
+            return EvalOutcome(
+                passed=result.passed,
+                output=bot_result.result,
+                result=result,
+            )
+        except Exception as exc:
+            logger.exception(
+                "SweBenchVerifiedTask.run: iteration raised %s", type(exc).__name__
+            )
+            with open(log_path, "a") as f:
+                f.write(f"\nException during eval iteration: {type(exc).__name__}: {exc}\n")
+            return EvalOutcome(
+                passed=False,
+                output=None,
+                result=CallbackResult(
+                    passed=False, reason=f"{type(exc).__name__}: {exc}"
+                ),
+            )
 
 
