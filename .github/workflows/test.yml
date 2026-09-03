@@ -165,7 +165,7 @@ jobs:
 
       - name: Install package in development mode
         run: |
-          pip install -e .
+          pip install -e ".[training]"
 
       - name: Install GitHub Copilot SDK dependencies for GHCP tests
         if: matrix.test-type == 'ghcp'
