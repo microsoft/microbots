@@ -71,6 +71,24 @@ def test_load_round_memory_copies_top_level_memory_into_round(tmp_path):
 
 
 @pytest.mark.unit
+def test_load_round_memory_discards_stale_files_left_in_round_dir(tmp_path):
+    # Simulate a previous crashed/re-run attempt at this same round that
+    # left behind a file no longer present in top-level memory.
+    round_memory = round_memory_dir(tmp_path, 1)
+    round_memory.mkdir(parents=True)
+    (round_memory / "stale.md").write_text("leftover from a crashed attempt")
+
+    top_memory = memory_dir(tmp_path)
+    top_memory.mkdir(parents=True)
+    (top_memory / "notes.md").write_text("current memory")
+
+    result = load_round_memory(tmp_path, 1)
+
+    assert (result / "notes.md").read_text() == "current memory"
+    assert not (result / "stale.md").exists()
+
+
+@pytest.mark.unit
 def test_save_round_memory_creates_empty_dir_when_no_round_memory(tmp_path):
     result = save_round_memory(tmp_path, 1)
 
@@ -103,6 +121,24 @@ def test_save_round_memory_overwrites_stale_top_level_files(tmp_path):
     save_round_memory(tmp_path, 1)
 
     assert (top_memory / "notes.md").read_text() == "new"
+
+
+@pytest.mark.unit
+def test_save_round_memory_propagates_deletions_to_top_level(tmp_path):
+    # The agent deleted a file during this round (e.g. via `memory
+    # delete`); the top level shouldn't resurrect it from a prior save.
+    top_memory = memory_dir(tmp_path)
+    top_memory.mkdir(parents=True)
+    (top_memory / "stale.md").write_text("no longer relevant")
+
+    round_memory = round_memory_dir(tmp_path, 1)
+    round_memory.mkdir(parents=True)
+    (round_memory / "notes.md").write_text("kept")
+
+    save_round_memory(tmp_path, 1)
+
+    assert not (top_memory / "stale.md").exists()
+    assert (top_memory / "notes.md").read_text() == "kept"
 
 
 @pytest.mark.unit

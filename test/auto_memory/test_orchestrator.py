@@ -49,6 +49,17 @@ def _make_task() -> MagicMock:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("max_rounds", [0, -1])
+def test_loop_raises_for_non_positive_max_rounds(max_rounds):
+    task = _make_task()
+
+    with pytest.raises(ValueError, match="max_rounds must be >= 1"):
+        run_train_eval_loop("/repo", "/eval_repo", Path("/workdir"), "azure-openai/gpt-4o", task, max_rounds=max_rounds)
+
+    task.run.assert_not_called()
+
+
+@pytest.mark.unit
 @patch("microbots.auto_memory.orchestrator.run_training_loop")
 def test_loop_returns_immediately_when_first_round_passes(mock_run_training_loop, tmp_path):
     task = _make_task()
@@ -248,13 +259,48 @@ def test_clone_repo_clones_when_missing(mock_run, tmp_path):
 
 @pytest.mark.unit
 @patch(f"{MODULE}.subprocess.run")
-def test_clone_repo_is_noop_when_already_present(mock_run, tmp_path):
+def test_clone_repo_is_noop_when_origin_matches(mock_run, tmp_path):
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
+    mock_run.return_value = MagicMock(returncode=0, stdout="https://example.com/repo.git\n")
 
     clone_repo("https://example.com/repo.git", repo_path)
 
-    mock_run.assert_not_called()
+    mock_run.assert_called_once_with(
+        ["git", "remote", "get-url", "origin"],
+        cwd=repo_path, capture_output=True, text=True,
+    )
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_clone_repo_removes_and_reclones_when_origin_mismatched(mock_run, tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / "stale_marker.txt").write_text("leftover from a different repo")
+    mock_run.return_value = MagicMock(returncode=0, stdout="https://example.com/other-repo.git\n")
+
+    clone_repo("https://example.com/repo.git", repo_path)
+
+    assert not (repo_path / "stale_marker.txt").exists()
+    mock_run.assert_called_with(
+        ["git", "clone", "https://example.com/repo.git", str(repo_path)], check=True
+    )
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_clone_repo_removes_and_reclones_when_repo_path_not_a_git_repo(mock_run, tmp_path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    mock_run.return_value = MagicMock(returncode=128, stdout="")
+
+    clone_repo("https://example.com/repo.git", repo_path)
+
+    assert not repo_path.exists()
+    mock_run.assert_called_with(
+        ["git", "clone", "https://example.com/repo.git", str(repo_path)], check=True
+    )
 
 
 @pytest.mark.unit
@@ -304,9 +350,16 @@ def test_loop_writes_eval_result_for_every_round(tmp_path):
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_training_loop")
-def test_run_calls_run_training_loop_when_task_is_none(mock_run_training_loop, tmp_path):
-    result = run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None, training_iterations=2)
+def test_run_calls_run_training_loop_when_task_is_none(mock_run_training_loop, mock_clone_repo, tmp_path):
+    result = run(
+        workdir=tmp_path,
+        model="azure-openai/gpt-4o",
+        task=None,
+        training_iterations=2,
+        config={"repo": "https://example.com/repo.git"},
+    )
 
     mock_run_training_loop.assert_called_once_with(
         repo_path=str(tmp_path / "repo"),
@@ -319,8 +372,9 @@ def test_run_calls_run_training_loop_when_task_is_none(mock_run_training_loop, t
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_train_eval_loop")
-def test_run_calls_run_train_eval_loop_when_task_given(mock_run_train_eval_loop, tmp_path):
+def test_run_calls_run_train_eval_loop_when_task_given(mock_run_train_eval_loop, mock_clone_repo, tmp_path):
     fake_task = MagicMock()
     mock_run_train_eval_loop.return_value = "loop-result"
 
@@ -330,6 +384,7 @@ def test_run_calls_run_train_eval_loop_when_task_given(mock_run_train_eval_loop,
         task=fake_task,
         max_rounds=3,
         training_iterations=2,
+        config={"repo": "https://example.com/repo.git"},
     )
 
     mock_run_train_eval_loop.assert_called_once_with(
@@ -345,19 +400,35 @@ def test_run_calls_run_train_eval_loop_when_task_given(mock_run_train_eval_loop,
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_train_eval_loop")
 @patch(f"{MODULE}.run_training_loop")
-def test_run_does_not_call_eval_loop_when_task_is_none(mock_run_training_loop, mock_run_train_eval_loop, tmp_path):
-    run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None)
+def test_run_does_not_call_eval_loop_when_task_is_none(
+    mock_run_training_loop, mock_run_train_eval_loop, mock_clone_repo, tmp_path
+):
+    run(
+        workdir=tmp_path,
+        model="azure-openai/gpt-4o",
+        task=None,
+        config={"repo": "https://example.com/repo.git"},
+    )
 
     mock_run_train_eval_loop.assert_not_called()
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_train_eval_loop")
 @patch(f"{MODULE}.run_training_loop")
-def test_run_does_not_call_training_loop_when_task_given(mock_run_training_loop, mock_run_train_eval_loop, tmp_path):
-    run(workdir=tmp_path, model="azure-openai/gpt-4o", task=MagicMock())
+def test_run_does_not_call_training_loop_when_task_given(
+    mock_run_training_loop, mock_run_train_eval_loop, mock_clone_repo, tmp_path
+):
+    run(
+        workdir=tmp_path,
+        model="azure-openai/gpt-4o",
+        task=MagicMock(),
+        config={"repo": "https://example.com/repo.git"},
+    )
 
     mock_run_training_loop.assert_not_called()
 
@@ -376,28 +447,37 @@ def test_run_clones_repo_from_config_when_repo_url_given(mock_run_training_loop,
 @pytest.mark.unit
 @patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_training_loop")
-def test_run_does_not_clone_when_config_has_no_repo(mock_run_training_loop, mock_clone_repo, tmp_path):
-    run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None)
+def test_run_raises_when_config_has_no_repo(mock_run_training_loop, mock_clone_repo, tmp_path):
+    with pytest.raises(ValueError, match="repo"):
+        run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None, config={})
 
     mock_clone_repo.assert_not_called()
+    mock_run_training_loop.assert_not_called()
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_training_loop")
-def test_run_promotes_round1_memory_to_top_level_for_train_only_mode(mock_run_training_loop, tmp_path):
+def test_run_promotes_round1_memory_to_top_level_for_train_only_mode(mock_run_training_loop, mock_clone_repo, tmp_path):
     def fake_train(repo_path, feedback, memory_dir, model, iterations=1):
         Path(memory_dir, "notes.md").write_text("learned something")
 
     mock_run_training_loop.side_effect = fake_train
 
-    run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None)
+    run(
+        workdir=tmp_path,
+        model="azure-openai/gpt-4o",
+        task=None,
+        config={"repo": "https://example.com/repo.git"},
+    )
 
     assert (memory_dir(tmp_path) / "notes.md").read_text() == "learned something"
 
 
 @pytest.mark.unit
+@patch(f"{MODULE}.clone_repo")
 @patch(f"{MODULE}.run_training_loop")
-def test_run_preserves_original_memory_as_a_seed_snapshot(mock_run_training_loop, tmp_path):
+def test_run_preserves_original_memory_as_a_seed_snapshot(mock_run_training_loop, mock_clone_repo, tmp_path):
     memory_dir(tmp_path).mkdir(parents=True)
     (memory_dir(tmp_path) / "notes.md").write_text("original seed")
 
@@ -406,7 +486,12 @@ def test_run_preserves_original_memory_as_a_seed_snapshot(mock_run_training_loop
 
     mock_run_training_loop.side_effect = fake_train
 
-    run(workdir=tmp_path, model="azure-openai/gpt-4o", task=None)
+    run(
+        workdir=tmp_path,
+        model="azure-openai/gpt-4o",
+        task=None,
+        config={"repo": "https://example.com/repo.git"},
+    )
 
     assert (memory_dir(tmp_path) / "notes.md").read_text() == "overwritten by training"
     assert (tmp_path / "memory_seed" / "notes.md").read_text() == "original seed"

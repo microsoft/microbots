@@ -16,7 +16,6 @@ from functools import lru_cache
 from logging import getLogger
 from pathlib import Path
 
-from datasets import load_dataset
 from microbots.auto_memory.evalTask import CallbackResult, EvalOutcome, EvalTask
 from microbots.auto_memory.task_registry import register_task
 from microbots.bot.LogAnalysisBot import LogAnalysisBot
@@ -50,7 +49,20 @@ def _load_dataset_rows(dataset_name: str):
     -------
     datasets.Dataset
         The loaded ``test`` split.
+
+    Raises
+    ------
+    ImportError
+        If the optional ``datasets`` package (the ``training`` extra)
+        isn't installed.
     """
+    try:
+        from datasets import load_dataset
+    except ImportError as exc:
+        raise ImportError(
+            "SWE-bench-verified evaluation requires the 'training' extra: "
+            "pip install 'microbots[training]'"
+        ) from exc
     return load_dataset(dataset_name, split="test")
 
 
@@ -226,18 +238,6 @@ class SweBenchVerifiedTask(EvalTask):
     def setup(self, repo_path: str) -> None:
         """Clone the instance's repo, or reset it, to its base commit.
 
-        Clones fresh on first use. If ``repo_path`` already exists
-        (e.g. left behind by a previous round) *and* its ``origin``
-        remote matches this instance's repo, it's reset instead of
-        re-cloned: ``git reset --hard <base_commit>`` followed by
-        ``git clean -fd`` discards whatever the agent changed, without
-        the cost of a full re-clone and without deleting the directory
-        ``build_feedback`` may still need to inspect afterward. If
-        ``repo_path`` exists but isn't a checkout of this repo (e.g. a
-        stale directory left over from a different run/task), it's
-        removed and cloned fresh instead, to avoid silently operating
-        on the wrong codebase.
-
         Parameters
         ----------
         repo_path : str
@@ -283,9 +283,12 @@ class SweBenchVerifiedTask(EvalTask):
     def check(self, repo_path: str, agent_output: str, log_path: str) -> CallbackResult:
         """Verify the agent's patch using the SWE-bench evaluation harness.
 
-        Captures the agent's changes as a git diff, submits it as a
-        prediction to ``swebench.harness.run_evaluation``, and checks
-        whether the harness marked this instance as resolved.
+        Captures the agent's changes as a git diff (after marking any
+        untracked new files intent-to-add, so files the agent newly
+        created are included in the diff rather than silently
+        dropped), submits it as a prediction to
+        ``swebench.harness.run_evaluation``, and checks whether the
+        harness marked this instance as resolved.
 
         Parameters
         ----------
@@ -306,21 +309,31 @@ class SweBenchVerifiedTask(EvalTask):
         CallbackResult
             Whether the harness marked this instance as resolved.
         """
+        subprocess.run(
+            ["git", "add", "--intent-to-add", "."], cwd=repo_path, check=True
+        )
         diff = subprocess.run(
-            ["git", "diff"], cwd=repo_path, capture_output=True, text=True
+            ["git", "diff", "--binary"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
 
         run_id = f"microbots-{uuid.uuid4().hex[:8]}"
         model_name_or_path = EVAL_AGENT_MODEL_NAME
-        pred_path = Path(tempfile.mktemp(suffix=".json"))
         #will need to update when upgraded to ~5.0.2 , removed this flag in the new version
         #https://github.com/SWE-bench/SWE-bench/commit/e2c13307b6cf7764a50958b9c8bfbfb3f72cb70a
         report_dir = Path(tempfile.mkdtemp())
-        pred_path.write_text(json.dumps([{
-            "instance_id": self.instance.instance_id,
-            "model_patch": diff,
-            "model_name_or_path": model_name_or_path,
-        }]))
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as pred_file:
+            pred_path = Path(pred_file.name)
+            pred_file.write(json.dumps([{
+                "instance_id": self.instance.instance_id,
+                "model_patch": diff,
+                "model_name_or_path": model_name_or_path,
+            }]))
 
         try:
             proc = subprocess.run(
@@ -425,11 +438,11 @@ class SweBenchVerifiedTask(EvalTask):
             The result of this eval round, including the agent's output,
             the check verdict.
         """
-        self.setup(repo_path)
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
         Path(log_path).write_text("")
 
         try:
+            self.setup(repo_path)
             prompt = self.build_prompt()
             bot = WritingBot(
                 model=model,

@@ -250,7 +250,11 @@ def load_round_memory(workdir: Path, round_num: int, *, instance_id: str | None 
     """Copy the current top-level memory into this round's own memory dir.
 
     Called before a round's training pass, so it starts from whatever
-    memory the previous round left behind (or empty, on round 1).
+    memory the previous round left behind (or empty, on round 1). This
+    round's memory dir is replaced, not merged into: any stale files
+    left behind by a previous attempt at this same round (e.g. a
+    crashed/re-run process) are discarded first, so the round always
+    starts from an exact snapshot of the current top-level memory.
 
     Parameters
     ----------
@@ -269,9 +273,11 @@ def load_round_memory(workdir: Path, round_num: int, *, instance_id: str | None 
     """
     src = memory_dir(workdir)
     dst = round_memory_dir(workdir, round_num, instance_id=instance_id)
-    dst.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(dst, ignore_errors=True)
     if src.is_dir():
-        shutil.copytree(src, dst, dirs_exist_ok=True)
+        shutil.copytree(src, dst)
+    else:
+        dst.mkdir(parents=True, exist_ok=True)
     return dst
 
 
@@ -279,7 +285,10 @@ def save_round_memory(workdir: Path, round_num: int, *, instance_id: str | None 
     """Copy this round's memory back up to the top-level memory dir.
 
     Called after a round's training pass, so later rounds (and the
-    final saved memory) see what this round learned.
+    final saved memory) see what this round learned. The top-level
+    memory dir is replaced, not merged into: files the round deleted
+    (e.g. via the agent's ``memory delete`` command) are gone from
+    the top level too, instead of surviving from a previous save.
 
     Parameters
     ----------
@@ -298,9 +307,11 @@ def save_round_memory(workdir: Path, round_num: int, *, instance_id: str | None 
     """
     src = round_memory_dir(workdir, round_num, instance_id=instance_id)
     dst = memory_dir(workdir)
-    dst.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(dst, ignore_errors=True)
     if src.is_dir():
-        shutil.copytree(src, dst, dirs_exist_ok=True)
+        shutil.copytree(src, dst)
+    else:
+        dst.mkdir(parents=True, exist_ok=True)
     return dst
 
 

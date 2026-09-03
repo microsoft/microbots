@@ -154,13 +154,6 @@ class EvalTask(ABC):
     def from_config(cls, task_args: dict[str, Any]) -> list["EvalTask"]:
         """Required. Build task instance(s) from a config's ``task_args`` dict.
 
-        Called by the CLI at runtime (driven by ``--task``) to
-        construct the actual task object(s) to run, using whatever
-        config values the task needs (e.g. a dataset instance ID, a
-        repo filter). Object creation must go through this method
-        rather than being constructed elsewhere, so behavior stays
-        driven by the CLI/config at runtime.
-
         Parameters
         ----------
         task_args : dict[str, Any]

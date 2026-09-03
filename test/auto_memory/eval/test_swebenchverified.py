@@ -11,6 +11,7 @@ import pytest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src/")))
 
 from microbots.auto_memory.eval.swebenchverified import (
+    SWE_BENCH_VERIFIED,
     SweBenchInstance,
     SweBenchVerifiedTask,
     _load_dataset_rows,
@@ -59,7 +60,7 @@ def _fake_rows():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
-@patch(f"{MODULE}.load_dataset")
+@patch("datasets.load_dataset")
 def test_load_instances_of_repo_filters_by_repo(mock_load_dataset):
     mock_load_dataset.return_value = _fake_rows()
 
@@ -70,7 +71,7 @@ def test_load_instances_of_repo_filters_by_repo(mock_load_dataset):
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.load_dataset")
+@patch("datasets.load_dataset")
 def test_load_instances_of_repo_returns_all_when_repo_none(mock_load_dataset):
     mock_load_dataset.return_value = _fake_rows()
 
@@ -80,7 +81,7 @@ def test_load_instances_of_repo_returns_all_when_repo_none(mock_load_dataset):
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.load_dataset")
+@patch("datasets.load_dataset")
 def test_load_instance_using_id_returns_matching_instance(mock_load_dataset):
     mock_load_dataset.return_value = _fake_rows()
 
@@ -91,7 +92,7 @@ def test_load_instance_using_id_returns_matching_instance(mock_load_dataset):
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.load_dataset")
+@patch("datasets.load_dataset")
 def test_load_instance_using_id_raises_when_not_found(mock_load_dataset):
     mock_load_dataset.return_value = _fake_rows()
 
@@ -100,7 +101,7 @@ def test_load_instance_using_id_raises_when_not_found(mock_load_dataset):
 
 
 @pytest.mark.unit
-@patch(f"{MODULE}.load_dataset")
+@patch("datasets.load_dataset")
 def test_dataset_rows_are_cached_across_repeated_calls(mock_load_dataset):
     """``load_dataset`` should only be called once per ``dataset_name``, even
     across multiple ``load_instances_of_repo``/``load_instance_using_id`` calls."""
@@ -111,6 +112,13 @@ def test_dataset_rows_are_cached_across_repeated_calls(mock_load_dataset):
     load_instance_using_id("astropy__astropy-1")
 
     mock_load_dataset.assert_called_once()
+
+
+@pytest.mark.unit
+def test_load_dataset_rows_raises_helpful_error_when_datasets_not_installed():
+    with patch.dict(sys.modules, {"datasets": None}):
+        with pytest.raises(ImportError, match=r"pip install 'microbots\[training\]'"):
+            _load_dataset_rows(SWE_BENCH_VERIFIED)
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +343,23 @@ def _make_fake_subprocess_run(resolved: bool, raise_on_harness: bool = False):
         return MagicMock(stdout="", stderr="", returncode=0)
 
     return _fake_run
+
+
+@pytest.mark.unit
+@patch(f"{MODULE}.subprocess.run")
+def test_check_marks_untracked_files_intent_to_add_before_diffing(mock_run, tmp_path):
+    mock_run.side_effect = _make_fake_subprocess_run(resolved=True)
+    log_path = tmp_path / "check.log"
+    log_path.write_text("")
+
+    task = SweBenchVerifiedTask(_instance())
+    task.check("/repo", "agent output", str(log_path))
+
+    calls = [c.args[0] for c in mock_run.call_args_list]
+    add_idx = calls.index(["git", "add", "--intent-to-add", "."])
+    diff_idx = calls.index(["git", "diff", "--binary"])
+    assert add_idx < diff_idx
+    assert mock_run.call_args_list[add_idx].kwargs["cwd"] == "/repo"
 
 
 @pytest.mark.unit
@@ -564,6 +589,23 @@ def test_run_converts_build_prompt_exception_to_failed_outcome(mock_bot_cls, moc
     assert "bad prompt" in outcome.result.reason
     with open(str(tmp_path / "eval.log")) as f:
         assert "bad prompt" in f.read()
+
+
+@pytest.mark.unit
+def test_run_converts_setup_exception_to_failed_outcome(tmp_path):
+    task = SweBenchVerifiedTask(_instance())
+
+    def _setup(repo_path):
+        raise RuntimeError("clone failed")
+
+    task.setup = _setup
+
+    outcome = task.run("/repo", "/memory", "azure-openai/gpt-4o", str(tmp_path / "eval.log"))
+
+    assert outcome.passed is False
+    assert "clone failed" in outcome.result.reason
+    with open(str(tmp_path / "eval.log")) as f:
+        assert "clone failed" in f.read()
 
 
 @pytest.mark.unit

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
 import json
+import shutil
 import subprocess
 
 from microbots.auto_memory.evalTask import EvalOutcome, EvalTask
@@ -48,18 +49,39 @@ class LoopResult:
     outcomes: list[EvalOutcome] = field(default_factory=list)
 
 def clone_repo(url: str, repo_path: Path) -> None:
-    """Clone ``url`` into ``repo_path`` if it isn't already cloned there.
+    """Clone ``url`` into ``repo_path``, or reuse it if already cloned from ``url``.
+
+    Existence alone isn't enough to trust ``repo_path``: it could be an
+    empty/partial directory left by a previous failed clone, or a
+    reused workdir whose config now points at a different ``url``. So
+    if ``repo_path`` exists, its ``origin`` remote is checked against
+    ``url`` first. Only an exact match is reused as-is; anything else
+    (mismatched origin, or not a git checkout at all) is removed and
+    re-cloned, so training never silently runs against missing or
+    wrong code.
 
     Parameters
     ----------
     url : str
         Git URL (or local path) to clone from.
     repo_path : Path
-        Destination directory for the clone. If it already exists (e.g.
-        a previous round already cloned here), this is a no-op.
+        Destination directory for the clone.
     """
     if repo_path.exists():
-        return
+        origin = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo_path, capture_output=True, text=True,
+        )
+        if origin.returncode == 0 and origin.stdout.strip() == url:
+            return
+
+        logger.warning(
+            "clone_repo: %s exists but isn't a checkout of %s (origin=%r); "
+            "removing and re-cloning",
+            repo_path, url, origin.stdout.strip(),
+        )
+        shutil.rmtree(repo_path)
+
     subprocess.run(["git", "clone", url, str(repo_path)], check=True)
 
 def write_eval_result(workdir: Path, round_num: int, task: EvalTask, outcome: EvalOutcome) -> None:
@@ -180,7 +202,15 @@ def run_train_eval_loop(
     LoopResult
         Whether the task passed, how many rounds ran, and every round's
         outcome.
+
+    Raises
+    ------
+    ValueError
+        If ``max_rounds`` is less than 1.
     """
+    if max_rounds < 1:
+        raise ValueError(f"max_rounds must be >= 1, got {max_rounds}")
+
     outcomes: list[EvalOutcome] = []
 
     for round_idx in range(1, max_rounds+1):
@@ -275,12 +305,26 @@ def run(
     -------
     LoopResult | None
         The eval loop's result if ``task`` was given, otherwise ``None``.
+
+    Raises
+    ------
+    ValueError
+        If ``config`` has no ``repo`` entry. Every run needs a training
+        checkout (``run_training_loop`` always mounts
+        ``training_repo_path``, regardless of ``task``), so ``repo``
+        must be configured even for tasks like ``SweBenchVerifiedTask``
+        that manage their own separate eval checkout.
     """
     if config is None:
         config = load_config(workdir)
     repo_url = config.get("repo")
-    if repo_url:
-        clone_repo(repo_url, repo_dir(workdir))
+    if not repo_url:
+        raise ValueError(
+            "config.yaml must specify 'repo' (the training checkout's clone "
+            "URL); it is required even when the eval task manages its own "
+            "separate eval repo checkout."
+        )
+    clone_repo(repo_url, repo_dir(workdir))
 
     snapshot_seed_memory(workdir)
 
