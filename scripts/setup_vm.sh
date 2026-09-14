@@ -42,10 +42,10 @@ echo "============================================"
 echo "[1/6] Installing system prerequisites..."
 if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -y
-    sudo apt-get install -y git python3 python3-venv python3-pip ca-certificates curl gnupg
+    sudo apt-get install -y git python3 python3-pip ca-certificates curl gnupg
 elif command -v tdnf >/dev/null 2>&1; then
     # Azure Linux (Mariner)
-    sudo tdnf install -y git python3 python3-pip python3-venv ca-certificates curl
+    sudo tdnf install -y git python3 python3-pip ca-certificates curl
 else
     echo "  Unsupported package manager; install git/python3/pip/docker manually." >&2
 fi
