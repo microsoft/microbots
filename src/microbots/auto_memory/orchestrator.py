@@ -160,7 +160,7 @@ def run_train_eval_loop(
         eval_dir = get_eval_dir(workdir, round_idx)
         take_memory_snapshot(mem_dir, round_idx)
         try:
-            outcome = task.eval(str(mem_dir), model, str(eval_dir))
+            outcome = task.eval(str(mem_dir), model, str(eval_dir), training_repo_path)
             outcomes.append(outcome)
         except Exception as e:
             logger.warning(

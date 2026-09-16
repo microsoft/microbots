@@ -172,7 +172,7 @@ class MyTask(EvalTask):
     def parse_config(self, config_file: Path) -> None:
         ...   # load your settings; set self._repo_url or override repo_url()
 
-    def eval(self, memory_dir: str, model: str, eval_dir: str) -> EvalOutcome:
+    def eval(self, memory_dir: str, model: str, eval_dir: str, training_repo_dir: str) -> EvalOutcome:
         ...   # run every unit of work, return one combined outcome
 ```
 

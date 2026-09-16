@@ -474,7 +474,7 @@ class SweBenchVerified(EvalTask):
         if len(self.dataset) == 0:
             raise ValueError("No instances loaded for evaluation.")
 
-    def eval(self, memory_dir: str, model: str, eval_dir: str) -> EvalOutcome:
+    def eval(self, memory_dir: str, model: str, eval_dir: str, training_repo_dir: str) -> EvalOutcome:
         """Attempt every configured instance and combine the results.
 
         Parameters
@@ -486,6 +486,9 @@ class SweBenchVerified(EvalTask):
         eval_dir : str
             Directory this round's eval owns; holds one checkout and one
             log file per instance.
+        training_repo_dir : str
+            Absolute path to the persistent training checkout, mounted
+            for the bot that combines instance results into feedback.
 
         Returns
         -------
@@ -527,7 +530,7 @@ class SweBenchVerified(EvalTask):
         else:
             combine_log_path = log_dir / "combine_result_feedback_log.txt"
             with log_to_file(combine_log_path):
-                feedback = self._combine_result_feedback(results, model, str(eval_repos_path))
+                feedback = self._combine_result_feedback(results, model, training_repo_dir)
 
         # NOTE: Let's not teardown the repository as it will be useful for debugging
 
@@ -537,7 +540,7 @@ class SweBenchVerified(EvalTask):
             feedback = feedback
         )
 
-    def _combine_result_feedback(self, results: list[BotRunResult], model: str, eval_repo: str) -> str:
+    def _combine_result_feedback(self, results: list[BotRunResult], model: str, training_repo_dir: str) -> str:
         """Summarize every instance's result into one feedback string.
 
         Parameters
@@ -546,8 +549,9 @@ class SweBenchVerified(EvalTask):
             One result per attempted instance.
         model : str
             The model to use, in the format ``<provider>/<model_name>``.
-        eval_repo : str
-            Path to the evaluation checkout, mounted for the bot.
+        training_repo_dir : str
+            Absolute path to the persistent training checkout, mounted
+            for the bot.
 
         Returns
         -------
@@ -566,13 +570,39 @@ class SweBenchVerified(EvalTask):
         try:
             bot = ReadingBot(
                 model = model,
-                folder_to_mount=eval_repo
+                folder_to_mount=training_repo_dir
             )
             task = f"""
-            Combine the results of the eval runs into single feedback.
-            This feedback will be given to the next iteration.
-            You just combine the results with minimal efforts.
-            Avoid referring to code whenever possible.
+            You are combining results from {len(results)} SWE-bench evaluation
+            runs into ONE feedback report for the next training iteration. The
+            training agent will read your report to decide what to add or fix
+            in its memory notes.
+
+            For each result below, note whether it passed or failed. For each
+            failure, briefly identify the underlying cause (e.g. wrong
+            file/line targeted, incorrect patch logic, response format error,
+            timeout) rather than only quoting the raw error. You may open
+            files under the mounted repo if you need to confirm a root
+            cause, but do not turn this into a debugging session.
+            Do not refer to any specific instance or test case by name/ID —
+            describe causes and guidance in general terms only.
+
+            Then write a report with:
+            1. A one-line summary: how many passed vs failed.
+            2. Grouped failure patterns: if multiple failures share the same
+               root cause, describe that cause once rather than repeating
+               yourself.
+            3. Concrete, actionable guidance for the training agent — say
+               what to change in the memory notes to avoid each failure
+               pattern next time. Be specific and imperative
+               (e.g. "Record that config paths must be normalized before
+               comparison", not "there was a path issue").
+            4. Skip anything about passed cases beyond the summary count;
+               don't restate their feedback.
+
+            Keep the report tight and skimmable — short paragraphs or bullet
+            points, no code dumps. Put the final report in the `result`
+            field once you set task_done=true.
 
             {serialized_str}
             """

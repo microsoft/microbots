@@ -156,7 +156,7 @@ def test_eval_scores_the_fraction_of_resolved_instances(tmp_path):
         reading_bot.return_value.run.return_value = BotRunResult(
             status=True, result="one instance still fails", error=None
         )
-        outcome = task.eval(str(tmp_path / "memory"), "azure-openai/gpt-4o", str(tmp_path / "eval"))
+        outcome = task.eval(str(tmp_path / "memory"), "azure-openai/gpt-4o", str(tmp_path / "eval"), str(tmp_path / "repo"))
 
     assert outcome.score == 0.5
     assert not outcome.passed
@@ -175,7 +175,7 @@ def test_eval_passes_only_when_every_instance_resolves(tmp_path):
         writing_bot.return_value.run.return_value = BotRunResult(
             status=True, result="patched", error=None
         )
-        outcome = task.eval(str(tmp_path / "memory"), "azure-openai/gpt-4o", str(tmp_path / "eval"))
+        outcome = task.eval(str(tmp_path / "memory"), "azure-openai/gpt-4o", str(tmp_path / "eval"), str(tmp_path / "repo"))
 
     assert outcome.passed
     assert outcome.score == 1
@@ -197,7 +197,7 @@ def test_eval_skips_the_harness_when_the_agent_itself_failed(tmp_path):
         reading_bot.return_value.run.return_value = BotRunResult(
             status=True, result="the agent never produced a patch", error=None
         )
-        outcome = task.eval(str(tmp_path / "memory"), "azure-openai/gpt-4o", str(tmp_path / "eval"))
+        outcome = task.eval(str(tmp_path / "memory"), "azure-openai/gpt-4o", str(tmp_path / "eval"), str(tmp_path / "repo"))
 
     check.assert_not_called()
     assert outcome.score == 0

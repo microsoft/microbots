@@ -37,11 +37,23 @@ class EvalTask(ABC):
     ``repo_url`` have working defaults driven by the config file's
     ``repo`` key, and may be overridden by tasks that derive the repo
     some other way (see ``SweBenchVerified``).
+
+    Parameters
+    ----------
+    config_file : Path
+        Path to the task's config file, parsed during initialization.
     """
 
     _repo_url: str | None = None
 
     def __init__(self, config_file: Path) -> None:
+        """Parse the config file and record the training repo URL.
+
+        Parameters
+        ----------
+        config_file : Path
+            Path to the task's config file.
+        """
         # NOTE: Don't call this from child class unless you need to reuse
         # the parse_config logic from here.
         super().__init__()
@@ -82,7 +94,7 @@ class EvalTask(ABC):
             self._repo_url = config.get("repo")
 
     @abstractmethod
-    def eval(self, memory_dir: str, model: str, eval_dir: str) -> EvalOutcome:
+    def eval(self, memory_dir: str, model: str, eval_dir: str, training_repo_dir: str) -> EvalOutcome:
         """Required. Run one full evaluation and return its outcome.
 
         Parameters
@@ -92,13 +104,14 @@ class EvalTask(ABC):
             ``MemoryTool``.
         model : str
             The model to use, in the format ``<provider>/<model_name>``.
-        eval_dir: str
+        eval_dir : str
             Directory this round's eval owns. The task decides what
             goes in it (cloned repo, logs, and so on).
+        training_repo_dir : str
+            Absolute path to the persistent training checkout.
 
         Returns
         -------
         EvalOutcome
-            Whether the round passed, its score, and the feedback to
-            retrain on.
+            Whether the round passed, its score, and the feedback to use for retraining.
         """

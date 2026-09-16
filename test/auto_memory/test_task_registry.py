@@ -18,7 +18,7 @@ class _StubTask(EvalTask):
     def parse_config(self, config_file: Path) -> None:
         self._repo_url = "https://github.com/acme/widget.git"
 
-    def eval(self, memory_dir: str, model: str, eval_dir: str) -> EvalOutcome:
+    def eval(self, memory_dir: str, model: str, eval_dir: str, training_repo_dir: str) -> EvalOutcome:
         return EvalOutcome(passed=True, score=1.0, feedback="ok")
 
 
