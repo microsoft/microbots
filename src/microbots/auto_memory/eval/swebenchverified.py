@@ -173,6 +173,13 @@ class SweBenchVerifiedTask_one:
     """
 
     def __init__(self, instance: SweBenchInstance):
+        """Store the dataset instance this task evaluates against.
+
+        Parameters
+        ----------
+        instance : SweBenchInstance
+            The dataset instance this task evaluates against.
+        """
         self.instance = instance
 
     def setup(self, repo_path: str) -> None:
@@ -360,7 +367,7 @@ class SweBenchVerifiedTask_one:
             bot = WritingBot(
                 model=model,
                 folder_to_mount=repo_path,
-                additional_tools=[MemoryTool(memory_dir=memory_dir)],
+                additional_tools=[MemoryTool(memory_dir=memory_dir, read_only=True)],
             )
             bot_result = bot.run(
                 prompt,
@@ -392,9 +399,22 @@ class SweBenchVerified(EvalTask):
     Every instance in the configured set is attempted with the same
     memory, and the round's score is the fraction that the harness
     marks resolved.
+
+    Parameters
+    ----------
+    config_file : Path
+        Path to the task's YAML config file, as consumed by
+        ``parse_config``.
     """
 
     def __init__(self, config_file: Path) -> None:
+        """Load and validate the set of instances to evaluate against.
+
+        Parameters
+        ----------
+        config_file : Path
+            Path to the task's YAML config file.
+        """
         # dataset must exist before parse_config populates it.
         self.dataset: list[SweBenchInstance] = []
         self.parse_config(config_file=config_file)
@@ -505,7 +525,9 @@ class SweBenchVerified(EvalTask):
         if score == 1:
             feedback = "All evaluations passed."
         else:
-            feedback = self._combine_result_feedback(results, model, str(eval_repos_path))
+            combine_log_path = log_dir / "combine_result_feedback_log.txt"
+            with log_to_file(combine_log_path):
+                feedback = self._combine_result_feedback(results, model, str(eval_repos_path))
 
         # NOTE: Let's not teardown the repository as it will be useful for debugging
 
