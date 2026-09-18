@@ -1,3 +1,10 @@
+"""File-backed ``memory`` tool exposed to agents via the text command loop.
+
+Provides ``MemoryTool``, an ``ExternalTool`` that lets an LLM view, create,
+and edit files under a host ``memory_dir`` using ``/memories/...`` paths,
+optionally restricted to read-only access.
+"""
+
 import argparse
 import logging
 import os
@@ -18,24 +25,50 @@ class _NoExitArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that raises ``ValueError`` instead of calling ``sys.exit``."""
 
     def error(self, message: str) -> None:  # type: ignore[override]
+        """Raise ``ValueError`` instead of printing usage and exiting.
+
+        Parameters
+        ----------
+        message : str
+            The error message argparse would otherwise print.
+
+        Raises
+        ------
+        ValueError
+            Always raised, carrying ``message``.
+        """
         raise ValueError(message)
 
-INSTRUCTIONS_TO_LLM = """
+# Pieces shared by both the read/write and read-only instructions, so the
+# two variants can't drift apart on what they say about `view` and paths.
+_VIEW_PROTOCOL_STEP = (
+    "ALWAYS run `memory view /memories` BEFORE doing anything else to check "
+    "for earlier progress."
+)
+
+_VIEW_COMMANDS = """View a file or list a directory:
+  memory view <path>
+  memory view <path> --start <line> --end <line>"""
+
+_VIEW_EXAMPLES = """  memory view /memories
+  memory view /memories/progress.md --start 1 --end 10"""
+
+_COMMON_NOTES = """- Paths must start with /memories/.
+- In memory view, use --end -1 to read through the end of the file."""
+
+INSTRUCTIONS_TO_LLM = f"""
 Use this tool to persist information to files across steps.
 All paths must be under /memories/.
 
 MEMORY PROTOCOL:
-1. ALWAYS run `memory view /memories` BEFORE doing anything else to check for
-   earlier progress.
+1. {_VIEW_PROTOCOL_STEP}
 2. Record status, findings and intermediate results as you go.
 3. Before completing a task, save your final results to memory.
 4. Keep the memory folder organised — rename or delete stale files.
 
 ## Commands
 
-View a file or list a directory:
-  memory view <path>
-  memory view <path> --start <line> --end <line>
+{_VIEW_COMMANDS}
 
 Create a file:
   memory create <path> <content>
@@ -57,19 +90,38 @@ Clear all memory:
 
 ## Examples
 
-  memory view /memories
+{_VIEW_EXAMPLES}
   memory create /memories/progress.md "## Progress\\n- Found bug in src/foo.py line 42"
   memory str_replace /memories/progress.md --old "line 42" --new "line 45"
   memory insert /memories/progress.md --line 0 --text "# Task Notes"
-  memory view /memories/progress.md --start 1 --end 10
   memory delete /memories/old_notes.md
   memory rename /memories/draft.md /memories/final.md
 
 ## Notes
-- Paths must start with /memories/.
+{_COMMON_NOTES}
 - memory create overwrites if the file already exists.
 - memory str_replace requires the old text to appear exactly once.
-- In memory view, use --end -1 to read through the end of the file.
+"""
+
+READ_ONLY_INSTRUCTIONS_TO_LLM = f"""
+Use this tool to read previously recorded memory files.
+All paths must be under /memories/.
+Only `memory view` is available — this memory store is read-only, so
+create/str_replace/insert/delete/rename/clear will all be rejected.
+
+MEMORY PROTOCOL:
+1. {_VIEW_PROTOCOL_STEP}
+
+## Commands
+
+{_VIEW_COMMANDS}
+
+## Examples
+
+{_VIEW_EXAMPLES}
+
+## Notes
+{_COMMON_NOTES}
 """
 
 
@@ -94,15 +146,46 @@ class MemoryTool(ExternalTool):
     )
     usage_instructions_to_llm: str = Field(default=INSTRUCTIONS_TO_LLM)
     memory_dir: Optional[str] = Field(default=None)
+    read_only: bool = Field(default=False)
+    """
+    When true, only ``view`` is permitted; every mutating subcommand
+    (create/str_replace/insert/delete/rename/clear) is rejected before it
+    touches the filesystem. Used to give an agent read access to existing
+    memory without letting it change what future runs see.
+    """
 
     def __post_init__(self):
+        """Resolve ``memory_dir``, create it, and finalize read-only defaults.
+
+        Falls back to ``~/.microbots/memory`` when ``memory_dir`` is
+        unset. When ``read_only`` is true, swaps the default
+        description/instructions for their read-only equivalents
+        (leaving any explicitly supplied override untouched), and builds
+        the command parser.
+        """
         base = Path(self.memory_dir) if self.memory_dir else Path.home() / ".microbots" / "memory"
         self._memory_dir = base
         self._memory_dir.mkdir(parents=True, exist_ok=True)
+
+        # Only swap the default copy; an explicitly supplied description/
+        # instructions is left alone even in read-only mode.
+        if self.read_only:
+            if self.usage_instructions_to_llm == INSTRUCTIONS_TO_LLM:
+                self.usage_instructions_to_llm = READ_ONLY_INSTRUCTIONS_TO_LLM
+            if self.description == "File-backed memory store — view, create, edit, delete files under /memories/.":
+                self.description = "Read-only file-backed memory store — view files under /memories/."
         self._parser = self._build_parser()
 
     def _build_parser(self) -> _NoExitArgumentParser:
-        """Build the argparse parser with subparsers for each memory subcommand."""
+        """Build the argparse parser with subparsers for each memory subcommand.
+
+        Returns
+        -------
+        _NoExitArgumentParser
+            Parser configured with one subparser per memory subcommand
+            (``view``, ``create``, ``str_replace``, ``insert``,
+            ``delete``, ``rename``, ``clear``).
+        """
         parser = _NoExitArgumentParser(prog="memory", add_help=False)
         subs = parser.add_subparsers(dest="subcommand")
 
@@ -141,7 +224,25 @@ class MemoryTool(ExternalTool):
     # ---------------------------------------------------------------------- #
 
     def _resolve(self, path: str) -> Path:
-        """Resolve a /memories/… path to an absolute host path."""
+        """Resolve a /memories/… path to an absolute host path.
+
+        Parameters
+        ----------
+        path : str
+            An LLM-supplied path, expected to start with ``/memories``.
+
+        Returns
+        -------
+        Path
+            The absolute host path under ``memory_dir`` that ``path``
+            refers to.
+
+        Raises
+        ------
+        ValueError
+            If ``path`` doesn't start with ``/memories`` or attempts to
+            traverse outside ``memory_dir``.
+        """
         if not path.startswith("/"):
             raise ValueError(
                 f"Invalid memory path: {path!r}. Paths must start with /memories/."
@@ -175,10 +276,39 @@ class MemoryTool(ExternalTool):
     # ---------------------------------------------------------------------- #
 
     def is_invoked(self, command: str) -> bool:
+        """Return whether ``command`` is a ``memory`` invocation.
+
+        Parameters
+        ----------
+        command : str
+            The raw command text the agent issued.
+
+        Returns
+        -------
+        bool
+            True if ``command`` is (or starts with) ``memory``.
+        """
         cmd = command.strip()
         return cmd == "memory" or cmd.startswith("memory ")
 
     def invoke(self, command: str, parent_bot) -> CmdReturn:
+        """Parse and dispatch a ``memory`` command to its subcommand handler.
+
+        Parameters
+        ----------
+        command : str
+            The full ``memory <subcommand> ...`` command text.
+        parent_bot : MicroBot
+            The bot invoking this tool. Unused; accepted for interface
+            compatibility with ``ToolAbstract``.
+
+        Returns
+        -------
+        CmdReturn
+            The subcommand's result, or an error result if parsing
+            failed, the subcommand is unknown, read-only mode blocks
+            it, or the handler raised.
+        """
         try:
             tokens = shlex.split(command)
         except ValueError as exc:
@@ -191,6 +321,13 @@ class MemoryTool(ExternalTool):
 
         if args.subcommand is None:
             return CmdReturn(stdout="", stderr="Usage: memory <subcommand> ...", return_code=1)
+
+        if self.read_only and args.subcommand != "view":
+            return CmdReturn(
+                stdout="",
+                stderr=f"Memory is read-only: '{args.subcommand}' is not permitted.",
+                return_code=1,
+            )
 
         dispatch = {
             "view": self._view,
@@ -214,6 +351,19 @@ class MemoryTool(ExternalTool):
     # ---------------------------------------------------------------------- #
 
     def _view(self, args: argparse.Namespace) -> CmdReturn:
+        """Handle ``memory view`` — list a directory or print a file's lines.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed ``view`` arguments: ``path``, ``start``, ``end``.
+
+        Returns
+        -------
+        CmdReturn
+            The directory listing or numbered file lines, or an error
+            result if ``path`` doesn't exist.
+        """
         resolved = self._resolve(args.path)
         if not resolved.exists():
             return CmdReturn(stdout="", stderr=f"Path not found: {args.path!r}", return_code=1)
@@ -239,6 +389,19 @@ class MemoryTool(ExternalTool):
         return CmdReturn(stdout=numbered, stderr="", return_code=0)
 
     def _create(self, args: argparse.Namespace) -> CmdReturn:
+        """Handle ``memory create`` — write (or overwrite) a file.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed ``create`` arguments: ``path``, ``content``.
+
+        Returns
+        -------
+        CmdReturn
+            Confirmation of the write, or an error result if no
+            content was supplied.
+        """
         if not args.content:
             return CmdReturn(stdout="", stderr="Usage: memory create <path> <content>", return_code=1)
         content = " ".join(args.content)
@@ -249,6 +412,19 @@ class MemoryTool(ExternalTool):
         return CmdReturn(stdout=f"File created: {args.path}", stderr="", return_code=0)
 
     def _str_replace(self, args: argparse.Namespace) -> CmdReturn:
+        """Handle ``memory str_replace`` — replace a unique substring in a file.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed ``str_replace`` arguments: ``path``, ``old``, ``new``.
+
+        Returns
+        -------
+        CmdReturn
+            Confirmation of the edit, or an error result if the file
+            doesn't exist or ``old`` isn't found exactly once.
+        """
         resolved = self._resolve(args.path)
         if not resolved.is_file():
             return CmdReturn(stdout="", stderr=f"File not found: {args.path!r}", return_code=1)
@@ -262,6 +438,19 @@ class MemoryTool(ExternalTool):
         return CmdReturn(stdout=f"File {args.path} has been edited.", stderr="", return_code=0)
 
     def _insert(self, args: argparse.Namespace) -> CmdReturn:
+        """Handle ``memory insert`` — insert a line at a given position.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed ``insert`` arguments: ``path``, ``line``, ``text``.
+
+        Returns
+        -------
+        CmdReturn
+            Confirmation of the insert, or an error result if the file
+            doesn't exist or ``line`` is out of range.
+        """
         resolved = self._resolve(args.path)
         if not resolved.is_file():
             return CmdReturn(stdout="", stderr=f"File not found: {args.path!r}", return_code=1)
@@ -273,6 +462,19 @@ class MemoryTool(ExternalTool):
         return CmdReturn(stdout=f"Text inserted at line {args.line} in {args.path}.", stderr="", return_code=0)
 
     def _delete(self, args: argparse.Namespace) -> CmdReturn:
+        """Handle ``memory delete`` — remove a file or directory.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed ``delete`` arguments: ``path``.
+
+        Returns
+        -------
+        CmdReturn
+            Confirmation of the deletion, or an error result if
+            ``path`` is the memory root or doesn't exist.
+        """
         resolved = self._resolve(args.path)
         if resolved == self._memory_dir.resolve():
             return CmdReturn(stdout="", stderr="Cannot delete the /memories root directory", return_code=1)
@@ -287,6 +489,20 @@ class MemoryTool(ExternalTool):
         return CmdReturn(stdout="", stderr=f"Path not found: {args.path!r}", return_code=1)
 
     def _rename(self, args: argparse.Namespace) -> CmdReturn:
+        """Handle ``memory rename`` — move/rename a file or directory.
+
+        Parameters
+        ----------
+        args : argparse.Namespace
+            Parsed ``rename`` arguments: ``old_path``, ``new_path``.
+
+        Returns
+        -------
+        CmdReturn
+            Confirmation of the rename, or an error result if either
+            path is the memory root, the source is missing, or the
+            destination already exists.
+        """
         old_resolved = self._resolve(args.old_path)
         new_resolved = self._resolve(args.new_path)
         memory_root = self._memory_dir.resolve()
@@ -304,6 +520,13 @@ class MemoryTool(ExternalTool):
         return CmdReturn(stdout=f"Renamed {args.old_path} to {args.new_path}.", stderr="", return_code=0)
 
     def _clear(self) -> CmdReturn:
+        """Handle ``memory clear`` — delete and recreate the memory root.
+
+        Returns
+        -------
+        CmdReturn
+            Confirmation that memory was cleared.
+        """
         if self._memory_dir.exists():
             shutil.rmtree(self._memory_dir)
             self._memory_dir.mkdir(parents=True, exist_ok=True)
