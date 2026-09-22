@@ -129,14 +129,16 @@ workdir/
 └── rounds/round_N/
     ├── starting_memory_snapshot/   # memory/ as it looked when the round began
     ├── logs/                       # training logs
-    └── eval/                       # owned entirely by the eval task
-        ├── eval_repo/              # shared checkout, reset per instance
+    └── eval/                       # owned entirely by the eval task, fresh per round
+        ├── eval_repo/<instance_id>/   # one checkout per instance, reset if re-run
         ├── logs/<instance_id>_log.txt
         └── result.json
 ```
 
-Two checkouts on purpose: the eval task resets `eval_repo/` for every instance, which would
-otherwise destroy the training checkout in `repo/`.
+Two checkouts on purpose: each instance gets its own subdirectory under `eval_repo/`, which is
+reset (`git reset --hard` + `git clean -fd`) only if that instance is evaluated again within the
+same round; it is never a single shared checkout that could clobber the training checkout in
+`repo/`.
 
 ---
 
