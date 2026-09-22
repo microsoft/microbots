@@ -28,6 +28,7 @@ from microbots.MicroBot import BotRunResult
 from microbots.tools.tool_definitions.memory_tool import MemoryTool
 
 logger = getLogger(__name__)
+feedback_logger = getLogger("microbots.feedback")
 
 SWE_BENCH_VERIFIED = "SWE-bench/SWE-bench_Verified"
 EVAL_AGENT_MODEL_NAME = "microbots-eval-agent"
@@ -501,7 +502,8 @@ class SweBenchVerified(EvalTask):
         # root, leaving it unresettable for any instance that came after.
         eval_repos_path = eval_path / "eval_repo"
         log_dir = eval_log_dir(eval_path)
-        results = []
+        evaluation_results = []
+        instance_feedback = []
 
         for instance in self.dataset:
             inst_log_path = log_dir / f"{instance.instance_id}_log.txt"
@@ -509,17 +511,27 @@ class SweBenchVerified(EvalTask):
             task = SweBenchVerifiedTask_one(instance)
 
             with log_to_file(inst_log_path):
-                res = task.eval(str(inst_repo_path), memory_dir, model, str(inst_log_path))
+                agent_result = task.eval(str(inst_repo_path), memory_dir, model, str(inst_log_path))
 
-                if not res.status:
-                    logger.info(f"Evaluation failed for instance {instance.instance_id}: {res.error if res.error else 'Unknown error'}")
-                    results.append(res)
+                if not agent_result.status:
+                    harness_result = None
+                    evaluation_result = agent_result
+                    logger.info(f"Evaluation failed for instance {instance.instance_id}: {agent_result.error if agent_result.error else 'Unknown error'}")
                 else:
-                    res = task.check(str(inst_repo_path), "", str(inst_log_path))
-                    results.append(res)
+                    harness_result = task.check(str(inst_repo_path), agent_result.result or "", str(inst_log_path))
+                    evaluation_result = harness_result
+
+                evaluation_results.append(evaluation_result)
+                if not evaluation_result.status:
+                    feedback = self._generate_instance_feedback(
+                        instance, agent_result, harness_result, model, str(eval_path)
+                    )
+                    if feedback:
+                        instance_feedback.append(feedback)
+                        feedback_logger.info("Generated feedback:\n%s", feedback)
 
         score = 0
-        for result in results:
+        for result in evaluation_results:
             if result.status:
                 score += 1
 
@@ -530,7 +542,8 @@ class SweBenchVerified(EvalTask):
         else:
             combine_log_path = log_dir / "combine_result_feedback_log.txt"
             with log_to_file(combine_log_path):
-                feedback = self._combine_result_feedback(results, model, training_repo_dir)
+                feedback = self._combine_result_feedback(instance_feedback, model, training_repo_dir)
+                feedback_logger.info("Combined feedback:\n%s", feedback)
 
         # NOTE: Let's not teardown the repository as it will be useful for debugging
 
@@ -540,13 +553,91 @@ class SweBenchVerified(EvalTask):
             feedback = feedback
         )
 
-    def _combine_result_feedback(self, results: list[BotRunResult], model: str, training_repo_dir: str) -> str:
+    def _generate_instance_feedback(
+        self,
+        instance: SweBenchInstance,
+        agent_result: BotRunResult,
+        harness_result: BotRunResult | None,
+        model: str,
+        eval_dir: str,
+    ) -> str:
+        """Analyze one failed instance and produce generalized feedback for it.
+
+        Parameters
+        ----------
+        instance : SweBenchInstance
+            The failed instance being analyzed.
+        agent_result : BotRunResult
+            The agent's own run result for this instance.
+        harness_result : BotRunResult | None
+            The independent harness verdict, or None if the agent itself
+            did not complete.
+        model : str
+            The model to use, in the format ``<provider>/<model_name>``.
+        eval_dir : str
+            Directory containing this instance's checkout and log file.
+
+        Returns
+        -------
+        str
+            Generalized feedback text, or an empty string if generation
+            failed.
+        """
+        task_results = json.dumps({
+            "instance_id": instance.instance_id,
+            "task": instance.problem_statement,
+            "agent_result": {
+                "status": agent_result.status,
+                "result": agent_result.result,
+                "error": agent_result.error,
+            },
+            "harness_result": None if harness_result is None else {
+                "status": harness_result.status,
+                "result": harness_result.result,
+                "error": harness_result.error,
+            },
+        })
+
+        try:
+            bot = ReadingBot(model=model, folder_to_mount=eval_dir)
+            bot_result = bot.run(task=f"""
+            Analyze failed SWE-bench instance {instance.instance_id}. Inspect its checkout at
+            eval_repo/{instance.instance_id}, its log at logs/{instance.instance_id}_log.txt, and any
+            relevant repository context. Analyze why the attempt failed and then generate a feedback 
+            that will be used to create context for FUTURE agents, solving DIFFERENT future tasks more effectively.
+            
+            The agent result records whether the agent completed and what it reported. The harness result
+            records the independent test verdict, or is null when the agent did not complete:
+
+            {task_results}
+
+                        Write concise feedback for a separate agent that will investigate the repository and update
+                        memory. Do not write the memory or prescribe its contents to any specificity.
+                        Consider Feedback on these:
+                        - Mistakes to avoid: what went wrong and how a future agent should approach it better.
+                        - Useful repository context: what the agent needed to know or find about the relevant files,
+                            functions, behavior, environment, or development workflow.
+
+                        The feedback must NOT reveal or reconstruct this evaluation instance. Do not include its ID, task,
+                        result, tests, inputs, attempted patch, or specific fix. Keep only reusable lessons and
+                        repository context that are generalized, and would be helpful even for future, different tasks.
+            """)
+        except Exception as exc:
+            logger.warning("Generating instance feedback failed with exception: %s", exc)
+            return ""
+
+        if not bot_result.status or not bot_result.result:
+            logger.warning("Generating instance feedback failed: %s", bot_result.error)
+            return ""
+        return bot_result.result
+
+    def _combine_result_feedback(self, feedback_items: list[str], model: str, training_repo_dir: str) -> str:
         """Summarize every instance's result into one feedback string.
 
         Parameters
         ----------
-        results : list[BotRunResult]
-            One result per attempted instance.
+        feedback_items : list[str]
+            Generic diagnostic feedback from each failed instance.
         model : str
             The model to use, in the format ``<provider>/<model_name>``.
         training_repo_dir : str
@@ -560,12 +651,9 @@ class SweBenchVerified(EvalTask):
             results if the bot is unavailable or fails.
         """
 
-        serialized_str = f"Total {len(results)} tests ran and their result and feedback:\n"
-
-        for res in results:
-            serialized_str += f"\nResult: {'Passed' if res.status else 'Failed'}\n"
-            serialized_str += f"Optional Feedback: {res.result if res.result else 'None'}\n"
-            serialized_str += f"Error if there are any: {res.error if res.error else 'None'}\n"
+        serialized_str = "\n\n".join(feedback_items)
+        if not serialized_str:
+            return ""
 
         try:
             bot = ReadingBot(
@@ -573,45 +661,39 @@ class SweBenchVerified(EvalTask):
                 folder_to_mount=training_repo_dir
             )
             task = f"""
-            You are combining results from {len(results)} SWE-bench evaluation
-            runs into ONE feedback report for the next training iteration. The
-            training agent will read your report to decide what to add or fix
-            in its memory notes.
+            You are combining {len(feedback_items)} pieces of feedback from failed SWE-bench
+            evaluation runs into ONE feedback report for the next training iteration. The
+            training agent will read your report to decide what to add or fix in its memory
+            notes.
 
-            For each result below, note whether it passed or failed. For each
-            failure, briefly identify the underlying cause (e.g. wrong
-            file/line targeted, incorrect patch logic, response format error,
-            timeout) rather than only quoting the raw error. You may open
-            files under the mounted repo if you need to confirm a root
-            cause, but do not turn this into a debugging session.
-            Do not refer to any specific instance or test case by name/ID —
-            describe causes and guidance in general terms only.
+            Each item below is already a generalized analysis of one failed run (mistakes to
+            avoid, useful repository context). Deduplicate and group items that share the same
+            root cause or lesson rather than repeating yourself.
 
             Then write a report with:
-            1. A one-line summary: how many passed vs failed.
-            2. Grouped failure patterns: if multiple failures share the same
-               root cause, describe that cause once rather than repeating
-               yourself.
-            3. Concrete, actionable guidance for the training agent — say
-               what to change in the memory notes to avoid each failure
-               pattern next time. Be specific and imperative
-               (e.g. "Record that config paths must be normalized before
+            1. A one-line summary: how many failures were analyzed.
+            2. Grouped failure patterns: describe each shared root cause once rather than
+               repeating yourself.
+            3. Concrete, actionable guidance for the training agent — say what to change in
+               the memory notes to avoid each failure pattern next time. Be specific and
+               imperative (e.g. "Record that config paths must be normalized before
                comparison", not "there was a path issue").
-            4. Skip anything about passed cases beyond the summary count;
-               don't restate their feedback.
 
-            Keep the report tight and skimmable — short paragraphs or bullet
-            points, no code dumps. Put the final report in the `result`
-            field once you set task_done=true.
+            Do not reveal or reconstruct any specific evaluated task, test, input, attempted
+            patch, or fix. Do not build memory yourself; only provide the feedback that will
+            guide the next agent.
+
+            Keep the report tight and skimmable — short paragraphs or bullet points, no code
+            dumps. Put the final report in the `result` field once you set task_done=true.
 
             {serialized_str}
             """
             bot_result = bot.run(task=task)
         except Exception as e:
             logger.warning(f"Combining results failed with exception: {e}")
-            return f"Combining results failed. raw combined output:\n\n{serialized_str}"
+            return serialized_str
 
         if bot_result.status:
-            return bot_result.result if bot_result.result else 'No feedback provided'
+            return bot_result.result if bot_result.result else serialized_str
         else:
-            return f"Combining results failed. raw combined output:\n\n{serialized_str}"
+            return serialized_str

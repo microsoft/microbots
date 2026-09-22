@@ -206,9 +206,9 @@ def test_eval_skips_the_harness_when_the_agent_itself_failed(tmp_path):
 @pytest.mark.unit
 def test_combined_feedback_falls_back_to_raw_results_when_the_bot_fails(tmp_path):
     task = _task(tmp_path, instance_id_list=["django__django-11099"])
-    results = [BotRunResult(status=False, result="not resolved", error="assertion failed")]
+    feedback_items = ["Instance failed: assertion failed"]
 
     with patch(f"{MODULE}.ReadingBot", side_effect=RuntimeError("no model configured")):
-        feedback = task._combine_result_feedback(results, "azure-openai/gpt-4o", "/repo")
+        feedback = task._combine_result_feedback(feedback_items, "azure-openai/gpt-4o", "/repo")
 
     assert "assertion failed" in feedback
