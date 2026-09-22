@@ -55,6 +55,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--config-file", type=Path, help="Path to the task configuration file.",
     )
     parser.add_argument("--max-rounds", type=int, default=5)
+    parser.add_argument(
+        "--debug-http",
+        action="store_true",
+        help="Log raw HTTP request/response details (e.g. rate-limit headers) "
+        "from the LLM client at DEBUG level to stderr.",
+    )
 
     return parser.parse_args(argv)
 
@@ -67,6 +73,11 @@ def main(argv: list[str] | None = None) -> None:
         Args to parse. Defaults to ``sys.argv[1:]`` when ``None``.
     """
     args = parse_args(argv)
+
+    if args.debug_http:
+        http_logger = logging.getLogger("httpx2")
+        http_logger.setLevel(logging.DEBUG)
+        http_logger.addHandler(logging.StreamHandler())
 
     # The user can pass either an existing workdir containing a
     # task_config.yml file or a task_config.yml file using --config

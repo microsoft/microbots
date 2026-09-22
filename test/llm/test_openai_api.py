@@ -411,3 +411,18 @@ class TestOpenAIApiCompaction:
         assert api.messages[2]["role"] == "user"
         assert api.messages[2]["content"] == "second message"
         assert api.messages[3]["role"] == "assistant"
+
+    def test_ask_logs_when_compaction_occurs(self, caplog):
+        """A log line identifies when compaction occurred and its item id"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+
+        compaction_output_item = Mock(type="compaction", id="comp_123", encrypted_content="abc")
+        api.ai_client.responses.create = Mock(
+            return_value=self._mock_response(output=[compaction_output_item])
+        )
+
+        with caplog.at_level("INFO"):
+            api.ask("hello")
+
+        assert any("compaction occurred" in r.message and "comp_123" in r.message
+                   for r in caplog.records)

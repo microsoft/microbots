@@ -116,6 +116,10 @@ class OpenAIApi(LLMInterface):
 
         compaction_item = self._extract_compaction_item(response)
         if compaction_item is not None:
+            logger.info(
+                "OpenAI compaction occurred: id=%s, self.messages reset to 4 items",
+                compaction_item.get("id"),
+            )
             self.messages = [
                 {"role": "system", "content": self.system_prompt},
                 compaction_item,
