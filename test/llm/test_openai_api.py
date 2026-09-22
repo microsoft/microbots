@@ -291,3 +291,25 @@ class TestOpenAIApiEdgeCases:
 
         # system + (user + assistant) * 2 = 5
         assert len(api.messages) == 5
+
+
+@pytest.mark.unit
+class TestOpenAIApiTokenUsageLogging:
+    """Tests for token usage logging"""
+
+    def test_ask_logs_token_usage(self, caplog):
+        """Token usage from response.usage is logged after each call"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+
+        mock_response = Mock()
+        mock_response.output_text = json.dumps({
+            "task_done": False, "command": "cmd", "thoughts": None
+        })
+        mock_response.usage = Mock(input_tokens=12, output_tokens=34, total_tokens=46)
+        api.ai_client.responses.create = Mock(return_value=mock_response)
+
+        with caplog.at_level("INFO"):
+            api.ask("hello")
+
+        assert any("input=12" in r.message and "output=34" in r.message and "total=46" in r.message
+                   for r in caplog.records)
