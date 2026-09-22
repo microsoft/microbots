@@ -313,3 +313,101 @@ class TestOpenAIApiTokenUsageLogging:
 
         assert any("input=12" in r.message and "output=34" in r.message and "total=46" in r.message
                    for r in caplog.records)
+
+
+@pytest.mark.unit
+class TestOpenAIApiCompaction:
+    """Tests for compaction request wiring and history reset"""
+
+    def _mock_response(self, output=None):
+        mock_response = Mock()
+        mock_response.output_text = json.dumps({
+            "task_done": False, "command": "cmd", "thoughts": None
+        })
+        mock_response.usage = Mock(input_tokens=1, output_tokens=1, total_tokens=2)
+        mock_response.output = output if output is not None else []
+        return mock_response
+
+    def test_context_management_sent_with_default_threshold(self):
+        """context_management is sent using DEFAULT_COMPACT_THRESHOLD by default"""
+        from microbots.llm.openai_api import DEFAULT_COMPACT_THRESHOLD
+
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+
+        api.ask("hello")
+
+        _, kwargs = api.ai_client.responses.create.call_args
+        assert kwargs["context_management"] == [
+            {"type": "compaction", "compact_threshold": DEFAULT_COMPACT_THRESHOLD}
+        ]
+
+    def test_context_management_sent_with_custom_threshold(self):
+        """context_management uses a custom compact_threshold when provided"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4", compact_threshold=500)
+        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+
+        api.ask("hello")
+
+        _, kwargs = api.ai_client.responses.create.call_args
+        assert kwargs["context_management"] == [
+            {"type": "compaction", "compact_threshold": 500}
+        ]
+
+    def test_context_management_omitted_when_disabled(self):
+        """context_management is not sent when compact_threshold is None"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4", compact_threshold=None)
+        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+
+        api.ask("hello")
+
+        _, kwargs = api.ai_client.responses.create.call_args
+        assert "context_management" not in kwargs
+
+    def test_extract_compaction_item_returns_none_without_compaction(self):
+        """_extract_compaction_item returns None when no compaction item is present"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+
+        other_item = Mock(type="message")
+        assert api._extract_compaction_item(self._mock_response(output=[other_item])) is None
+
+    def test_extract_compaction_item_parses_compaction(self):
+        """_extract_compaction_item returns a plain input-ready dict"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+
+        compaction_output_item = Mock(type="compaction", id="comp_123", encrypted_content="abc")
+        result = api._extract_compaction_item(self._mock_response(output=[compaction_output_item]))
+
+        assert result == {"type": "compaction", "id": "comp_123", "encrypted_content": "abc"}
+
+    def test_ask_does_not_reset_messages_without_compaction(self):
+        """self.messages keeps growing normally when no compaction occurs"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+
+        api.ask("hello")
+        api.ask("hello again")
+
+        # system + 2x(user + assistant)
+        assert len(api.messages) == 5
+
+    def test_ask_resets_messages_when_compaction_present(self):
+        """self.messages is reset to [system, compaction_item, user, assistant] after compaction"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+
+        compaction_output_item = Mock(type="compaction", id="comp_123", encrypted_content="abc")
+        api.ai_client.responses.create = Mock(
+            return_value=self._mock_response(output=[compaction_output_item])
+        )
+
+        api.ask("first message")
+        api.ask("second message")
+
+        assert len(api.messages) == 4
+        assert api.messages[0] == {"role": "system", "content": "test"}
+        assert api.messages[1] == {
+            "type": "compaction", "id": "comp_123", "encrypted_content": "abc"
+        }
+        assert api.messages[2]["role"] == "user"
+        assert api.messages[2]["content"] == "second message"
+        assert api.messages[3]["role"] == "assistant"

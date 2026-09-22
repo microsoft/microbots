@@ -18,13 +18,14 @@ frozenlist==1.7.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-idna==3.10
+httpx2==2.13.0
+idna==3.20
 iniconfig==2.1.0
-jiter==0.11.0
+jiter==0.17.0
 markdown-it-py==4.0.0
 mdurl==0.1.2
 multidict==6.6.4
-openai==1.107.3
+openai==3.17.0
 packaging==25.0
 pexpect==4.9.0
 pluggy==1.6.0
