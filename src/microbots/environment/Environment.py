@@ -22,6 +22,12 @@ class Environment(ABC):
     def execute(self, command: str, timeout: Optional[int] = 300, sensitive: bool = False) -> CmdReturn:
         pass
 
+    def execute_privileged(self, command: str, timeout: Optional[int] = 300, sensitive: bool = False) -> CmdReturn:
+        """Run a command on the control plane, which may hold more privilege
+        than the bot's own channel. Defaults to the bot channel.
+        Override this one while implementing custom Environment subclasses."""
+        return self.execute(command, timeout=timeout, sensitive=sensitive)
+
     def copy_to_container(self, src_path: str, dest_path: str) -> bool:
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support copying files to container. "

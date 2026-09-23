@@ -535,7 +535,7 @@ class CopilotBot:
         ]
 
         for cmd in install_commands:
-            result = self.environment.execute(cmd, timeout=300)
+            result = self.environment.execute_privileged(cmd, timeout=300)
             if result.return_code != 0:
                 raise RuntimeError(
                     f"Failed to install copilot-cli: {cmd}\n"
@@ -573,7 +573,7 @@ class CopilotBot:
         # Using nohup + & to run it as a background process inside the container's shell
         start_cmd = (
             f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} --host 0.0.0.0 "
-            f"> /var/log/copilot-cli.log 2>&1 &"
+            f"> /var/log/microbots/copilot-cli.log 2>&1 &"
         )
         result = self.environment.execute(start_cmd)
         if result.return_code != 0:
@@ -604,7 +604,7 @@ class CopilotBot:
                 return
             except (ConnectionRefusedError, OSError):
                 time.sleep(1)
-        self.environment.execute("cat /var/log/copilot-cli.log || true")
+        self.environment.execute("cat /var/log/microbots/copilot-cli.log || true")
         raise TimeoutError(
             f"copilot-cli did not become ready within {_CLI_STARTUP_TIMEOUT}s "
             f"on {container_ip}:{_CONTAINER_CLI_PORT}"
