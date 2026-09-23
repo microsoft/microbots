@@ -193,6 +193,7 @@ def mock_environment():
     success_return.stdout = "copilot version 1.0.0"
     success_return.stderr = ""
     env.execute = MagicMock(return_value=success_return)
+    env.execute_privileged = MagicMock(return_value=success_return)
     env.copy_to_container = MagicMock(return_value=True)
     env.stop = MagicMock()
     env.get_ipv4_address = MagicMock(return_value="172.17.0.2")
@@ -504,8 +505,12 @@ class TestCopilotBotCLIInstall:
                 github_token="ghp_test",
             )
             # _install_copilot_cli was called during __init__
-            # Verify that execute was called with npm install command
-            calls = [str(c) for c in mock_environment.execute.call_args_list]
+            # Verify that the install commands ran on the privileged channel
+            calls = [
+                str(c)
+                for c in mock_environment.execute.call_args_list
+                + mock_environment.execute_privileged.call_args_list
+            ]
             npm_calls = [c for c in calls if "npm install" in c or "copilot" in c]
             assert len(npm_calls) > 0, "Expected copilot-cli install commands"
             bot.stop()
@@ -518,6 +523,7 @@ class TestCopilotBotCLIInstall:
         fail_return.stdout = ""
         fail_return.stderr = "npm ERR! not found"
         mock_environment.execute = MagicMock(return_value=fail_return)
+        mock_environment.execute_privileged = MagicMock(return_value=fail_return)
 
         with (
             patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
@@ -953,6 +959,7 @@ class TestCopilotBotCLIVerification:
             return success_ret
 
         mock_environment.execute = MagicMock(side_effect=side_effect)
+        mock_environment.execute_privileged = MagicMock(side_effect=side_effect)
 
         with (
             patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),

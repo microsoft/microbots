@@ -57,7 +57,7 @@ class Tool(ToolAbstract):
             # Convert to octal string for chmod (e.g., 7 -> "700" for owner rwx)
             # Set the assigned permission for owner, group and no permission for others
             permission_command = f"chmod {file_copy.permissions}{file_copy.permissions}0 {dest_path_in_container}"
-            output = env.execute(permission_command)
+            output = env.execute_privileged(permission_command)
             if output.return_code != 0:
                 logger.error(
                     "❌ Failed to set permission for file in container: %s to: %s",
@@ -87,7 +87,7 @@ class Tool(ToolAbstract):
                 # escape backslashes for shell execution
                 # content = content.replace('\\', '\\\\')
             dest_path_in_container = f"/{file_copy.dest}"
-            output = env.execute(
+            output = env.execute_privileged(
                 f'echo """{content}""" > {dest_path_in_container}'
             )
             if output.return_code != 0:
@@ -110,7 +110,7 @@ class Tool(ToolAbstract):
     def install_tool(self, env: Environment):
         logger.debug("Installing Internal tool: %s", self.name)
         for command in self.install_commands:
-            output = env.execute(command)
+            output = env.execute_privileged(command)
             if output.return_code != 0:
                 logger.error(
                     "❌ Failed to install tool: %s with command: %s\nOutput: %s",
@@ -164,7 +164,7 @@ class Tool(ToolAbstract):
     def uninstall_tool(self, env):
         super().uninstall_tool(env)
         for file_copy in self.files_to_copy:
-            output = env.execute(f"rm -f /{file_copy.dest}")
+            output = env.execute_privileged(f"rm -f /{file_copy.dest}")
             if output.return_code != 0:
                 logger.error(
                     "❌ Failed to remove copied file in container: %s during uninstallation of tool: %s",
@@ -176,7 +176,7 @@ class Tool(ToolAbstract):
                 )
 
         for command in self.uninstall_commands:
-            output = env.execute(command)
+            output = env.execute_privileged(command)
             if output.return_code != 0:
                 logger.error(
                     "❌ Failed to uninstall tool: %s with command: %s\nOutput: %s",
