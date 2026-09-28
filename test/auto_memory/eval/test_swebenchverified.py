@@ -212,3 +212,79 @@ def test_combined_feedback_falls_back_to_raw_results_when_the_bot_fails(tmp_path
         feedback = task._combine_result_feedback(feedback_items, "azure-openai/gpt-4o", "/repo")
 
     assert "assertion failed" in feedback
+
+
+@pytest.mark.unit
+def test_combined_feedback_is_empty_when_there_is_nothing_to_combine(tmp_path):
+    task = _task(tmp_path, instance_id_list=["django__django-11099"])
+
+    with patch(f"{MODULE}.ReadingBot") as reading_bot:
+        feedback = task._combine_result_feedback([], "azure-openai/gpt-4o", "/repo")
+
+    assert feedback == ""
+    reading_bot.assert_not_called()
+
+
+@pytest.mark.unit
+def test_combined_feedback_falls_back_to_raw_results_when_the_bot_returns_a_failure(tmp_path):
+    task = _task(tmp_path, instance_id_list=["django__django-11099"])
+    feedback_items = ["Instance failed: assertion failed"]
+
+    with patch(f"{MODULE}.ReadingBot") as reading_bot:
+        reading_bot.return_value.run.return_value = BotRunResult(
+            status=False, result=None, error="bot gave up"
+        )
+        feedback = task._combine_result_feedback(feedback_items, "azure-openai/gpt-4o", "/repo")
+
+    assert feedback == "Instance failed: assertion failed"
+
+
+# ---------------------------------------------------------------------------
+# _generate_instance_feedback
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_instance_feedback_returns_the_bot_report(tmp_path):
+    task = _task(tmp_path, instance_id_list=["django__django-11099"])
+    agent_result = BotRunResult(status=True, result="patched", error=None)
+    harness_result = BotRunResult(status=False, result="not resolved", error="tests failed")
+
+    with patch(f"{MODULE}.ReadingBot") as reading_bot:
+        reading_bot.return_value.run.return_value = BotRunResult(
+            status=True, result="check the settings module first", error=None
+        )
+        feedback = task._generate_instance_feedback(
+            INSTANCE, agent_result, harness_result, "azure-openai/gpt-4o", str(tmp_path)
+        )
+
+    assert feedback == "check the settings module first"
+
+
+@pytest.mark.unit
+def test_instance_feedback_is_empty_when_the_bot_is_unavailable(tmp_path):
+    task = _task(tmp_path, instance_id_list=["django__django-11099"])
+    agent_result = BotRunResult(status=False, result=None, error="agent timed out")
+
+    with patch(f"{MODULE}.ReadingBot", side_effect=RuntimeError("no model configured")):
+        feedback = task._generate_instance_feedback(
+            INSTANCE, agent_result, None, "azure-openai/gpt-4o", str(tmp_path)
+        )
+
+    assert feedback == ""
+
+
+@pytest.mark.unit
+def test_instance_feedback_is_empty_when_the_bot_fails(tmp_path):
+    task = _task(tmp_path, instance_id_list=["django__django-11099"])
+    agent_result = BotRunResult(status=True, result="patched", error=None)
+    harness_result = BotRunResult(status=False, result="not resolved", error="tests failed")
+
+    with patch(f"{MODULE}.ReadingBot") as reading_bot:
+        reading_bot.return_value.run.return_value = BotRunResult(
+            status=False, result=None, error="bot crashed"
+        )
+        feedback = task._generate_instance_feedback(
+            INSTANCE, agent_result, harness_result, "azure-openai/gpt-4o", str(tmp_path)
+        )
+
+    assert feedback == ""

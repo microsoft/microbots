@@ -1,5 +1,6 @@
 """Unit tests for microbots.auto_memory.cli."""
 
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -76,3 +77,37 @@ def test_main_fails_fast_when_no_config_file_exists(tmp_path):
                 "--task", "swebenchverified",
                 "--workdir", str(workdir),
             ])
+
+
+@pytest.mark.unit
+def test_parse_args_debug_http_defaults_to_false():
+    args = parse_args(["--model", "azure-openai/gpt-4o", "--task", "swebenchverified"])
+
+    assert args.debug_http is False
+
+
+@pytest.mark.unit
+def test_main_enables_http_debug_logging_when_requested(tmp_path):
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "task_config.yaml").write_text("repo: django/django")
+
+    http_logger = logging.getLogger("httpx2")
+    original_level = http_logger.level
+    original_handlers = list(http_logger.handlers)
+
+    try:
+        with patch.dict(f"{MODULE}.TASK_REGISTRY", {"swebenchverified": MagicMock()}, clear=True), \
+             patch(f"{MODULE}.run"):
+            main([
+                "--model", "azure-openai/gpt-4o",
+                "--task", "swebenchverified",
+                "--workdir", str(workdir),
+                "--debug-http",
+            ])
+
+        assert http_logger.level == logging.DEBUG
+        assert len(http_logger.handlers) == len(original_handlers) + 1
+    finally:
+        http_logger.setLevel(original_level)
+        http_logger.handlers = original_handlers

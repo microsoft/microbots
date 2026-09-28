@@ -314,6 +314,22 @@ class TestOpenAIApiTokenUsageLogging:
         assert any("input=12" in r.message and "output=34" in r.message and "total=46" in r.message
                    for r in caplog.records)
 
+    def test_ask_warns_when_token_usage_is_missing(self, caplog):
+        """A warning is logged when the response carries no usage information"""
+        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+
+        mock_response = Mock()
+        mock_response.output_text = json.dumps({
+            "task_done": False, "command": "cmd", "thoughts": None
+        })
+        mock_response.usage = None
+        api.ai_client.responses.create = Mock(return_value=mock_response)
+
+        with caplog.at_level("WARNING"):
+            api.ask("hello")
+
+        assert any("did not include token usage" in r.message for r in caplog.records)
+
 
 @pytest.mark.unit
 class TestOpenAIApiCompaction:
