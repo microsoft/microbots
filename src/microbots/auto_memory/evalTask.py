@@ -78,6 +78,20 @@ class EvalTask(ABC):
                              " Or you didn't override the base method.")
         return self._repo_url
 
+    def training_instructions(self) -> str | None:
+        """Return a path to training instructions replacing the built-in ones.
+
+        Override in tasks whose retraining needs different guidance than the
+        default repo-learning instructions.
+
+        Returns
+        -------
+        str | None
+            Path to a custom instructions file, or ``None`` to use the
+            built-in ``training/training_instructions.md``.
+        """
+        return None
+
     def parse_config(self, config_file: Path) -> None:
         """Read the task's config file, recording the training repo URL.
 

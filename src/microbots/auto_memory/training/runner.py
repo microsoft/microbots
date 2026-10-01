@@ -16,6 +16,7 @@ def run_training(
     model: str,
     max_iterations: int = 200,
     timeout_in_seconds: int = 3600,
+    instructions_path: str | None = None,
 ) -> BotRunResult:
     """Run one training pass over a repository and update its memory.
 
@@ -37,13 +38,16 @@ def run_training(
         Maximum number of bot iterations.
     timeout_in_seconds : int, default=3600
         Maximum duration of the bot run in seconds.
+    instructions_path : str | None, default=None
+        Path to an instructions file to use instead of the built-in
+        ``training_instructions.md``.
 
     Returns
     -------
     microbots.MicroBot.BotRunResult
         Result of the training bot run.
     """
-    instructions = _INSTRUCTIONS_PATH.read_text(encoding="utf-8")
+    instructions = Path(instructions_path or _INSTRUCTIONS_PATH).read_text(encoding="utf-8")
     feedback_section = feedback.strip() or "No feedback provided for this run."
     prompt = f"{instructions}\n\n## Feedback\n{feedback_section}\n"
 

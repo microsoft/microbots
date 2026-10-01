@@ -198,6 +198,7 @@ def run_train_eval_loop(
                         feedback=outcome.feedback,
                         memory_dir=str(mem_dir),
                         model=model,
+                        instructions_path=task.training_instructions(),
                     )
             except Exception:
                 logger.exception(
