@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 import logging
 from typing import Callable, List, Optional
 from dataclasses import dataclass
@@ -142,6 +143,60 @@ class ShellCommunicator:
         # Look for heredoc patterns like <<EOF, <<'END', <<"DELIMITER", etc.
         return bool(re.search(r'<<\s*[\'"]?[A-Za-z_][A-Za-z0-9_]*[\'"]?', command))
 
+    def _wrap_command(self, command: str) -> str:
+        """
+        Wrap a command so the long-lived shell survives whatever it contains.
+
+        The command is passed to bash as data (a quoted heredoc read into a
+        variable) and run with ``eval ... < /dev/null``, so:
+
+        - a syntax error aborts only this command, instead of making the
+          non-interactive shell exit;
+        - a command that reads stdin (e.g. ``sed`` without a file) gets EOF
+          instead of swallowing the commands and markers sent after it;
+        - state such as ``cd`` and exported variables still persists.
+
+        Args:
+            command: The command text to wrap
+
+        Returns:
+            The wrapped command text
+        """
+        delimiter = f"__MICROBOTS_CMD_{uuid.uuid4().hex}__"
+        return (
+            f"IFS= read -r -d '' __microbots_cmd <<'{delimiter}'\n"
+            f"{command}\n"
+            f"{delimiter}\n"
+            'eval "$__microbots_cmd" < /dev/null'
+        )
+
+    def _child_pids(self) -> List[int]:
+        """Return the PIDs of the shell's direct child processes."""
+        if not self.process:
+            return []
+        children = []
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat") as stat:
+                    # Field 4 is the parent PID; the command name (field 2) may contain spaces.
+                    ppid = int(stat.read().rsplit(")", 1)[1].split()[1])
+            except (OSError, IndexError, ValueError):
+                continue
+            if ppid == self.process.pid:
+                children.append(int(entry))
+        return children
+
+    def _ensure_session(self) -> bool:
+        """Restart the shell if it has exited (e.g. the agent ran ``exit``)."""
+        if self.process and self.process.poll() is not None:
+            logger.warning("⚠️ Shell exited with code %s; starting a new session", self.process.returncode)
+            self.is_running = False
+            self._clear_output_queues()
+            return self.start_session()
+        return True
+
     def send_command(
         self, command: str, wait_for_output: bool = True, timeout: float = 300
     ) -> CmdReturn:
@@ -160,12 +215,15 @@ class ShellCommunicator:
             logger.warning("⚠️ No active shell session")
             return CmdReturn(stdout="", stderr="No active shell session", return_code=1)
 
+        if not self._ensure_session():
+            return CmdReturn(stdout="", stderr="Shell session exited and could not be restarted", return_code=1)
+
         try:
             # command = self._re_escape(command)
 
             if not wait_for_output:
                 # Send the command without marker for async execution
-                self.process.stdin.write(command + "\n")
+                self.process.stdin.write(self._wrap_command(command) + "\n")
                 self.process.stdin.flush()
                 logger.debug("➡️ Sent async command: %s", command)
                 return CmdReturn(stdout="ASYNC: Not waiting for completion", stderr="", return_code=0)
@@ -173,7 +231,7 @@ class ShellCommunicator:
             # Generate a unique command completion marker
             marker = f"__COMMAND_COMPLETE_{int(time.time() * 1000000)}__"
 
-            self.process.stdin.write(command + "\n")
+            self.process.stdin.write(self._wrap_command(command) + "\n")
             self.process.stdin.flush()
             # Send exit code capture on a new line after user command completes
             self.process.stdin.write(f"echo '{marker}' $?\n")
@@ -250,13 +308,20 @@ class ShellCommunicator:
                 error_lines.append(f"Command timed out after {timeout} seconds")
                 final_return_code = 124  # Standard timeout exit code
 
-                # Attempt to recover the shell by sending Ctrl+C to interrupt the running command
+                # Attempt to recover the shell by interrupting the running command
                 try:
                     logger.info("🛠️ Attempting to interrupt timed-out command...")
-                    # Send SIGINT to the shell process to interrupt the running command
                     if self.process and self.process.poll() is None:
-                        self.process.send_signal(subprocess.signal.SIGINT)
-                        time.sleep(0.5)  # Give it time to handle the interrupt
+                        # Signal the command itself: the shell only waits for its child,
+                        # so interrupting the shell alone leaves the command running.
+                        for pid in self._child_pids():
+                            for sig in (signal.SIGINT, signal.SIGKILL):
+                                try:
+                                    os.kill(pid, sig)
+                                except ProcessLookupError:
+                                    break
+                                time.sleep(0.5)
+                        time.sleep(0.5)  # Give the shell time to reap the command
 
                         # Clear any pending output from the interrupted command
                         self._clear_output_queues()
