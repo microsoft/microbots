@@ -115,6 +115,16 @@ class TestCreateFile:
         assert result.return_code == 0
         assert path.read_text() == ""
 
+    def test_unwritable_path_is_an_error(self, env, tmp_path):
+        not_a_directory = tmp_path / "a.txt"
+        not_a_directory.write_text("keep")
+
+        result = run_file_tool("create_file", {"path": str(not_a_directory / "b.txt"), "content": "x"}, env)
+
+        assert result.return_code == 1
+        assert str(not_a_directory) in result.stderr
+        assert not_a_directory.read_text() == "keep"
+
 
 @pytest.mark.unit
 class TestStrReplace:
