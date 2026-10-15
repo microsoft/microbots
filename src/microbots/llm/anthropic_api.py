@@ -1,14 +1,13 @@
-import json
+"""Anthropic Messages API client implementing the LLMInterface with native tool calling."""
 import os
-import re
 from collections.abc import Callable
-from dataclasses import asdict
 from logging import getLogger
 
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from anthropic.lib.foundry import AnthropicFoundry
-from microbots.llm.llm import LLMAskResponse, LLMInterface
+from microbots.llm.llm import LLMAskResponse, LLMInterface, ToolCall
+from microbots.tools.tool import ToolAbstract
 
 logger = getLogger(__name__)
 
@@ -18,11 +17,53 @@ endpoint = os.getenv("ANTHROPIC_END_POINT")
 deployment_name = os.getenv("ANTHROPIC_DEPLOYMENT_NAME")
 api_key = os.getenv("ANTHROPIC_API_KEY")
 
+# Room for long replies, within the SDK's limit for non-streaming requests.
+MAX_TOKENS = 16_000
+
 
 class AnthropicApi(LLMInterface):
+    """
+    LLM client backed by the Anthropic Messages API.
 
-    def __init__(self, system_prompt, deployment_name=deployment_name, max_retries=3,
+    The model acts through native tool calls. The API keeps no conversation
+    state, so the full history is sent with every request, and automatic
+    prompt caching avoids reprocessing the part that was already sent.
+
+    Parameters
+    ----------
+    system_prompt : str
+        System prompt sent with every request.
+    tools : list[ToolAbstract]
+        Tools the model can call. Each tool's ``parameters`` is a JSON schema.
+    deployment_name : str
+        Anthropic model name (e.g. 'claude-sonnet-4-5').
+    token_provider : Callable[[], str] | None
+        Optional callable returning an Azure AD bearer token, used with
+        Azure AI Foundry instead of ANTHROPIC_API_KEY when provided.
+    """
+
+    def __init__(self, system_prompt, tools: list[ToolAbstract], deployment_name=deployment_name,
                  token_provider: Callable[[], str] | None = None):
+        """
+        Create the client.
+
+        Parameters
+        ----------
+        system_prompt : str
+            System prompt sent with every request.
+        tools : list[ToolAbstract]
+            Tools the model can call. Each tool's ``parameters`` is a JSON schema.
+        deployment_name : str
+            Anthropic model name (e.g. 'claude-sonnet-4-5').
+        token_provider : Callable[[], str] | None
+            Optional callable returning an Azure AD bearer token, used with
+            Azure AI Foundry instead of ANTHROPIC_API_KEY when provided.
+
+        Raises
+        ------
+        ValueError
+            If no authentication is configured or the token provider is invalid.
+        """
         self.token_provider = token_provider
 
         if not token_provider and not api_key:
@@ -52,41 +93,145 @@ class AnthropicApi(LLMInterface):
             )
         self.deployment_name = deployment_name
         self.system_prompt = system_prompt
+        self.tools = [self._to_anthropic_tool(tool) for tool in tools]
         self.messages = []
-
-        # Set these values here. This logic will be handled in the parent class.
-        self.max_retries = max_retries
-        self.retries = 0
+        self.unanswered_call_ids = []
 
     def ask(self, message) -> LLMAskResponse:
-        self.retries = 0  # reset retries for each ask. Handled in parent class.
+        """
+        Send a message to the LLM and return its parsed response.
 
-        self.messages.append({"role": "user", "content": message})
+        Parameters
+        ----------
+            message : str
+                The message/prompt to send to the LLM.
 
-        valid = False
-        while not valid:
-            response = self.ai_client.messages.create(
-                model=self.deployment_name,
-                system=self.system_prompt,
-                messages=self.messages,
-                max_tokens=4096,
-            )
+        Returns
+        -------
+            LLMAskResponse
+                The parsed LLM response.
+        """
+        # A run that stopped early can leave tool calls unanswered, and the API
+        # rejects a new message until every call has a result.
+        content = [
+            self._tool_result(call_id, "Not run: the previous run stopped.", is_error=True)
+            for call_id in self.unanswered_call_ids
+        ]
+        content.append({"type": "text", "text": message})
+        return self._send(content)
 
-            # Extract text content from response
-            response_text = response.content[0].text if response.content else ""
-            logger.debug("Raw Anthropic response (first 500 chars): %s", response_text[:500])
+    def send_tool_outputs(self, outputs: dict[str, str]) -> LLMAskResponse:
+        """
+        Send the outputs of the requested tool calls and return the LLM's next response.
 
-            # Try to extract JSON if wrapped in markdown code blocks
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-            if json_match:
-                response_text = json_match.group(1)
+        Parameters
+        ----------
+            outputs : dict[str, str]
+                The output of each tool call, keyed by its call id.
 
-            valid, askResponse = self._validate_llm_response(response=response_text)
-
-        self.messages.append({"role": "assistant", "content": json.dumps(asdict(askResponse))})
-
-        return askResponse
+        Returns
+        -------
+            LLMAskResponse
+                The parsed LLM response.
+        """
+        return self._send([self._tool_result(call_id, output) for call_id, output in outputs.items()])
 
     def clear_history(self):
+        """
+        Clear the LLM's conversation history.
+
+        Returns
+        -------
+            bool
+                True if the history was cleared successfully.
+        """
         self.messages = []
+        self.unanswered_call_ids = []
         return True
+
+    def _send(self, user_content: list[dict]) -> LLMAskResponse:
+        """
+        Add a user message to the conversation, send it, and parse the response.
+
+        Parameters
+        ----------
+            user_content : list[dict]
+                The content blocks of the new user message.
+
+        Returns
+        -------
+            LLMAskResponse
+                The model's tool calls, or its final answer when it calls none.
+        """
+        self.messages.append({"role": "user", "content": user_content})
+        response = self.ai_client.messages.create(
+            model=self.deployment_name,
+            system=self.system_prompt,
+            messages=self.messages,
+            tools=self.tools,
+            max_tokens=MAX_TOKENS,
+            # Automatic prompt caching; this SDK version has no named parameter for it.
+            extra_body={"cache_control": {"type": "ephemeral"}},
+        )
+        usage = response.usage
+        logger.info(
+            "Anthropic token usage: input=%s cache_read=%s cache_write=%s output=%s",
+            usage.input_tokens, usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens, usage.output_tokens,
+        )
+
+        # Sent back unchanged so any thinking blocks keep the model's reasoning.
+        self.messages.append({"role": "assistant", "content": response.content})
+
+        tool_calls = [
+            ToolCall(call_id=block.id, name=block.name, arguments=block.input)
+            for block in response.content
+            if block.type == "tool_use"
+        ]
+        self.unanswered_call_ids = [call.call_id for call in tool_calls]
+        text = "\n".join(block.text for block in response.content if block.type == "text")
+        # A reply without tool calls is the model's final answer.
+        return LLMAskResponse(task_done=not tool_calls, thoughts=text, tool_calls=tool_calls)
+
+    @staticmethod
+    def _to_anthropic_tool(tool: ToolAbstract) -> dict:
+        """
+        Describe a tool in the Messages API tool format.
+
+        Parameters
+        ----------
+            tool : ToolAbstract
+                A tool whose ``parameters`` field is a JSON schema.
+
+        Returns
+        -------
+            dict
+                The tool definition to pass in the ``tools`` request field.
+        """
+        return {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.parameters,
+            "strict": True,
+        }
+
+    @staticmethod
+    def _tool_result(call_id: str, output: str, is_error: bool = False) -> dict:
+        """
+        Build the content block that answers a tool call.
+
+        Parameters
+        ----------
+            call_id : str
+                The id of the tool call.
+            output : str
+                The output of the tool call.
+            is_error : bool
+                Whether the tool call failed.
+
+        Returns
+        -------
+            dict
+                A ``tool_result`` content block.
+        """
+        return {"type": "tool_result", "tool_use_id": call_id, "content": output, "is_error": is_error}

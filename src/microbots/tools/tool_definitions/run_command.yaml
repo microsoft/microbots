@@ -1,0 +1,19 @@
+name: run_command
+tool_type: internal
+description: >-
+  Run a shell command in the sandbox's persistent bash session. The working
+  directory and environment variables carry over between calls. Commands must
+  be non-interactive.
+
+# Native tools are described to the LLM by their function schema, not the system prompt.
+usage_instructions_to_llm: ""
+
+# JSON schema of the function arguments.
+parameters:
+  type: object
+  properties:
+    command:
+      type: string
+      description: The shell command to run.
+  required: [command]
+  additionalProperties: false
