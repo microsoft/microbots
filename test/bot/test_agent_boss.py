@@ -266,7 +266,7 @@ class TestAgentBossRun:
 class TestAgentBossIntegration:
     """Slow integration tests that exercise AgentBoss end-to-end."""
 
-    def test_agent_boss_solves_issue_1(self, test_repo, issue_1):
+    def test_agent_boss_solves_issue_1(self, test_repo, issue_1, openai_model):
         """AgentBoss should autonomously fix the missing-colon syntax error.
 
         The test mirrors ``test_microbot_2bot_combo`` but uses a single
@@ -280,9 +280,8 @@ class TestAgentBossIntegration:
 
         verify_function = issue_1[1]
 
-        model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
         boss = AgentBoss(
-            model=model,
+            model=openai_model,
             folder_to_mount=str(test_repo),
         )
 

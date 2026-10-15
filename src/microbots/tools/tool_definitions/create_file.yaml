@@ -1,0 +1,21 @@
+name: create_file
+tool_type: internal
+description: >-
+  Create a file with the given content, overwriting it if it already exists.
+  Missing parent directories are created.
+
+# Native tools are described to the LLM by their function schema, not the system prompt.
+usage_instructions_to_llm: ""
+
+# JSON schema of the function arguments.
+parameters:
+  type: object
+  properties:
+    path:
+      type: string
+      description: Path of the file, absolute or relative to the current directory.
+    content:
+      type: string
+      description: The full content of the file.
+  required: [path, content]
+  additionalProperties: false

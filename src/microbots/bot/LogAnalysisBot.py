@@ -1,9 +1,10 @@
+"""LogAnalysisBot: a bot that finds the root cause of failures in a log file."""
 import logging
 import os
 from typing import Optional
 
 from microbots.constants import DOCKER_WORKING_DIR, LOG_FILE_DIR, PermissionLabels
-from microbots.MicroBot import BotRunResult, BotType, MicroBot, system_prompt_common
+from microbots.MicroBot import BotRunResult, BotType, MicroBot, system_prompt_common_for
 from microbots.tools.tool import ToolAbstract
 from microbots.extras.mount import Mount, MountType
 
@@ -15,8 +16,8 @@ class LogAnalysisBot(MicroBot):
     A bot specialized in analyzing log files and identifying root causes.
 
     ``LogAnalysisBot`` extends `MicroBot`. The bot is to inspect a log file and determine
-    the root cause of any failures it contains. 
-    
+    the root cause of any failures it contains.
+
     It is given **read-only**
     access to the source code that produced the log, allowing it to correlate
     log entries with the originating code while guaranteeing it can never
@@ -25,6 +26,23 @@ class LogAnalysisBot(MicroBot):
     The source folder is mounted read-only into the bot's sandbox environment
     via a `Mount`, and the log file to analyze is copied into the environment
     at run time. See `run` for how a log file is supplied for analysis.
+
+    Parameters
+    ----------
+    model : str
+        The model to use, in the format ``<provider>/<model_name>``.
+    folder_to_mount : str
+        Absolute path to the source code folder that generated the log. It is
+        mounted **read-only** into the bot's sandbox environment.
+    environment : Optional[any]
+        The execution environment for the bot. If not provided, a default
+        environment is created. Defaults to None.
+    additional_tools : Optional[list[ToolAbstract]]
+        Extra tools to make available to the bot during analysis.
+        Defaults to None (no additional tools).
+    token_provider : Optional[any]
+        An optional callable that supplies authentication tokens for the
+        model provider. Defaults to None.
 
     Attributes
     ----------
@@ -90,7 +108,7 @@ class LogAnalysisBot(MicroBot):
         )
 
         system_prompt = f"""
-        {system_prompt_common}
+        {system_prompt_common_for(model)}
         You are a helpful log analysis bot. Your job is to analyze a log file and identify the root-cause if there are any failure. You'll be given read-only access to the code from where the log is generated. The read-only code is available at {folder_mount_info.sandbox_path}.
 
 The log file to analyze will be given in the user prompt. You can find the provided log file under the directory /{LOG_FILE_DIR}/
@@ -135,6 +153,10 @@ Only when you have run all necessary commands and identified the root cause, you
         timeout_in_seconds : int
             Maximum time in seconds to allow the analysis to run before
             stopping. Defaults to 300.
+        user_prompt : Optional[str]
+            Extra context from the user, appended to the task as supporting
+            information. It does not override the system instructions.
+            Defaults to None.
 
         Returns
         -------

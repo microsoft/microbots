@@ -1,0 +1,25 @@
+name: str_replace
+tool_type: internal
+description: >-
+  Edit a file by replacing one exact occurrence of old_str with new_str.
+  old_str must match the file exactly, including whitespace and indentation,
+  and must appear exactly once. Include surrounding lines to make it unique.
+
+# Native tools are described to the LLM by their function schema, not the system prompt.
+usage_instructions_to_llm: ""
+
+# JSON schema of the function arguments.
+parameters:
+  type: object
+  properties:
+    path:
+      type: string
+      description: Path of the file, absolute or relative to the current directory.
+    old_str:
+      type: string
+      description: The exact text to replace.
+    new_str:
+      type: string
+      description: The text to replace it with. Use an empty string to delete old_str.
+  required: [path, old_str, new_str]
+  additionalProperties: false

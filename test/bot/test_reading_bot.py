@@ -21,11 +21,10 @@ from microbots import ReadingBot, BotRunResult
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_reading_bot(test_repo, issue_1):
+def test_reading_bot(test_repo, issue_1, openai_model):
     issue_text = issue_1[0] + "\n\nPlease suggest a fix for this issue. When you suggest a fix, you must set the `task_done` field to true and set `thoughts` field with fix suggestion."
-    model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
     readingBot = ReadingBot(
-        model=model,
+        model=openai_model,
         folder_to_mount=str(test_repo)
     )
 
