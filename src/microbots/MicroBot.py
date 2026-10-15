@@ -1,8 +1,6 @@
 """Core MicroBot agent class and supporting types."""
-from collections.abc import Iterable
 import json
 import os
-from pprint import pformat
 import re
 import time
 from dataclasses import dataclass
@@ -18,7 +16,8 @@ from microbots.llm.anthropic_api import AnthropicApi
 from microbots.llm.azure_openai_api import AzureOpenAIApi
 from microbots.llm.openai_api import OpenAIApi
 from microbots.llm.ollama_local import OllamaLocal
-from microbots.llm.llm import llm_output_format_str
+from microbots.llm.llm import ToolCall, llm_output_format_str
+from microbots.tools.native_tools import OPENAI_NATIVE_TOOLS, RUN_COMMAND_TOOL, run_file_tool
 from microbots.tools.tool import ToolAbstract, get_tool_from_call
 from microbots.extras.mount import Mount, MountType
 from microbots.utils.logger import LogLevelEmoji
@@ -51,6 +50,47 @@ Remember following important points
 2. Avoid using recursive commands like 'ls -R', 'rm -rf', 'tree', or 'find' without depth limits as they can produce excessive output or be destructive.
 3. You cannot run any interactive commands like vim, nano, etc.
 """
+
+# Shared system prompt for LLMs that act through API tool calls instead of replying in JSON.
+# It names no tools, so it works with whichever tools a provider gets.
+tool_calling_system_prompt_common = """
+You are a helpful agent well versed in software development and debugging.
+
+You will be provided with a coding or debugging task to complete inside a sandboxed shell environment.
+Complete it by calling the provided tools.
+When a dedicated tool fits the job, such as a file editing tool, prefer it over a shell command.
+Only batch tool calls that are independent of each other.
+NEVER use commands that produce large amounts of output or take a long time to run to avoid exceeding context limits.
+Use specific patterns: 'find <path> -name "*.c" -maxdepth 2' instead of recursive exploration.
+No human is involved in the task. So, don't seek human intervention.
+When you are sure that the task is completed, reply with your final answer without calling any tool.
+That reply ends the task, the same as task_done=true, and its text is the result.
+
+Remember following important points
+1. If a command fails, analyze the error message and try a different approach. Same command will not pass again.
+2. Avoid using recursive commands like 'ls -R', 'rm -rf', 'tree', or 'find' without depth limits as they can produce excessive output or be destructive.
+3. You cannot run any interactive commands like vim, nano, etc.
+"""
+
+
+def system_prompt_common_for(model: str) -> str:
+    """
+    Return the shared system prompt that matches how the model's provider runs tools.
+
+    Parameters
+    ----------
+        model : str
+            The model in the format <provider>/<model_name>.
+
+    Returns
+    -------
+        str
+            ``tool_calling_system_prompt_common`` for OpenAI and Anthropic models,
+            which act through API tool calls, otherwise ``system_prompt_common``.
+    """
+    if model.split("/")[0] in (ModelProvider.OPENAI, ModelProvider.ANTHROPIC):
+        return tool_calling_system_prompt_common
+    return system_prompt_common
 
 
 class BotType(StrEnum):
@@ -195,7 +235,7 @@ class MicroBot:
             self.token_provider = token_provider
         elif (
             os.getenv("AZURE_AUTH_METHOD", "").strip().lower() == "azure_ad"
-            and self.model_provider == ModelProvider.AZURE_OPENAI
+            and self.model_provider in (ModelProvider.AZURE_OPENAI, ModelProvider.OPENAI)
         ):
             try:
                 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
@@ -306,49 +346,17 @@ class MicroBot:
                 logger.info(
                     f" 💭  LLM thoughts: {llm_response.thoughts}",
                 )
+
+            if llm_response.tool_calls:
+                # TODO: Run the tool calls in parallel once each call can get its own shell session.
+                tool_outputs = {call.call_id: self._run_tool_call(call) for call in llm_response.tool_calls}
+                llm_response = self.llm.send_tool_outputs(tool_outputs)
+                continue
+
             logger.info(
                 f" ➡️  LLM tool call : {json.dumps(llm_response.command)}",
             )
-
-            # Validate command for dangerous operations
-            is_safe, explanation = self._is_safe_command(llm_response.command)
-            if not is_safe:
-                error_msg = f"Dangerous command detected and blocked: {llm_response.command}\n{explanation}"
-                logger.info("%s %s", LogLevelEmoji.WARNING, error_msg)
-                llm_response = self.llm.ask(f"COMMAND_ERROR: {error_msg}\nPlease provide a safer alternative command.")
-                continue
-
-            tool = get_tool_from_call(llm_response.command, self.additional_tools)
-            if tool:
-                llm_command_output = tool.invoke(llm_response.command, self)
-            else:
-                llm_command_output = self.environment.execute(llm_response.command)
-
-            logger.debug(
-                    " 🔧  Command executed.\nReturn Code: %d\nStdout:\n%s\nStderr:\n%s",
-                    llm_command_output.return_code,
-                    llm_command_output.stdout,
-                    llm_command_output.stderr,
-                )
-
-            if llm_command_output.return_code == 0:
-                if llm_command_output.stdout:
-                    output_text = llm_command_output.stdout
-                    # HACK: anthropic-text-editor tool extra formats the output
-                    try:
-                        output_json = json.loads(llm_command_output.stdout)
-                        if isinstance(output_json, Iterable) and "content" in output_json:
-                            output_text = pformat(output_json["content"])
-                    except json.JSONDecodeError:
-                        pass
-                    except Exception as e:
-                        logger.warning("Failed to parse command output as JSON, using raw stdout")
-                        logger.debug("Error details: %s", str(e))
-                else:
-                    output_text = f"Command executed successfully with no output\nreturn code: {llm_command_output.return_code}\nstdout: {llm_command_output.stdout}\nstderr: {llm_command_output.stderr}"
-            else:
-                output_text = f"COMMAND EXECUTION FAILED\nreturn code: {llm_command_output.return_code}\nstdout: {llm_command_output.stdout}\nstderr: {llm_command_output.stderr}"
-
+            output_text = self._run_command(llm_response.command)
             logger.info(" ⬅️  Command output:\n%s", output_text)
             llm_response = self.llm.ask(output_text)
 
@@ -358,6 +366,84 @@ class MicroBot:
             )
         logger.info("🔚 TASK COMPLETED : %s...", task[0:15])
         return BotRunResult(status=True, result=llm_response.result or llm_response.thoughts, error=None)
+
+    def _run_tool_call(self, call: ToolCall) -> str:
+        """
+        Run a native tool call requested by the LLM.
+
+        Parameters
+        ----------
+            call : ToolCall
+                The tool call to run.
+
+        Returns
+        -------
+            str
+                The tool output, described for the LLM.
+        """
+        logger.info(" ➡️  LLM tool call : %s %s", call.name, json.dumps(call.arguments))
+        if call.name == "run_command":
+            # TODO: Make memory and microbot_sub native tools; a chained call like "cd x && microbot_sub ..." reaches the shell.
+            output_text = self._run_command(call.arguments["command"])
+        else:
+            output_text = self._describe_output(run_file_tool(call.name, call.arguments, self.environment))
+        logger.info(" ⬅️  Command output:\n%s", output_text)
+        return output_text
+
+    def _run_command(self, command: str) -> str:
+        """
+        Run a shell command, or the additional tool it invokes, unless it is dangerous.
+
+        Parameters
+        ----------
+            command : str
+                The command requested by the LLM.
+
+        Returns
+        -------
+            str
+                The command output, or why the command was blocked, described for the LLM.
+        """
+        is_safe, explanation = self._is_safe_command(command)
+        if not is_safe:
+            error_msg = f"Dangerous command detected and blocked: {command}\n{explanation}"
+            logger.info("%s %s", LogLevelEmoji.WARNING, error_msg)
+            return f"COMMAND_ERROR: {error_msg}\nPlease provide a safer alternative command."
+
+        tool = get_tool_from_call(command, self.additional_tools)
+        if tool:
+            return self._describe_output(tool.invoke(command, self))
+        return self._describe_output(self.environment.execute(command))
+
+    def _describe_output(self, llm_command_output) -> str:
+        """
+        Describe the result of a command for the LLM.
+
+        Parameters
+        ----------
+            llm_command_output : CmdReturn
+                The result of the command.
+
+        Returns
+        -------
+            str
+                The output text to send to the LLM.
+        """
+        logger.debug(
+            " 🔧  Command executed.\nReturn Code: %d\nStdout:\n%s\nStderr:\n%s",
+            llm_command_output.return_code,
+            llm_command_output.stdout,
+            llm_command_output.stderr,
+        )
+
+        if llm_command_output.return_code == 0:
+            if llm_command_output.stdout:
+                output_text = llm_command_output.stdout
+            else:
+                output_text = f"Command executed successfully with no output\nreturn code: {llm_command_output.return_code}\nstdout: {llm_command_output.stdout}\nstderr: {llm_command_output.stderr}"
+        else:
+            output_text = f"COMMAND EXECUTION FAILED\nreturn code: {llm_command_output.return_code}\nstdout: {llm_command_output.stdout}\nstderr: {llm_command_output.stderr}"
+        return output_text
 
     def _mount_additional(self, mount: Mount):
         """
@@ -420,15 +506,21 @@ class MicroBot:
             )
         elif self.model_provider == ModelProvider.OPENAI:
             self.llm = OpenAIApi(
-                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
+                system_prompt=system_prompt_with_tools,
+                deployment_name=self.deployment_name,
+                tools=OPENAI_NATIVE_TOOLS,
+                token_provider=self.token_provider,
             )
         elif self.model_provider == ModelProvider.OLLAMA_LOCAL:
             self.llm = OllamaLocal(
                 system_prompt=system_prompt_with_tools, model_name=self.deployment_name
             )
         elif self.model_provider == ModelProvider.ANTHROPIC:
+            # TODO: Add Anthropic's native tools.
             self.llm = AnthropicApi(
-                system_prompt=system_prompt_with_tools, deployment_name=self.deployment_name,
+                system_prompt=system_prompt_with_tools,
+                deployment_name=self.deployment_name,
+                tools=[RUN_COMMAND_TOOL],
                 token_provider=self.token_provider,
             )
         # No Else case required as model provider is already validated using _validate_model_and_provider

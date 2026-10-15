@@ -2,12 +2,12 @@
 This test uses the WritingBot to solve https://github.com/SWE-agent/test-repo/issues/1
 The issue is a simple syntax correction issue from original SWE-bench's test-repo.
 
-This test can run with either Azure OpenAI or Ollama Local (qwen3-coder:latest).
+This test can run with Azure OpenAI, OpenAI or Ollama Local (qwen3-coder:latest).
 
 Usage:
 ------
-# Run only Azure OpenAI test (skips Ollama):
-pytest test/bot/test_writing_bot.py::test_writing_bot_azure -v
+# Run only the Azure OpenAI and OpenAI tests (skips Ollama; OpenAI is skipped without OPENAI_API_KEY):
+pytest test/bot/test_writing_bot.py::test_writing_bot -v
 
 # Run only Ollama Local test (requires Ollama installed with qwen3-coder:latest):
 pytest test/bot/test_writing_bot.py -v -m ollama_local
@@ -35,13 +35,12 @@ from microbots import WritingBot, BotRunResult
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_writing_bot_azure(test_repo, issue_1):
-    """Test WritingBot with Azure OpenAI model"""
+def test_writing_bot(test_repo, issue_1, openai_model):
+    """Test WritingBot with Azure OpenAI and OpenAI models"""
     issue_text = issue_1[0]
     verify_function = issue_1[1]
-    model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
     writingBot = WritingBot(
-        model=model,
+        model=openai_model,
         folder_to_mount=str(test_repo)
     )
 

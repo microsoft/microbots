@@ -1,12 +1,13 @@
-"""OpenAI Responses API client implementing the LLMInterface."""
+"""OpenAI Responses API client implementing the LLMInterface with native tool calling."""
 import json
 import os
-from dataclasses import asdict
+from collections.abc import Callable
 from logging import getLogger
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from microbots.llm.llm import LLMAskResponse, LLMInterface
+from microbots.llm.llm import LLMAskResponse, LLMInterface, ToolCall
+from microbots.tools.tool import ToolAbstract
 
 load_dotenv()
 
@@ -22,32 +23,44 @@ class OpenAIApi(LLMInterface):
     """
     LLM client backed by the OpenAI Responses API.
 
+    The model acts through native function calls instead of JSON text. Each
+    request continues the previous one with ``previous_response_id``, so
+    OpenAI keeps the conversation, including the model's reasoning between
+    tool calls. This relies on OpenAI storing responses, which is the default.
+
     Parameters
     ----------
     system_prompt : str
-        System prompt to seed the conversation.
+        Instructions sent with every request.
     deployment_name : str
-        OpenAI model name (e.g. 'gpt-4').
-    max_retries : int
-        Max retries on invalid LLM responses.
+        OpenAI model name (e.g. 'gpt-5').
+    tools : list[ToolAbstract]
+        Tools the model can call. Each tool's ``parameters`` is a JSON schema.
+    token_provider : Callable[[], str] | None
+        Optional callable returning a Microsoft Entra ID bearer token for an
+        Azure endpoint, used instead of OPENAI_API_KEY when provided.
     compact_threshold : int | None
         Token threshold that triggers server-side compaction, or None
         to disable it.
     """
 
-    def __init__(self, system_prompt, deployment_name, max_retries=3,
+    def __init__(self, system_prompt, deployment_name, tools: list[ToolAbstract],
+                 token_provider: Callable[[], str] | None = None,
                  compact_threshold: int | None = DEFAULT_COMPACT_THRESHOLD):
         """
-        Create the client and seed the conversation.
+        Create the client.
 
         Parameters
         ----------
         system_prompt : str
-            System prompt to seed the conversation.
+            Instructions sent with every request.
         deployment_name : str
-            OpenAI model name (e.g. 'gpt-4').
-        max_retries : int
-            Max retries on invalid LLM responses.
+            OpenAI model name (e.g. 'gpt-5').
+        tools : list[ToolAbstract]
+            Tools the model can call. Each tool's ``parameters`` is a JSON schema.
+        token_provider : Callable[[], str] | None
+            Optional callable returning a Microsoft Entra ID bearer token for
+            an Azure endpoint, used instead of OPENAI_API_KEY when provided.
         compact_threshold : int | None
             Token threshold that triggers server-side compaction, or
             None to disable it.
@@ -55,25 +68,35 @@ class OpenAIApi(LLMInterface):
         Raises
         ------
         ValueError
-            If OPENAI_API_KEY is not set.
+            If no authentication is configured or the token provider is invalid.
         """
-        if not api_key:
+        if not token_provider and not api_key:
             raise ValueError(
-                "No authentication configured for OpenAI. "
-                "Set the OPENAI_API_KEY environment variable."
+                "No authentication configured for OpenAI. Either set the OPENAI_API_KEY "
+                "environment variable or provide a token_provider."
             )
 
+        if token_provider:
+            if not callable(token_provider):
+                raise ValueError("token_provider must be a callable that returns a string token.")
+            try:
+                token = token_provider()
+            except Exception as e:
+                raise ValueError(f"token_provider failed during validation: {e}") from e
+            if not isinstance(token, str) or not token:
+                raise ValueError("token_provider must return a non-empty string token.")
+
+        # The SDK calls a callable api_key before every request, so the token stays fresh.
         self.ai_client = OpenAI(
             base_url=endpoint,
-            api_key=api_key,
+            api_key=token_provider or api_key,
         )
         self.deployment_name = deployment_name
         self.system_prompt = system_prompt
-        self.messages = [{"role": "system", "content": system_prompt}]
+        self.tools = [self._to_openai_tool(tool) for tool in tools]
         self.compact_threshold = compact_threshold
-
-        self.max_retries = max_retries
-        self.retries = 0
+        self.previous_response_id = None
+        self.unanswered_call_ids = []
 
     def ask(self, message) -> LLMAskResponse:
         """
@@ -89,62 +112,129 @@ class OpenAIApi(LLMInterface):
             LLMAskResponse
                 The parsed LLM response.
         """
-        self.retries = 0
+        # A run that stopped early can leave tool calls unanswered, and the API
+        # rejects a new message until every call has an output.
+        unanswered = [
+            self._tool_output(call_id, "Not run: the previous run stopped.")
+            for call_id in self.unanswered_call_ids
+        ]
+        return self._send(unanswered + [{"role": "user", "content": message}])
 
-        self.messages.append({"role": "user", "content": message})
+    def send_tool_outputs(self, outputs: dict[str, str]) -> LLMAskResponse:
+        """
+        Send the outputs of the requested tool calls and return the LLM's next response.
 
-        valid = False
-        while not valid:
-            create_kwargs = {
-                "model": self.deployment_name,
-                "input": self.messages,
-            }
-            if self.compact_threshold is not None:
-                create_kwargs["context_management"] = [
-                    {"type": "compaction", "compact_threshold": self.compact_threshold}
-                ]
+        Parameters
+        ----------
+            outputs : dict[str, str]
+                The output of each tool call, keyed by its call id.
 
-            response = self.ai_client.responses.create(**create_kwargs)
-            self._log_token_usage(response)
-            self.messages.append({"role": "assistant", "content": response.output_text})
-            valid, askResponse = self._validate_llm_response(response=response.output_text)
-
-        # Remove last assistant message and replace with structured response
-        self.messages.pop()
-        assistant_message = {"role": "assistant", "content": json.dumps(asdict(askResponse))}
-        self.messages.append(assistant_message)
-
-        compaction_item = self._extract_compaction_item(response)
-        if compaction_item is not None:
-            logger.info(
-                "OpenAI compaction occurred: id=%s, self.messages reset to 4 items",
-                compaction_item.get("id"),
-            )
-            self.messages = [
-                {"role": "system", "content": self.system_prompt},
-                compaction_item,
-                {"role": "user", "content": message},
-                assistant_message,
-            ]
-
-        return askResponse
+        Returns
+        -------
+            LLMAskResponse
+                The parsed LLM response.
+        """
+        return self._send([self._tool_output(call_id, output) for call_id, output in outputs.items()])
 
     def clear_history(self):
         """
-        Clear the LLM's conversation history.
+        Start a new conversation on the next request.
 
         Returns
         -------
             bool
                 True if the history was cleared successfully.
         """
-        self.messages = [
-            {
-                "role": "system",
-                "content": self.system_prompt,
-            }
-        ]
+        self.previous_response_id = None
+        self.unanswered_call_ids = []
         return True
+
+    def _send(self, input_items: list[dict]) -> LLMAskResponse:
+        """
+        Continue the conversation with new input items and parse the response.
+
+        Parameters
+        ----------
+            input_items : list[dict]
+                The messages and tool outputs added since the last response.
+
+        Returns
+        -------
+            LLMAskResponse
+                The model's tool calls, or its final answer when it calls none.
+        """
+        request = {
+            "model": self.deployment_name,
+            # Instructions are not carried over by previous_response_id.
+            "instructions": self.system_prompt,
+            "input": input_items,
+            "tools": self.tools,
+        }
+        if self.previous_response_id:
+            request["previous_response_id"] = self.previous_response_id
+        if self.compact_threshold is not None:
+            request["context_management"] = [
+                {"type": "compaction", "compact_threshold": self.compact_threshold}
+            ]
+
+        response = self.ai_client.responses.create(**request)
+        self._log_token_usage(response)
+        self.previous_response_id = response.id
+
+        tool_calls = [
+            ToolCall(call_id=item.call_id, name=item.name, arguments=json.loads(item.arguments))
+            for item in response.output
+            if item.type == "function_call"
+        ]
+        self.unanswered_call_ids = [call.call_id for call in tool_calls]
+        # A reply without tool calls is the model's final answer.
+        return LLMAskResponse(
+            task_done=not tool_calls,
+            thoughts=response.output_text,
+            tool_calls=tool_calls,
+        )
+
+    @staticmethod
+    def _to_openai_tool(tool: ToolAbstract) -> dict:
+        """
+        Describe a tool as a Responses API function tool.
+
+        Parameters
+        ----------
+            tool : ToolAbstract
+                A tool whose ``parameters`` field is a JSON schema.
+
+        Returns
+        -------
+            dict
+                The function tool definition to pass in the ``tools`` request field.
+        """
+        return {
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+            "strict": True,
+        }
+
+    @staticmethod
+    def _tool_output(call_id: str, output: str) -> dict:
+        """
+        Build the input item that answers a tool call.
+
+        Parameters
+        ----------
+            call_id : str
+                The id of the tool call.
+            output : str
+                The output of the tool call.
+
+        Returns
+        -------
+            dict
+                A ``function_call_output`` input item.
+        """
+        return {"type": "function_call_output", "call_id": call_id, "output": output}
 
     def _log_token_usage(self, response) -> None:
         """
@@ -166,30 +256,3 @@ class OpenAIApi(LLMInterface):
             getattr(usage, "output_tokens", None),
             getattr(usage, "total_tokens", None),
         )
-
-    def _extract_compaction_item(self, response) -> dict | None:
-        """
-        Find the compaction item in a response, if the server ran one.
-
-        Parameters
-        ----------
-            response : openai.types.responses.Response
-                The response object returned by ``responses.create``.
-
-        Returns
-        -------
-            dict | None
-                An input-ready compaction item dict, or None if the
-                response did not include one.
-        """
-        output = getattr(response, "output", None)
-        if not isinstance(output, list):
-            return None
-        for item in output:
-            if getattr(item, "type", None) == "compaction":
-                return {
-                    "type": "compaction",
-                    "id": getattr(item, "id", None),
-                    "encrypted_content": getattr(item, "encrypted_content", None),
-                }
-        return None

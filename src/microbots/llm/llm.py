@@ -1,5 +1,5 @@
 """LLM interface and response parsing/validation for MicroBot."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import json
 from logging import getLogger
@@ -14,6 +14,29 @@ llm_output_format_str = """
     "command": <str>     // The command to be executed
 }
 """
+
+@dataclass
+class ToolCall:
+    """
+    A native tool call requested by the LLM.
+
+    Provider-neutral: each LLM client converts its provider's tool call
+    format into this type, and the tool outputs back into its own format.
+
+    Attributes
+    ----------
+        call_id : str
+            The id the tool output must refer to.
+        name : str
+            The name of the tool to call.
+        arguments : dict
+            The arguments of the call.
+    """
+
+    call_id: str
+    name: str
+    arguments: dict
+
 
 @dataclass
 class LLMAskResponse:
@@ -31,12 +54,16 @@ class LLMAskResponse:
         result : str
             Optional final result populated by task-specific prompts
             (e.g. ReadingBot) when task_done is True.
+        tool_calls : list[ToolCall]
+            Native tool calls to run instead of ``command``. Only set by
+            LLM clients that use native tool calling.
     """
 
     task_done: bool = False
     thoughts: str = ""
     command: str = ""
     result: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
 class LLMInterface(ABC):
     """Abstract interface for an LLM client used by MicroBot."""
@@ -69,6 +96,24 @@ class LLMInterface(ABC):
                 True if the history was cleared successfully.
         """
         pass
+
+    def send_tool_outputs(self, outputs: dict[str, str]) -> LLMAskResponse:
+        """
+        Send the outputs of the requested tool calls and return the LLM's next response.
+
+        Only LLM clients that return ``tool_calls`` implement this.
+
+        Parameters
+        ----------
+            outputs : dict[str, str]
+                The output of each tool call, keyed by its call id.
+
+        Returns
+        -------
+            LLMAskResponse
+                The parsed LLM response.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support native tool calls")
 
     def _validate_llm_response(self, response: str) -> tuple[bool, LLMAskResponse]:
         """

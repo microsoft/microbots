@@ -1,3 +1,4 @@
+"""The ``microbot_sub`` tool, which runs a sub-agent in the parent bot's sandbox."""
 import argparse
 import logging
 import shlex
@@ -5,7 +6,7 @@ import shlex
 from pydantic.dataclasses import dataclass, Field
 
 from microbots.tools.external_tool import ExternalTool
-from microbots.MicroBot import system_prompt_common, MicroBot, BotRunResult
+from microbots.MicroBot import system_prompt_common_for, MicroBot, BotRunResult
 from microbots.environment.Environment import CmdReturn
 
 logger = logging.getLogger(" 🤖 MicroBot-Sub")
@@ -15,6 +16,19 @@ class _NoExitArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that raises ``ValueError`` instead of calling ``sys.exit``."""
 
     def error(self, message: str) -> None:  # type: ignore[override]  # base returns NoReturn (sys.exit); we raise instead
+        """
+        Raise ``ValueError`` instead of exiting.
+
+        Parameters
+        ----------
+        message : str
+            The argument parsing error.
+
+        Raises
+        ------
+        ValueError
+            Always, with ``message``.
+        """
         raise ValueError(message)
 
 
@@ -56,14 +70,38 @@ class MicrobotSubAgent(ExternalTool):
     install_commands: list[str] = Field(default_factory=list)
 
     def is_invoked(self, command: str) -> bool:
+        """
+        Return whether the command invokes this tool.
+
+        Parameters
+        ----------
+        command : str
+            The command requested by the LLM.
+
+        Returns
+        -------
+        bool
+            True if the command starts with ``microbot_sub``.
+        """
         return command.strip().startswith("microbot_sub")
 
     def invoke(self, command: str, parent_bot: "MicroBot") -> CmdReturn:
-        """Parse the command, spawn a child MicroBot, and return a ``CmdReturn``.
+        """
+        Parse the command, spawn a child MicroBot, and return its result.
 
-        The MicroBot run-loop expects ``invoke`` to return a ``CmdReturn``
-        (with ``.return_code``, ``.stdout``, ``.stderr``) — the same type
-        returned by ``Environment.execute``.
+        Parameters
+        ----------
+        command : str
+            The ``microbot_sub`` command requested by the LLM.
+        parent_bot : MicroBot
+            The bot that invoked the tool. The sub-agent shares its model,
+            environment and token provider, and its iteration budget.
+
+        Returns
+        -------
+        CmdReturn
+            The sub-agent's result, in the same type that
+            ``Environment.execute`` returns, as the MicroBot run loop expects.
         """
         # Parse arguments with argparse so flag-like text inside --task values
         # is handled correctly (e.g. --task "run --iterations check").
@@ -107,7 +145,7 @@ class MicrobotSubAgent(ExternalTool):
 
         sub_bot: MicroBot = MicroBot(
             model=parent_bot.model,
-            system_prompt=system_prompt_common,
+            system_prompt=system_prompt_common_for(parent_bot.model),
             environment=parent_bot.environment,
             token_provider=parent_bot.token_provider,
         )
