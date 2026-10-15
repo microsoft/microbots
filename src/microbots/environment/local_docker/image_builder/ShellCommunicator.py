@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 import logging
 from typing import Callable, List, Optional
 from dataclasses import dataclass
@@ -21,6 +22,19 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(leve
 
 @dataclass
 class CmdReturn:
+    """
+    Result of a command executed in a shell session.
+
+    Attributes
+    ----------
+    stdout : str
+        Captured standard output.
+    stderr : str
+        Captured standard error.
+    return_code : int
+        The command's exit code.
+    """
+
     stdout: str
     stderr: str
     return_code: int
@@ -29,15 +43,25 @@ class CmdReturn:
 class ShellCommunicator:
     """
     A class to create and manage shell sessions with bidirectional communication.
+
+    Parameters
+    ----------
+    shell_type : str
+        Type of shell to launch. Only ``"bash"`` is supported.
+    encoding : str
+        Text encoding used for communication with the shell process.
     """
 
     def __init__(self, shell_type: str = "bash", encoding: str = "utf-8"):
         """
         Initialize the shell communicator.
 
-        Args:
-            shell_type: Type of shell (only "bash" is supported)
-            encoding: Text encoding for communication
+        Parameters
+        ----------
+        shell_type : str
+            Type of shell (only "bash" is supported). Defaults to "bash".
+        encoding : str
+            Text encoding for communication. Defaults to "utf-8".
         """
         self.shell_type = shell_type.lower()
         if self.shell_type != "bash":
@@ -60,8 +84,10 @@ class ShellCommunicator:
         """
         Start a new shell session.
 
-        Returns:
-            bool: True if session started successfully, False otherwise
+        Returns
+        -------
+        bool
+            True if session started successfully, False otherwise.
         """
         try:
             if self.shell_type not in self.shell_commands:
@@ -111,10 +137,14 @@ class ShellCommunicator:
         """
         Monitor shell output in a separate thread.
 
-        Args:
-            stream: The stream to monitor (stdout or stderr)
-            output_queue: Queue to store output
-            stream_type: Type of stream ("OUTPUT" or "ERROR")
+        Parameters
+        ----------
+        stream : IO
+            The stream to monitor (stdout or stderr).
+        output_queue : queue.Queue
+            Queue to store output.
+        stream_type : str
+            Type of stream ("OUTPUT" or "ERROR").
         """
         try:
             while self.is_running and self.process and self.process.poll() is None:
@@ -130,6 +160,19 @@ class ShellCommunicator:
 
     # Unused function. Keeping for reference and future use
     def _re_escape(self, command: str) -> str:
+        """
+        Undo the ``"``/``<``/``>`` escaping previously applied to a command.
+
+        Parameters
+        ----------
+        command : str
+            The escaped command text.
+
+        Returns
+        -------
+        str
+            The command text with escaping reversed.
+        """
         # Reverse .replace('"', '\\"')
         command = command.replace('\"', '"')
         command = command.replace("&lt;", "<").replace("&gt;", ">")
@@ -137,10 +180,105 @@ class ShellCommunicator:
 
     # Unused function. Keeping for reference and future use
     def _is_heredoc_command(self, command: str) -> bool:
-        """Check if command contains heredoc syntax."""
+        """
+        Check if command contains heredoc syntax.
+
+        Parameters
+        ----------
+        command : str
+            The command text to check.
+
+        Returns
+        -------
+        bool
+            True if the command contains heredoc syntax, False otherwise.
+        """
         import re
         # Look for heredoc patterns like <<EOF, <<'END', <<"DELIMITER", etc.
         return bool(re.search(r'<<\s*[\'"]?[A-Za-z_][A-Za-z0-9_]*[\'"]?', command))
+
+    def _wrap_command(self, command: str) -> str:
+        """
+        Wrap a command so the long-lived shell survives whatever it contains.
+
+        The command is passed to bash as data (a quoted heredoc read into a
+        variable) and run with ``eval ... < /dev/null``, so:
+
+        - a syntax error aborts only this command, instead of making the
+          non-interactive shell exit;
+        - a command that reads stdin (e.g. ``sed`` without a file) gets EOF
+          instead of swallowing the commands and markers sent after it;
+        - state such as ``cd`` and exported variables still persists.
+
+        Parameters
+        ----------
+        command : str
+            The command text to wrap.
+
+        Returns
+        -------
+        str
+            The wrapped command text.
+        """
+        delimiter = f"__MICROBOTS_CMD_{uuid.uuid4().hex}__"
+        return (
+            f"IFS= read -r -d '' __microbots_cmd <<'{delimiter}'\n"
+            f"{command}\n"
+            f"{delimiter}\n"
+            'eval "$__microbots_cmd" < /dev/null'
+        )
+
+    def _child_pids(self) -> List[int]:
+        """
+        Return the PIDs of the shell's direct child processes.
+
+        Known limitation: only direct children are found. A command that
+        hands work off to a grandchild (a pipeline, a nested subshell, or a
+        backgrounded/detached job) can leave that grandchild running after a
+        timeout, since it's never signaled here.
+
+        Returns
+        -------
+        List[int]
+            PIDs of the shell's direct child processes.
+        """
+        if not self.process:
+            return []
+        children = []
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat") as stat:
+                    # Field 4 is the parent PID; the command name (field 2) may contain spaces.
+                    ppid = int(stat.read().rsplit(")", 1)[1].split()[1])
+            except (OSError, IndexError, ValueError):
+                continue
+            if ppid == self.process.pid:
+                children.append(int(entry))
+        return children
+
+    def _ensure_session(self) -> bool:
+        """
+        Restart the shell if it has exited (e.g. the agent ran ``exit``).
+
+        Known limitation: a restarted shell is a brand-new bash process, so
+        anything the old session held in memory - the working directory from
+        ``cd``, exported variables, shell functions, etc. - is lost. Only the
+        ability to keep running commands is restored, not that prior state.
+
+        Returns
+        -------
+        bool
+            True if the session is running (no restart needed) or was
+            restarted successfully, False if a restart was needed but failed.
+        """
+        if self.process and self.process.poll() is not None:
+            logger.warning("⚠️ Shell exited with code %s; starting a new session", self.process.returncode)
+            self.is_running = False
+            self._clear_output_queues()
+            return self.start_session()
+        return True
 
     def send_command(
         self, command: str, wait_for_output: bool = True, timeout: float = 300
@@ -148,24 +286,33 @@ class ShellCommunicator:
         """
         Send a command to the shell session.
 
-        Args:
-            command: Command to execute
-            wait_for_output: Whether to wait for command output
-            timeout: Timeout for waiting for output
+        Parameters
+        ----------
+        command : str
+            Command to execute.
+        wait_for_output : bool
+            Whether to wait for command output. Defaults to True.
+        timeout : float
+            Timeout in seconds for waiting for output. Defaults to 300.
 
-        Returns:
-            CmdReturn object with stdout, stderr, and return code
+        Returns
+        -------
+        CmdReturn
+            Object with stdout, stderr, and return code.
         """
         if not self.is_running or not self.process:
             logger.warning("⚠️ No active shell session")
             return CmdReturn(stdout="", stderr="No active shell session", return_code=1)
+
+        if not self._ensure_session():
+            return CmdReturn(stdout="", stderr="Shell session exited and could not be restarted", return_code=1)
 
         try:
             # command = self._re_escape(command)
 
             if not wait_for_output:
                 # Send the command without marker for async execution
-                self.process.stdin.write(command + "\n")
+                self.process.stdin.write(self._wrap_command(command) + "\n")
                 self.process.stdin.flush()
                 logger.debug("➡️ Sent async command: %s", command)
                 return CmdReturn(stdout="ASYNC: Not waiting for completion", stderr="", return_code=0)
@@ -173,7 +320,7 @@ class ShellCommunicator:
             # Generate a unique command completion marker
             marker = f"__COMMAND_COMPLETE_{int(time.time() * 1000000)}__"
 
-            self.process.stdin.write(command + "\n")
+            self.process.stdin.write(self._wrap_command(command) + "\n")
             self.process.stdin.flush()
             # Send exit code capture on a new line after user command completes
             self.process.stdin.write(f"echo '{marker}' $?\n")
@@ -250,13 +397,20 @@ class ShellCommunicator:
                 error_lines.append(f"Command timed out after {timeout} seconds")
                 final_return_code = 124  # Standard timeout exit code
 
-                # Attempt to recover the shell by sending Ctrl+C to interrupt the running command
+                # Attempt to recover the shell by interrupting the running command
                 try:
                     logger.info("🛠️ Attempting to interrupt timed-out command...")
-                    # Send SIGINT to the shell process to interrupt the running command
                     if self.process and self.process.poll() is None:
-                        self.process.send_signal(subprocess.signal.SIGINT)
-                        time.sleep(0.5)  # Give it time to handle the interrupt
+                        # Signal the command itself: the shell only waits for its child,
+                        # so interrupting the shell alone leaves the command running.
+                        for pid in self._child_pids():
+                            for sig in (signal.SIGINT, signal.SIGKILL):
+                                try:
+                                    os.kill(pid, sig)
+                                except ProcessLookupError:
+                                    break
+                                time.sleep(0.5)
+                        time.sleep(0.5)  # Give the shell time to reap the command
 
                         # Clear any pending output from the interrupted command
                         self._clear_output_queues()
@@ -322,8 +476,10 @@ class ShellCommunicator:
         """
         Check if the shell session is still alive.
 
-        Returns:
-            bool: True if session is active, False otherwise
+        Returns
+        -------
+        bool
+            True if session is active, False otherwise.
         """
         return (
             self.is_running and self.process is not None and self.process.poll() is None
@@ -333,8 +489,10 @@ class ShellCommunicator:
         """
         Get information about the current shell session.
 
-        Returns:
-            Dictionary with shell session information
+        Returns
+        -------
+        dict
+            Dictionary with shell session information.
         """
         if not self.process:
             return {"status": "Not started"}
