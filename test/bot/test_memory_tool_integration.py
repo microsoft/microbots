@@ -415,8 +415,9 @@ class TestMemoryToolRealIntegration:
 
     Requires ``AZURE_OPENAI_DEPLOYMENT_NAME`` (or defaults to
     ``mini-swe-agent-gpt5``) and valid Azure OpenAI credentials. The
-    OpenAI run uses ``OPENAI_MODEL`` (or ``gpt-5``) and is skipped
-    without ``OPENAI_API_KEY``.
+    OpenAI run uses ``OPENAI_MODEL`` (or ``gpt-5``) and is skipped unless
+    ``OPENAI_API_KEY``, or ``OPENAI_ENDPOINT`` with ``AZURE_AUTH_METHOD=azure_ad``,
+    is set.
     """
 
     @pytest.fixture()
