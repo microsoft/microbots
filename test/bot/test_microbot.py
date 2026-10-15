@@ -777,6 +777,20 @@ class TestMicrobotNativeTools:
         assert result.result == "All done."
         bot.llm.send_tool_outputs.assert_called_once_with({"call_1": "notes.txt", "call_2": "     1\thello"})
 
+    def test_failed_command_output_reports_the_error(self):
+        env = Mock()
+        env.execute.return_value = CmdReturn(stdout="", stderr="ls: cannot access 'missing'", return_code=2)
+        bot = self._openai_bot(env)
+        bot.llm.ask = Mock(return_value=LLMAskResponse(tool_calls=[
+            ToolCall(call_id="call_1", name="run_command", arguments={"command": "ls missing"}),
+        ]))
+        bot.llm.send_tool_outputs = Mock(return_value=LLMAskResponse(task_done=True, thoughts="Done."))
+
+        bot.run("List the missing file", max_iterations=5, timeout_in_seconds=60)
+
+        output = bot.llm.send_tool_outputs.call_args.args[0]["call_1"]
+        assert output == "COMMAND EXECUTION FAILED\nreturn code: 2\nstdout: \nstderr: ls: cannot access 'missing'"
+
     def test_dangerous_bash_call_is_blocked(self):
         env = Mock()
         bot = self._openai_bot(env)
