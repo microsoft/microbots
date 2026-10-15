@@ -6,7 +6,7 @@ This test can run with Azure OpenAI, OpenAI or Ollama Local (qwen3-coder:latest)
 
 Usage:
 ------
-# Run only the Azure OpenAI and OpenAI tests (skips Ollama; OpenAI is skipped without OPENAI_API_KEY):
+# Run only the Azure OpenAI and OpenAI tests (skips Ollama; OpenAI is skipped when not configured):
 pytest test/bot/test_writing_bot.py::test_writing_bot -v
 
 # Run only Ollama Local test (requires Ollama installed with qwen3-coder:latest):
