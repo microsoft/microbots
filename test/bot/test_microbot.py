@@ -1002,6 +1002,8 @@ int multiply_numbers(int a, int b) {
         mock_env = Mock()
         mock_env.execute.return_value = Mock(return_code=0, stdout="cscope: version 15.9", stderr="")
         mock_env.execute_privileged = mock_env.execute
+        # cscope.yaml keys its commands by distro; report what a Debian sandbox would.
+        mock_env.get_distro_ids.return_value = ["debian"]
 
         base_prompt = "You are a code analysis assistant."
 

@@ -109,7 +109,7 @@ class Tool(ToolAbstract):
 
     def install_tool(self, env: Environment):
         logger.debug("Installing Internal tool: %s", self.name)
-        for command in self.install_commands:
+        for command in self.resolve_commands("install", env.get_distro_ids):
             output = env.execute_privileged(command)
             if output.return_code != 0:
                 logger.error(
@@ -126,7 +126,7 @@ class Tool(ToolAbstract):
 
     def verify_tool_installation(self, env: Environment):
         logger.debug("Verifying installation of tool: %s", self.name)
-        for command in self.verify_commands:
+        for command in self.resolve_commands("verify", env.get_distro_ids):
             output = env.execute(command)
             if output.return_code != 0:
                 logger.error(
@@ -146,7 +146,7 @@ class Tool(ToolAbstract):
         self._copy_env_variables(env)
         self._copy_files(env)
 
-        for command in self.setup_commands:
+        for command in self.resolve_commands("setup", env.get_distro_ids):
             output = env.execute(command)
             if output.return_code != 0:
                 logger.error(
@@ -175,7 +175,7 @@ class Tool(ToolAbstract):
                     f"Failed to remove copied file in container {file_copy.dest} during uninstallation of tool {self.name}. Output: {output}"
                 )
 
-        for command in self.uninstall_commands:
+        for command in self.resolve_commands("uninstall", env.get_distro_ids):
             output = env.execute_privileged(command)
             if output.return_code != 0:
                 logger.error(

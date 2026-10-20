@@ -76,8 +76,8 @@ install_commands:
     def test_parsed_tool_has_install_commands(self):
         """Test that parsed tool has install_commands field."""
         tool = parse_tool_definition("cscope.yaml")
-        assert tool.install_commands is not None
-        assert isinstance(tool.install_commands, list)
+        # cscope installs with apt-get, so its commands are keyed by distro.
+        assert tool.install_commands == {"debian": ["apt-get update", "apt-get install -y cscope"]}
 
     def test_parsed_tool_has_verify_commands(self):
         """Test that parsed tool has verify_commands field."""
