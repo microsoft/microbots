@@ -23,7 +23,7 @@ logging.getLogger('uvicorn').setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-# Must match the account created in the Dockerfile.
+# Must match the account created by prepare.sh.
 AGENT_USER = "agent"
 DEFAULT_AGENT_UID = 1001
 DEFAULT_AGENT_GID = 1001
