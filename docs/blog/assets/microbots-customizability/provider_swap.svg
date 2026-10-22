@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 220">
+  <rect width="650" height="220" fill="#010409"/>
+  <rect x="1" y="1" width="648" height="218" fill="none" stroke="#3d444d" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="325" y="28" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">Swap Providers — Same Code</text>
+
+  <!-- Bot code block (left) -->
+  <rect x="30" y="55" width="220" height="120" rx="6" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+  <text x="140" y="78" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#6e7681">bot = WritingBot(</text>
+  <text x="140" y="96" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#f0883e">  model=&quot;???&quot;,</text>
+  <text x="140" y="114" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#6e7681">  folder_to_mount=...</text>
+  <text x="140" y="132" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#6e7681">)</text>
+  <text x="140" y="165" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" font-weight="600" fill="#e6edf3">Your bot code</text>
+  <text x="140" y="180" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">unchanged</text>
+
+  <!-- Arrow to Azure OpenAI -->
+  <line x1="250" y1="80" x2="380" y2="60" stroke="#58a6ff" stroke-width="1.5"/>
+  <polygon points="378,55 388,60 378,65" fill="#58a6ff"/>
+
+  <!-- Arrow to Anthropic -->
+  <line x1="250" y1="110" x2="380" y2="110" stroke="#3fb950" stroke-width="1.5"/>
+  <polygon points="378,105 388,110 378,115" fill="#3fb950"/>
+
+  <!-- Arrow to Ollama -->
+  <line x1="250" y1="140" x2="380" y2="160" stroke="#d2a8ff" stroke-width="1.5"/>
+  <polygon points="378,155 388,160 378,165" fill="#d2a8ff"/>
+
+  <!-- Azure OpenAI -->
+  <rect x="390" y="40" width="230" height="40" rx="6" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="505" y="57" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#58a6ff">azure-openai/gpt-4o</text>
+  <text x="505" y="73" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">Production · Enterprise · Azure AD</text>
+
+  <!-- Anthropic -->
+  <rect x="390" y="92" width="230" height="40" rx="6" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="505" y="109" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#3fb950">anthropic/claude-sonnet</text>
+  <text x="505" y="125" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">Strong reasoning · Long context</text>
+
+  <!-- Ollama -->
+  <rect x="390" y="144" width="230" height="40" rx="6" fill="#0d1117" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="505" y="161" text-anchor="middle" font-family="'SF Mono', monospace" font-size="10" fill="#d2a8ff">ollama-local/qwen2.5</text>
+  <text x="505" y="177" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">Private · Offline · No API costs</text>
+
+  <!-- Bottom note -->
+  <text x="325" y="210" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#484f58">Change one string — tools, mounts, and execution logic stay the same</text>
+</svg>

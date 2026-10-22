@@ -1,3 +1,4 @@
+"""Core MicroBot agent class and supporting types."""
 from collections.abc import Iterable
 import json
 import os
@@ -53,6 +54,8 @@ Remember following important points
 
 
 class BotType(StrEnum):
+    """Enumeration of the supported bot types."""
+
     READING_BOT = "READING_BOT"
     WRITING_BOT = "WRITING_BOT"
     BROWSING_BOT = "BROWSING_BOT"
@@ -62,6 +65,19 @@ class BotType(StrEnum):
 
 @dataclass
 class BotRunResult:
+    """
+    Result of a MicroBot run.
+
+    Attributes
+    ----------
+        status : bool
+            True if the bot completed the task successfully, False otherwise.
+        result : str | None
+            The final result/output produced by the bot, or None if unavailable.
+        error : Optional[str]
+            An error message if the run failed, or None if it succeeded.
+    """
+
     status: bool
     result: str | None
     error: Optional[str]
@@ -74,7 +90,7 @@ class MicroBot:
     MicroBot class is the core class representing the autonomous agent. Other bots are extensions of this class.
     If you want to create a custom bot, you can directly use this class or extend it into your own bot class.
 
-    Attributes
+    Parameters
     ----------
         model : str
             The model to use for the bot, in the format <provider>/<model_name>.
@@ -94,6 +110,10 @@ class MicroBot:
             can be mounted during the run() method. Refer to `Mount` class
             regarding the directory structure and permission details. Defaults
             to None.
+        token_provider : Optional[any]
+            A callable that returns a bearer token for Azure AD authentication.
+            If not provided, it may be auto-created from environment variables.
+            Defaults to None.
     """
 
     def __init__(
@@ -111,19 +131,19 @@ class MicroBot:
 
         Parameters
         ----------
-            model :str
+            model : str
                 The model to use for the bot, in the format <provider>/<model_name>.
-            bot_type :BotType
+            bot_type : BotType
                 The type of bot being created. It's unused. Will be removed soon.
-            system_prompt :Optional[str]
+            system_prompt : Optional[str]
                 The system prompt to guide the bot's behavior. Defaults to None.
-            environment :Optional[any]
+            environment : Optional[any]
                 The execution environment for the bot. If not provided, a default
                 LocalDockerEnvironment will be created.
-            additional_tools :Optional[list[ToolAbstract]]
+            additional_tools : Optional[list[ToolAbstract]]
                 A list of additional tools to install in the bot's environment.
                 Defaults to None (treated as an empty list).
-            folder_to_mount :Optional[Mount]
+            folder_to_mount : Optional[Mount]
                 A folder to mount into the bot's environment. The bot will be given
                 access to this folder based on the specified permissions. This will
                 be the main code folder where the bot will work. Additional folders
@@ -132,6 +152,10 @@ class MicroBot:
                 to None.
 
                 Note: Supports only mount type MountType.MOUNT for now.
+            token_provider : Optional[any]
+                A callable that returns a bearer token for Azure AD authentication.
+                If not provided, it may be auto-created from environment variables.
+                Defaults to None.
         """
 
         self.folder_to_mount = folder_to_mount
@@ -203,6 +227,28 @@ class MicroBot:
         max_iterations: int = 20,
         timeout_in_seconds: int = 200
     ) -> BotRunResult:
+        """
+        Run the bot on the given task until completion, timeout, or max iterations.
+
+        Parameters
+        ----------
+            task : str
+                The task description to give to the bot.
+            additional_mounts : Optional[list[Mount]]
+                Additional folders to mount into the bot's environment before
+                running. Defaults to None.
+            max_iterations : int
+                The maximum number of LLM interaction iterations allowed before
+                aborting the task. Defaults to 20.
+            timeout_in_seconds : int
+                The maximum wall-clock time in seconds allowed for the task.
+                Defaults to 200.
+
+        Returns
+        -------
+            BotRunResult
+                The outcome of the run, including status, result, and error.
+        """
 
         if max_iterations <= 0:
             raise ValueError("max_iterations must be greater than 0")
@@ -311,9 +357,18 @@ class MicroBot:
                 f" 💭  LLM final thoughts: {llm_response.thoughts}",
             )
         logger.info("🔚 TASK COMPLETED : %s...", task[0:15])
-        return BotRunResult(status=True, result=llm_response.thoughts, error=None)
+        return BotRunResult(status=True, result=llm_response.result or llm_response.thoughts, error=None)
 
     def _mount_additional(self, mount: Mount):
+        """
+        Copy an additional folder into the bot's running environment.
+
+        Parameters
+        ----------
+            mount : Mount
+                The additional mount to copy into the environment. Only
+                MountType.COPY mounts are supported.
+        """
         if mount.mount_type != MountType.COPY:
             logger.error(
                 "%s Only COPY mount type is supported for additional mounts for now",
@@ -334,6 +389,14 @@ class MicroBot:
 
     # TODO : pass the sandbox path
     def _create_environment(self, folder_to_mount: Optional[Mount]):
+        """
+        Create the LocalDockerEnvironment for the bot on a free host port.
+
+        Parameters
+        ----------
+            folder_to_mount : Optional[Mount]
+                The folder to mount into the created environment.
+        """
         free_port = get_free_port()
 
         self.environment = LocalDockerEnvironment(
@@ -342,6 +405,7 @@ class MicroBot:
         )
 
     def _create_llm(self):
+        """Create the LLM client for the configured model provider."""
         # Append tool usage instructions to system prompt
         system_prompt_with_tools = self.system_prompt if self.system_prompt else ""
         if self.additional_tools:
@@ -370,6 +434,14 @@ class MicroBot:
         # No Else case required as model provider is already validated using _validate_model_and_provider
 
     def _validate_model_and_provider(self, model):
+        """
+        Validate that the model string is well-formed and its provider is supported.
+
+        Parameters
+        ----------
+            model : str
+                The model string in the format <provider>/<model_name>.
+        """
         # Ensure it has only only slash
         if model.count("/") != 1:
             raise ValueError("Model should be in the format <provider>/<model_name>")
@@ -378,6 +450,14 @@ class MicroBot:
             raise ValueError(f"Unsupported model provider: {provider}")
 
     def _validate_folder_to_mount(self, folder_to_mount: Mount):
+        """
+        Validate that the folder to mount uses a supported mount type.
+
+        Parameters
+        ----------
+            folder_to_mount : Mount
+                The mount to validate. Only MountType.MOUNT is supported.
+        """
         if folder_to_mount.mount_type != MountType.MOUNT:
             logger.error(
                 "%s Only MOUNT mount type is supported for folder_to_mount",
@@ -388,13 +468,18 @@ class MicroBot:
             )
 
     def _get_dangerous_command_explanation(self, command: str) -> Optional[str]:
-        """Provides detailed explanation for why a command is dangerous and suggests alternatives.
+        """
+        Provide a detailed explanation for why a command is dangerous and suggest alternatives.
 
-        Args:
-            command: The shell command to analyze
+        Parameters
+        ----------
+            command : str
+                The shell command to analyze.
 
-        Returns:
-            str: Explanation with reason and alternative, or None if command is safe
+        Returns
+        -------
+            Optional[str]
+                Explanation with reason and alternative, or None if command is safe.
         """
         # Handle invalid commands (empty, None, or non-string)
         if not command or not isinstance(command, str):
@@ -441,19 +526,24 @@ class MicroBot:
         return None
 
     def _is_safe_command(self, command: str) -> tuple[bool, Optional[str]]:
-        """Validates if a command is safe to execute.
+        """
+        Validate whether a command is safe to execute.
 
         A command is considered safe if it:
         - Is not a recursive command (ls -R, rm -rf, tree, find without -maxdepth)
         - Does not risk generating excessive output or destructive actions
 
-        Args:
-            command: The shell command to validate
+        Parameters
+        ----------
+            command : str
+                The shell command to validate.
 
-        Returns:
-            tuple[bool, Optional[str]]: A tuple of (is_safe, explanation) where:
-                - is_safe: True if command is safe to execute, False otherwise
-                - explanation: Detailed explanation if dangerous, None if safe
+        Returns
+        -------
+            tuple[bool, Optional[str]]
+                A tuple of (is_safe, explanation) where is_safe is True if the
+                command is safe to execute, and explanation is a detailed
+                explanation if dangerous, or None if safe.
         """
         explanation = self._get_dangerous_command_explanation(command)
         is_safe = explanation is None
