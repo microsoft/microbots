@@ -19,6 +19,15 @@ from microbots.tools.internal_tool import Tool
 from microbots.tools.tool import EnvFileCopies
 
 
+@pytest.fixture(autouse=True)
+def alias_privileged_channel(monkeypatch):
+    """Point the root control channel at ``execute`` on every Mock, so the
+    command-sequence assertions below cover both channels."""
+    monkeypatch.setattr(
+        Mock, "execute_privileged", property(lambda self: self.execute), raising=False
+    )
+
+
 @pytest.mark.unit
 class TestToolOptionalArguments:
     """Unit tests for Tool class optional arguments handling."""

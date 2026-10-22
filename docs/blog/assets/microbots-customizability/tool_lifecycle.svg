@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180">
+  <rect width="800" height="180" fill="#010409"/>
+  <rect x="1" y="1" width="798" height="178" fill="none" stroke="#3d444d" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="700" fill="#e6edf3">Tool Lifecycle</text>
+
+  <!-- Step 1: Install -->
+  <rect x="30" y="55" width="115" height="55" rx="6" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="87" y="78" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" font-weight="600" fill="#58a6ff">Install</text>
+  <text x="87" y="98" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">pip install, apt</text>
+
+  <!-- Arrow 1→2 -->
+  <line x1="145" y1="82" x2="175" y2="82" stroke="#3d444d" stroke-width="1.5"/>
+  <polygon points="173,77 183,82 173,87" fill="#3d444d"/>
+
+  <!-- Step 2: Verify -->
+  <rect x="183" y="55" width="115" height="55" rx="6" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="240" y="78" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" font-weight="600" fill="#3fb950">Verify</text>
+  <text x="240" y="98" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">which, --version</text>
+
+  <!-- Arrow 2→3 -->
+  <line x1="298" y1="82" x2="328" y2="82" stroke="#3d444d" stroke-width="1.5"/>
+  <polygon points="326,77 336,82 326,87" fill="#3d444d"/>
+
+  <!-- Step 3: Setup -->
+  <rect x="336" y="55" width="115" height="55" rx="6" fill="#0d1117" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="393" y="78" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" font-weight="600" fill="#d2a8ff">Setup</text>
+  <text x="393" y="98" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">copy files, config</text>
+
+  <!-- Arrow 3→4 -->
+  <line x1="451" y1="82" x2="481" y2="82" stroke="#3d444d" stroke-width="1.5"/>
+  <polygon points="479,77 489,82 479,87" fill="#3d444d"/>
+
+  <!-- Step 4: Use -->
+  <rect x="489" y="55" width="115" height="55" rx="6" fill="#0d1117" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="546" y="78" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" font-weight="600" fill="#f0883e">Use</text>
+  <text x="546" y="98" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">LLM invokes tool</text>
+
+  <!-- Arrow 4→5 -->
+  <line x1="604" y1="82" x2="634" y2="82" stroke="#3d444d" stroke-width="1.5"/>
+  <polygon points="632,77 642,82 632,87" fill="#3d444d"/>
+
+  <!-- Step 5: Uninstall -->
+  <rect x="642" y="55" width="125" height="55" rx="6" fill="#0d1117" stroke="#f778ba" stroke-width="1.5"/>
+  <text x="704" y="78" text-anchor="middle" font-family="'SF Mono', monospace" font-size="11" font-weight="600" fill="#f778ba">Uninstall</text>
+  <text x="704" y="98" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">cleanup</text>
+
+  <!-- Bottom labels -->
+  <text x="87" y="140" text-anchor="middle" font-family="'SF Mono', monospace" font-size="8" fill="#484f58">install_commands</text>
+  <text x="240" y="140" text-anchor="middle" font-family="'SF Mono', monospace" font-size="8" fill="#484f58">verify_commands</text>
+  <text x="393" y="140" text-anchor="middle" font-family="'SF Mono', monospace" font-size="8" fill="#484f58">setup_commands</text>
+  <text x="546" y="140" text-anchor="middle" font-family="'SF Mono', monospace" font-size="8" fill="#484f58">usage_instructions</text>
+  <text x="704" y="140" text-anchor="middle" font-family="'SF Mono', monospace" font-size="8" fill="#484f58">uninstall_commands</text>
+
+  <!-- Dotted line connecting labels -->
+  <line x1="30" y1="148" x2="770" y2="148" stroke="#3d444d" stroke-width="0.5" stroke-dasharray="4,4"/>
+  <text x="400" y="168" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#484f58">Defined in a single YAML file</text>
+</svg>
