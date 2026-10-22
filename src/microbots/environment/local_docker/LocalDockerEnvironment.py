@@ -79,8 +79,9 @@ class LocalDockerEnvironment(Environment):
                     self.folder_to_mount.sandbox_path,
                 )
 
-        # Port mapping
-        port_mapping = {f"{self.container_port}/tcp": self.port}
+        # Bind to loopback only: the shell server has no authentication, so it
+        # must never be reachable from the network.
+        port_mapping = {f"{self.container_port}/tcp": ("127.0.0.1", self.port)}
 
         self.container = self.client.containers.run(
             self.image,
@@ -88,8 +89,15 @@ class LocalDockerEnvironment(Environment):
             ports=port_mapping,
             detach=True,
             working_dir="/app",
-            privileged=True,  # Required for mounting overlayfs
-            environment={"BOT_PORT": str(self.container_port)},
+            # SYS_ADMIN is the narrowest grant that allows the overlayfs mount;
+            # the docker-default AppArmor profile denies mount regardless of caps.
+            cap_add=["SYS_ADMIN"],
+            security_opt=["no-new-privileges:true", "apparmor=unconfined"],
+            environment={
+                "BOT_PORT": str(self.container_port),
+                "BOT_WORKDIR": DOCKER_WORKING_DIR,
+                **self._host_identity(),
+            },
         )
         logger.info(
             "🚀 Started container %s with image %s on host port %s",
@@ -107,51 +115,80 @@ class LocalDockerEnvironment(Environment):
         else:
             self.execute("cd /")
 
-    def _setup_overlay_mount(self):
-        # NOTE: Don't use this for any other read-only mounts except the main code folder.
+    @staticmethod
+    def _host_identity() -> dict:
+        """Run the bot's shell under the host uid so anything it writes to the
+        bind-mounted working directory stays removable by the host user."""
+        if not hasattr(os, "getuid") or os.getuid() == 0:
+            return {}
+        return {"AGENT_UID": str(os.getuid()), "AGENT_GID": str(os.getgid())}
 
+    @property
+    def _overlay_dir(self) -> str:
         path_name = os.path.basename(self.folder_to_mount.sandbox_path)
-        # Mount /ro/path_name to /{WORKING_DIR}/path_name using overlayfs
-        mount_command = (
-            f"mkdir -p {self.folder_to_mount.sandbox_path} /{DOCKER_WORKING_DIR}/overlay/{path_name}/upper /{DOCKER_WORKING_DIR}/overlay/{path_name}/work && sleep 5 && "
-            f"mount -t overlay overlay -o lowerdir=/ro/{path_name}/,upperdir={DOCKER_WORKING_DIR}/overlay/{path_name}/upper/,workdir={DOCKER_WORKING_DIR}/overlay/{path_name}/work/ {self.folder_to_mount.sandbox_path}"
+        return f"{DOCKER_WORKING_DIR}/overlay/{path_name}"
+
+    def _setup_overlay_mount(self):
+        """Stack a writable layer over the READ_ONLY mount so the bot can edit
+        without the host's tree ever changing.
+
+        Runs on the root control channel: the bot's own shell holds no
+        capabilities and cannot mount or unmount anything.
+        """
+        # NOTE: Don't use this for any other read-only mounts except the main code folder.
+        path_name = os.path.basename(self.folder_to_mount.sandbox_path)
+        sandbox_path = shlex.quote(self.folder_to_mount.sandbox_path)
+        overlay = shlex.quote(self._overlay_dir)
+
+        ret: CmdReturn = self.execute_privileged(
+            f"mkdir -p {sandbox_path} {overlay}/upper {overlay}/work && "
+            f"mount -t overlay overlay "
+            f"-o lowerdir=/ro/{path_name}/,upperdir={overlay}/upper/,workdir={overlay}/work/ "
+            f"{sandbox_path}"
         )
-        self.execute(mount_command)
-        logger.info(
-            f"🔒 Set up overlay mount for read-only directory at {DOCKER_WORKING_DIR}/{path_name}"
-        )
+        if ret.return_code != 0:
+            raise RuntimeError(
+                f"Failed to set up overlay mount for {path_name}: {ret.stderr}"
+            )
         self.overlay_mount = True
 
-    def _teardown_overlay_mount(self):
-        path_name = os.path.basename(os.path.abspath(self.folder_to_mount.sandbox_path))
+        # The merged root inherits the lower directory's owner, which may not be
+        # the bot, leaving it unable to create files at the top level.
+        identity = self._host_identity()
+        if identity:
+            self.execute_privileged(
+                f"chown {identity['AGENT_UID']}:{identity['AGENT_GID']} {sandbox_path}"
+            )
 
+        logger.info(
+            "🔒 Set up overlay mount for read-only directory at %s",
+            self.folder_to_mount.sandbox_path,
+        )
+
+    def _teardown_overlay_mount(self):
+        """Unmount and remove the overlay before the container goes away.
+
+        The kernel creates ``work/`` root-owned and mode 0700, so the host user
+        cannot clean it up afterwards - it has to go through the root channel.
+        """
+        sandbox_path = shlex.quote(self.folder_to_mount.sandbox_path)
+        overlay = shlex.quote(self._overlay_dir)
         try:
-            logger.info("🛠️  Tearing down overlay mount for %s", path_name)
-            unmount_command = f"umount -l {self.folder_to_mount.sandbox_path}"
-            ret: CmdReturn = self.execute(unmount_command)
+            ret: CmdReturn = self.execute_privileged(f"umount -l {sandbox_path}")
             if ret.return_code != 0:
                 logger.error("❌  Failed to unmount overlay: %s", ret.stderr)
             else:
-                logger.info("✅  Unmounted overlay for %s", path_name)
+                logger.info("✅  Unmounted overlay at %s", self.folder_to_mount.sandbox_path)
 
-            logger.info(
-                f"🛑  Removing overlay dirs at {self.folder_to_mount.sandbox_path} and {DOCKER_WORKING_DIR}/overlay/"
-            )
-            remove_dir_command = (
-                f"rm -rf {self.folder_to_mount.sandbox_path} && "
-                f"rm -rf {DOCKER_WORKING_DIR}/overlay/"
-            )
-            ret: CmdReturn = self.execute(remove_dir_command)
+            ret = self.execute_privileged(f"rm -rf {sandbox_path} {overlay}")
             if ret.return_code != 0:
-                logger.error(
-                    "❌  Failed to remove overlay directories: %s", ret.stderr
-                )
+                logger.error("❌  Failed to remove overlay directories: %s", ret.stderr)
             else:
-                logger.info(
-                    "🗑️  Removed overlay directories for %s", path_name
-                )
+                logger.info("🗑️  Removed overlay directories for %s", self._overlay_dir)
         except Exception as e:
             logger.error("❌  Failed to teardown overlay mount: %s", e)
+        finally:
+            self.overlay_mount = False
 
     def get_ipv4_address(self) -> str:
         """Return the container's IPv4 address on the Docker bridge network."""
@@ -193,6 +230,31 @@ class LocalDockerEnvironment(Environment):
         command = command.replace('"', '\\"')
         command = command.replace("<", "&lt;").replace(">", "&gt;")
         return command
+
+    def execute_privileged(
+        self, command: str, timeout: Optional[int] = 300, sensitive: bool = False
+    ) -> CmdReturn:
+        """Run a command as root over the docker exec control plane.
+
+        Reserved for setup the bot itself must not perform (package installs,
+        writes outside the working directory). Unlike execute(), this path is
+        not reachable from the container's published port.
+
+        ``timeout`` is accepted for signature parity but not enforced: the
+        docker exec API has no timeout, so a wedged command blocks here.
+        """
+        if not self.container:
+            raise RuntimeError("No active container to execute a privileged command in")
+
+        logger.debug("➡️  Executing privileged command: %s", "<redacted>" if sensitive else command)
+        exit_code, (stdout, stderr) = self.container.exec_run(
+            ["bash", "-lc", command], user="root", demux=True
+        )
+        return CmdReturn(
+            stdout=stdout.decode(errors="replace") if stdout else "",
+            stderr=stderr.decode(errors="replace") if stderr else "",
+            return_code=exit_code if exit_code is not None else 0,
+        )
 
     def execute(
         self, command: str, timeout: Optional[int] = 300, sensitive: bool = False

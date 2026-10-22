@@ -1,8 +1,13 @@
+# Any workdir
+**/workdir*/
+
 # Microbots Project Specific
 .playwright-mcp/
 
 # Log files
 *.log
+
+node_modules/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -30,6 +35,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.vsix
 MANIFEST
 
 # PyInstaller
