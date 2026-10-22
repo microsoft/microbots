@@ -1640,6 +1640,67 @@ class TestCopilotBotSDKLayoutIntegration:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests — sudo_access
+# ---------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def _root_bot_dependencies(mock_environment, client):
+    with (
+        patch("microbots.bot.CopilotBot.LocalDockerEnvironment", return_value=mock_environment) as lde,
+        patch("microbots.bot.CopilotBot.get_free_port", return_value=9000),
+        patch("microbots.bot.CopilotBot.CopilotBot._install_copilot_cli"),
+        patch("microbots.bot.CopilotBot.CopilotBot._start_copilot_cli_server"),
+        patch("microbots.bot.CopilotBot.CopilotBot._wait_for_cli_ready"),
+        patch("copilot.CopilotClient", return_value=client),
+        patch("copilot.ExternalServerConfig", return_value=MagicMock()),
+    ):
+        from microbots.bot.CopilotBot import CopilotBot
+        yield CopilotBot, lde
+
+
+@pytest.mark.unit
+class TestCopilotBotSudoAccess:
+    """sudo_access is forwarded to the auto-created environment."""
+
+    @pytest.mark.parametrize("sudo_access", [False, True])
+    def test_forwarded_to_auto_created_environment(
+        self, mock_environment, mock_copilot_client, sudo_access
+    ):
+        with _root_bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, lde):
+            bot = CopilotBot(model="gpt-4.1", github_token="ghp_test", sudo_access=sudo_access)
+            bot.stop()
+
+        assert lde.call_args.kwargs["sudo_access"] is sudo_access
+        assert bot.sudo_access is sudo_access
+
+    def test_rejects_unprivileged_provided_environment(self, mock_environment, mock_copilot_client):
+        mock_environment.sudo_access = False
+        with _root_bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, lde):
+            with pytest.raises(ValueError, match="sudo_access=True"):
+                CopilotBot(
+                    model="gpt-4.1",
+                    environment=mock_environment,
+                    github_token="ghp_test",
+                    sudo_access=True,
+                )
+        lde.assert_not_called()
+
+    def test_accepts_root_provided_environment(self, mock_environment, mock_copilot_client):
+        mock_environment.sudo_access = True
+        with _root_bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, lde):
+            bot = CopilotBot(
+                model="gpt-4.1",
+                environment=mock_environment,
+                github_token="ghp_test",
+                sudo_access=True,
+            )
+            bot.stop()
+
+        assert bot.sudo_access is True
+        lde.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Integration tests — require real Docker + copilot-SDK + auth
 # ---------------------------------------------------------------------------
 

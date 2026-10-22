@@ -29,6 +29,9 @@ class BrowsingBot(MicroBot):
     image : Optional[str]
         Shell-server image of the auto-created environment. The browser tool
         only supports Debian-based images (the default). Defaults to None.
+    sudo_access : bool
+        Give the sandbox's agent account passwordless ``sudo``.
+        Defaults to False.
     """
 
     def __init__(
@@ -38,6 +41,7 @@ class BrowsingBot(MicroBot):
         additional_tools: Optional[list[ToolAbstract]] = None,
         token_provider: Optional[any] = None,
         image: Optional[str] = None,
+        sudo_access: bool = False,
     ):
         # validate init values before assigning
         bot_type = BotType.BROWSING_BOT
@@ -53,6 +57,7 @@ class BrowsingBot(MicroBot):
             additional_tools=(additional_tools or []) + [BROWSER_USE_TOOL],
             token_provider=token_provider,
             image=image,
+            sudo_access=sudo_access,
         )
 
     def run(self, task, timeout_in_seconds=200) -> BotRunResult:

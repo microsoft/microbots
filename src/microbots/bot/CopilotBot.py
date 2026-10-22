@@ -299,6 +299,15 @@ class CopilotBot:
     token_provider : Optional[Callable[[], str]]
         A callable returning a bearer token (e.g. Azure AD token
         provider).  Requires ``base_url``.
+    sudo_access : bool
+        Give the agent passwordless ``sudo`` inside the sandbox.  Needed by
+        tools such as ``mock``.  Commands still run as the host user unless
+        the agent uses ``sudo``.  Defaults to *False*.  The sandbox then only
+        acts as a guardrail: a misbehaving agent could remount ``READ_ONLY``
+        mounts writable or escape to the host, so use it only with trusted
+        tasks and repositories.
+        Applies to the auto-created environment; a passed-in ``environment``
+        must already have been created with ``sudo_access=True``.
     """
 
     def __init__(
@@ -316,6 +325,7 @@ class CopilotBot:
         wire_api: Optional[str] = None,
         azure_api_version: Optional[str] = None,
         token_provider: Optional[Callable[[], str]] = None,
+        sudo_access: bool = False,
     ):
         try:
             from copilot import CopilotClient, ExternalServerConfig
@@ -341,6 +351,17 @@ class CopilotBot:
                     "and copilot.types). Please install a compatible version, "
                     "e.g. pip install -U microbots[ghcp]."
                 ) from exc
+
+        if (
+            environment is not None
+            and sudo_access
+            and not getattr(environment, "sudo_access", False)
+        ):
+            raise ValueError(
+                "sudo_access=True requires the provided environment to be created "
+                "with LocalDockerEnvironment(..., sudo_access=True)."
+            )
+        self.sudo_access = sudo_access
 
         self.additional_tools = additional_tools or []
 
@@ -515,6 +536,7 @@ class CopilotBot:
         self.environment = LocalDockerEnvironment(
             port=free_port,
             folder_to_mount=self.folder_to_mount,
+            sudo_access=self.sudo_access,
         )
 
     def _install_copilot_cli(self):

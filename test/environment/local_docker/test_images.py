@@ -43,3 +43,11 @@ def test_prepare_script_installs_server_dependencies_into_root_venv():
     assert "fastapi uvicorn pydantic" in text
     # The devcontainer image's passwordless-sudo account must not survive.
     assert "remove_user vscode" in text
+
+
+def test_prepare_script_grants_sudo_only_when_requested():
+    text = PREPARE.read_text()
+    assert 'AGENT_SUDO="${AGENT_SUDO:-0}"' in text
+    assert 'if [ "$AGENT_SUDO" = 1 ]; then' in text
+    assert "ALL=(ALL) NOPASSWD:ALL" in text
+    assert "chmod 0440 /etc/sudoers.d/microbots-agent" in text

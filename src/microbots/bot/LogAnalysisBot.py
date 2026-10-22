@@ -46,6 +46,9 @@ class LogAnalysisBot(MicroBot):
     image : Optional[str]
         Shell-server image of the auto-created environment, for example
         ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
+    sudo_access : bool
+        Give the sandbox's agent account passwordless ``sudo`` (needed by
+        tools such as ``mock``). Defaults to False.
 
     Attributes
     ----------
@@ -80,6 +83,7 @@ class LogAnalysisBot(MicroBot):
         additional_tools: Optional[list[ToolAbstract]] = None,
         token_provider: Optional[any] = None,
         image: Optional[str] = None,
+        sudo_access: bool = False,
     ):
         """
         Initialize a LogAnalysisBot instance.
@@ -104,6 +108,9 @@ class LogAnalysisBot(MicroBot):
         image : Optional[str]
             Shell-server image of the auto-created environment, for example
             ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
+        sudo_access : bool
+            Give the sandbox's agent account passwordless ``sudo`` (needed by
+            tools such as ``mock``). Defaults to False.
         """
         # validate init values before assigning
         bot_type = BotType.LOG_ANALYSIS_BOT
@@ -132,6 +139,7 @@ Only when you have run all necessary commands and identified the root cause, you
             folder_to_mount=folder_mount_info,
             token_provider=token_provider,
             image=image,
+            sudo_access=sudo_access,
         )
 
     def run(

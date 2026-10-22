@@ -1091,7 +1091,7 @@ class TestMicroBotImage:
             bot = MicroBot(model="azure-openai/test-deploy", image=image)
 
         assert bot.image == expected
-        lde.assert_called_once_with(port=4242, folder_to_mount=None, image=expected)
+        lde.assert_called_once_with(port=4242, folder_to_mount=None, image=expected, sudo_access=False)
 
     def test_rejects_image_with_provided_environment(self):
         with patch.object(MicroBot, "_create_llm"), \
@@ -1120,3 +1120,57 @@ class TestMicroBotImage:
         with patch.object(MicroBot, "__init__", return_value=None) as base_init:
             getattr(bots, bot_name)(model="azure-openai/test-deploy", image=image, **kwargs)
         assert base_init.call_args.kwargs["image"] == image
+
+
+@pytest.mark.unit
+class TestMicroBotSudoAccess:
+    """sudo_access is opt-in and forwarded to the auto-created environment."""
+
+    @pytest.mark.parametrize("sudo_access", [False, True])
+    def test_forwarded_to_auto_created_environment(self, sudo_access):
+        with patch("microbots.MicroBot.LocalDockerEnvironment") as lde, \
+             patch("microbots.MicroBot.get_free_port", return_value=4242), \
+             patch.object(MicroBot, "_create_llm"):
+            bot = MicroBot(model="azure-openai/test-deploy", sudo_access=sudo_access)
+
+        assert bot.sudo_access is sudo_access
+        assert lde.call_args.kwargs["sudo_access"] is sudo_access
+        assert bot.environment is lde.return_value
+
+    def test_rejects_unprivileged_provided_environment(self):
+        env = MagicMock(sudo_access=False)
+        with patch.object(MicroBot, "_create_llm"), \
+             pytest.raises(ValueError, match="sudo_access=True requires the provided environment"):
+            MicroBot(model="azure-openai/test-deploy", environment=env, sudo_access=True)
+
+    def test_accepts_root_provided_environment(self):
+        env = MagicMock(sudo_access=True)
+        with patch.object(MicroBot, "_create_environment") as create_env, \
+             patch.object(MicroBot, "_create_llm"):
+            bot = MicroBot(model="azure-openai/test-deploy", environment=env, sudo_access=True)
+        assert bot.environment is env
+        create_env.assert_not_called()
+
+    @pytest.mark.parametrize("bot_name, kwargs", [
+        ("ReadingBot", {"folder_to_mount": "/tmp/repo"}),
+        ("WritingBot", {"folder_to_mount": "/tmp/repo"}),
+        ("LogAnalysisBot", {"folder_to_mount": "/tmp/repo"}),
+        ("BrowsingBot", {}),
+        ("AgentBoss", {"folder_to_mount": "/tmp/repo"}),
+    ])
+    @pytest.mark.parametrize("sudo_access", [False, True])
+    def test_subclasses_forward_sudo_access(self, bot_name, kwargs, sudo_access):
+        import microbots.bot as bots
+
+        with patch.object(MicroBot, "__init__", return_value=None) as base_init:
+            getattr(bots, bot_name)(model="azure-openai/test-deploy", sudo_access=sudo_access, **kwargs)
+        assert base_init.call_args.kwargs["sudo_access"] is sudo_access
+
+    @pytest.mark.parametrize("bot_name", ["ReadingBot", "WritingBot", "LogAnalysisBot", "BrowsingBot", "AgentBoss"])
+    def test_subclasses_default_to_unprivileged(self, bot_name):
+        import microbots.bot as bots
+
+        kwargs = {} if bot_name == "BrowsingBot" else {"folder_to_mount": "/tmp/repo"}
+        with patch.object(MicroBot, "__init__", return_value=None) as base_init:
+            getattr(bots, bot_name)(model="azure-openai/test-deploy", **kwargs)
+        assert base_init.call_args.kwargs["sudo_access"] is False

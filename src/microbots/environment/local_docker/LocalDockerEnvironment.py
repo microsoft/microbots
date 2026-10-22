@@ -62,6 +62,19 @@ class LocalDockerEnvironment(Environment):
         its prerequisites are installed when the environment starts.  Its
         distribution is detected from the container's ``/etc/os-release``
         when needed.  Defaults to ``DEFAULT_IMAGE``.
+    sudo_access : bool
+        When *True*, the ``agent`` account (which has the host user's uid) gets
+        passwordless ``sudo``, and the container is started without
+        ``no-new-privileges`` so ``sudo`` and other setuid helpers (such as
+        ``mock``'s) work. Commands still run as the host uid unless the agent
+        uses ``sudo``, so most files it writes stay owned by the host user;
+        files written through ``sudo`` are owned by root. Defaults to *False*.
+        This weakens the sandbox to a guardrail: through ``sudo`` the agent
+        has root with the container's ``SYS_ADMIN`` capability and AppArmor
+        unconfined, so it can mount filesystems (including remounting a
+        ``READ_ONLY`` mount writable) and reach host-wide kernel interfaces -
+        a misbehaving agent could gain host root. Use it only with trusted
+        tasks and repositories.
     """
 
     def __init__(
@@ -69,9 +82,21 @@ class LocalDockerEnvironment(Environment):
         port: int,
         folder_to_mount: Optional[Mount] = None,
         image: str = DEFAULT_IMAGE,
+        sudo_access: bool = False,
     ):
 
         self.image = image
+        if (
+            sudo_access
+            and folder_to_mount
+            and folder_to_mount.permission == PermissionLabels.READ_ONLY
+        ):
+            logger.warning(
+                "⚠️  sudo_access=True with a READ_ONLY mount: with sudo the agent can remount %s "
+                "writable, so read-only is not enforced against a misbehaving agent.",
+                folder_to_mount.host_path_info.abs_path,
+            )
+        self.sudo_access = sudo_access
         self.folder_to_mount = folder_to_mount
         self.overlay_mount = False
         self.container = None
@@ -130,6 +155,11 @@ class LocalDockerEnvironment(Environment):
         # must never be reachable from the network.
         port_mapping = {f"{self.container_port}/tcp": ("127.0.0.1", self.port)}
 
+        # no-new-privileges blocks sudo and setuid helpers, so it is only
+        # dropped when the agent is explicitly granted sudo.
+        security_opt = ["apparmor=unconfined"]
+        if not self.sudo_access:
+            security_opt.insert(0, "no-new-privileges:true")
         self.container = self.client.containers.run(
             self.image,
             # Keep the stock image idle; the shell server is started over the
@@ -143,7 +173,7 @@ class LocalDockerEnvironment(Environment):
             # SYS_ADMIN is the narrowest grant that allows the overlayfs mount;
             # the docker-default AppArmor profile denies mount regardless of caps.
             cap_add=["SYS_ADMIN"],
-            security_opt=["no-new-privileges:true", "apparmor=unconfined"],
+            security_opt=security_opt,
         )
         logger.info(
             "🚀 Started container %s with image %s on host port %s",
@@ -165,6 +195,31 @@ class LocalDockerEnvironment(Environment):
             self.execute(f"cd {self.folder_to_mount.sandbox_path}")
         else:
             self.execute("cd /")
+
+        if self.sudo_access:
+            self._verify_sudo_access()
+
+    def _verify_sudo_access(self):
+        """Fail fast if the agent cannot use passwordless sudo, instead of
+        letting tools that need it fail later.
+
+        Raises
+        ------
+        RuntimeError
+            If ``sudo -n true`` fails in the bot shell; the container is stopped first.
+        """
+        ret = self.execute("sudo -n true")
+        if ret.return_code != 0:
+            image = self.image
+            self.stop()
+            raise RuntimeError(
+                f"sudo_access=True but the agent cannot use sudo in image '{image}': "
+                f"{(ret.stderr or ret.stdout).strip() or 'unknown error'}"
+            )
+        logger.warning(
+            "⚠️  Sudo access enabled: the agent can run commands as root with CAP_SYS_ADMIN. "
+            "The sandbox is only a guardrail now; a misbehaving agent could escape to the host."
+        )
 
     def _shell_server_environment(self) -> dict:
         """Environment for the shell server process inside the container."""
@@ -193,7 +248,8 @@ class LocalDockerEnvironment(Environment):
         if not self.container.put_archive(MICROBOTS_HOME, _shell_server_archive()):
             raise RuntimeError("Failed to copy the shell server into the sandbox")
 
-        identity = " ".join(f"{k}={v}" for k, v in self._host_identity().items())
+        prepare_env = {**self._host_identity(), **({"AGENT_SUDO": "1"} if self.sudo_access else {})}
+        identity = " ".join(f"{k}={v}" for k, v in prepare_env.items())
         ret = self.execute_privileged(
             f"{identity} sh {MICROBOTS_HOME}/shell_server/prepare.sh".strip()
         )

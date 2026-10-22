@@ -10,6 +10,8 @@ MICROBOTS_HOME=/opt/microbots
 AGENT_USER=agent
 AGENT_UID="${AGENT_UID:-1001}"
 AGENT_GID="${AGENT_GID:-1001}"
+# 1 = give the agent passwordless sudo (LocalDockerEnvironment(sudo_access=True)).
+AGENT_SUDO="${AGENT_SUDO:-0}"
 
 log() { echo "[microbots-prepare] $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -21,6 +23,7 @@ have python3 || missing="$missing python3"
 have mount || missing="$missing mount"
 have git || missing="$missing git"
 python3 -c "import venv, ensurepip" >/dev/null 2>&1 || missing="$missing venv"
+if [ "$AGENT_SUDO" = 1 ] && ! have sudo; then missing="$missing sudo"; fi
 
 if [ -n "$missing" ]; then
     log "installing:$missing"
@@ -31,6 +34,7 @@ if [ -n "$missing" ]; then
             shadow) pkgs="$pkgs passwd";;
             mount) pkgs="$pkgs mount";;
             git) pkgs="$pkgs git";;
+            sudo) pkgs="$pkgs sudo";;
         esac; done
         # Stale third-party sources with expired keys would break apt-get update.
         rm -f /etc/apt/sources.list.d/yarn.list
@@ -44,6 +48,7 @@ if [ -n "$missing" ]; then
             shadow) pkgs="$pkgs shadow-utils";;
             mount) pkgs="$pkgs util-linux";;
             git) pkgs="$pkgs git";;
+            sudo) pkgs="$pkgs sudo";;
         esac; done
         "$pm" install -y $pkgs ca-certificates >/dev/null
     else
@@ -78,6 +83,17 @@ if ! id "$AGENT_USER" >/dev/null 2>&1; then
     useradd -m -u "$AGENT_UID" -g "$AGENT_USER" -s /bin/bash "$AGENT_USER"
 fi
 mkdir -p /var/log/microbots
+
+# ---- Optional passwordless sudo for the agent. Commands still run as the
+# host uid unless the agent explicitly uses sudo.
+if [ "$AGENT_SUDO" = 1 ]; then
+    mkdir -p /etc/sudoers.d
+    printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$AGENT_USER" > /etc/sudoers.d/microbots-agent
+    chmod 0440 /etc/sudoers.d/microbots-agent
+    # Some images (e.g. Azure Linux) ship /etc/shadow with mode 0000, which
+    # sudo's PAM account check cannot read inside a container.
+    if [ -f /etc/shadow ]; then chmod u+r /etc/shadow; fi
+fi
 
 # Bind-mounted repos are owned by the host user, not whoever runs inside the
 # container, which trips git's "dubious ownership" safety check.
