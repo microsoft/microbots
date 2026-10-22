@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from pprint import pformat
+import shutil
 import subprocess
 import sys
 from unittest.mock import patch, Mock, MagicMock
@@ -64,7 +65,7 @@ class TestMicrobotIntegration:
         assert tmpdir.exists()
         yield tmpdir / "error.log"
         if tmpdir.exists():
-            subprocess.run(["sudo", "rm", "-rf", str(tmpdir)])
+            shutil.rmtree(str(tmpdir), ignore_errors=True)
 
     @pytest.fixture(scope="function")
     def ro_mount(self, test_repo: Path):
@@ -500,6 +501,7 @@ class TestMicrobotUnit:
         # Create a mock environment
         mock_env = Mock()
         mock_env.execute.return_value = Mock(return_code=0, stdout="", stderr="")
+        mock_env.execute_privileged = mock_env.execute
 
         # Mock the environment and LLM creation to avoid actual Docker/API calls
         with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
@@ -549,6 +551,7 @@ class TestMicrobotUnit:
         # Create a mock environment
         mock_env = Mock()
         mock_env.execute.return_value = Mock(return_code=0, stdout="", stderr="")
+        mock_env.execute_privileged = mock_env.execute
 
         # Mock the environment and LLM creation
         with patch('microbots.llm.anthropic_api.Anthropic'):
@@ -1044,6 +1047,7 @@ int multiply_numbers(int a, int b) {
         """Test that tool usage instructions are appended to the bot's system prompt."""
         mock_env = Mock()
         mock_env.execute.return_value = Mock(return_code=0, stdout="cscope: version 15.9", stderr="")
+        mock_env.execute_privileged = mock_env.execute
 
         base_prompt = "You are a code analysis assistant."
 
