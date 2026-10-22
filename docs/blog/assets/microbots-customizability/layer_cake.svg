@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 530">
+  <rect width="620" height="530" fill="#010409"/>
+  <rect x="1" y="1" width="618" height="528" fill="none" stroke="#3d444d" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="310" y="35" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="15" font-weight="700" fill="#e6edf3">Customizability at Every Layer</text>
+
+  <!-- ===== Group 1: Customization ===== -->
+  <text x="118" y="65" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#8b949e">CUSTOMIZATION</text>
+  <text x="265" y="65" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">extend with new code</text>
+
+  <!-- Layer 1: Tools -->
+  <rect x="118" y="75" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="318" y="95" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#58a6ff">Tools</text>
+  <text x="318" y="111" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">YAML definitions · Internal &amp; External · Install/Verify lifecycle</text>
+
+  <!-- Layer 2: Bots -->
+  <rect x="118" y="130" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="318" y="150" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#3fb950">Bots</text>
+  <text x="318" y="166" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">Subclass MicroBot · Custom system prompts · Preconfigured tools</text>
+
+  <!-- Group 1 bracket -->
+  <line x1="100" y1="80" x2="100" y2="170" stroke="#8b949e" stroke-width="1"/>
+  <line x1="100" y1="80" x2="108" y2="80" stroke="#8b949e" stroke-width="1"/>
+  <line x1="100" y1="170" x2="108" y2="170" stroke="#8b949e" stroke-width="1"/>
+
+  <!-- ===== Group 2: Configuration ===== -->
+  <text x="118" y="205" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#8b949e">CONFIGURATION</text>
+  <text x="265" y="205" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">pick from built-in options</text>
+
+  <!-- Layer 3: Mounts -->
+  <rect x="118" y="215" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="318" y="235" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#d2a8ff">Mounts</text>
+  <text x="318" y="251" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">MOUNT vs COPY · READ_ONLY vs READ_WRITE · Path mapping</text>
+
+  <!-- Layer 4: LLM Providers (config) -->
+  <rect x="118" y="270" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="318" y="290" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#f0883e">LLM Providers</text>
+  <text x="318" y="306" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">Swap between 3 built-in providers with one string</text>
+
+  <!-- Layer 5: Auth -->
+  <rect x="118" y="325" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#ffd33d" stroke-width="1.5"/>
+  <text x="318" y="345" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#ffd33d">Authentication</text>
+  <text x="318" y="361" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">API Key · Azure AD · Any Callable[[], str]</text>
+
+  <!-- Group 2 bracket -->
+  <line x1="100" y1="220" x2="100" y2="365" stroke="#8b949e" stroke-width="1"/>
+  <line x1="100" y1="220" x2="108" y2="220" stroke="#8b949e" stroke-width="1"/>
+  <line x1="100" y1="365" x2="108" y2="365" stroke="#8b949e" stroke-width="1"/>
+
+  <!-- ===== Group 3: Advanced Customization ===== -->
+  <text x="118" y="400" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#8b949e">ADVANCED CUSTOMIZATION</text>
+  <text x="328" y="400" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6e7681">implement an interface</text>
+
+  <!-- Layer 6: LLM Providers (extend) -->
+  <rect x="118" y="410" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="318" y="430" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#f0883e">LLM Providers (extend)</text>
+  <text x="318" y="446" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">Subclass LLMInterface ABC · Add new providers</text>
+
+  <!-- Layer 7: Environment -->
+  <rect x="118" y="465" width="400" height="45" rx="6" fill="#1a1f2b" stroke="#f778ba" stroke-width="1.5"/>
+  <text x="318" y="485" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="600" fill="#f778ba">Environment</text>
+  <text x="318" y="501" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" fill="#6e7681">Abstract interface · Docker default · Swap for SSH, K8s, cloud</text>
+
+  <!-- Group 3 bracket -->
+  <line x1="100" y1="415" x2="100" y2="505" stroke="#8b949e" stroke-width="1"/>
+  <line x1="100" y1="415" x2="108" y2="415" stroke="#8b949e" stroke-width="1"/>
+  <line x1="100" y1="505" x2="108" y2="505" stroke="#8b949e" stroke-width="1"/>
+</svg>

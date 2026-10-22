@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
+from pathlib import PurePosixPath
 
 from microbots.constants import PermissionLabels, PermissionMapping
-from microbots.utils.path import PathInfo, get_path_info, ends_with_separator
+from microbots.utils.path import PathInfo, ends_with_separator, get_path_info
 
 
 class MountType(StrEnum):
@@ -57,7 +57,12 @@ class Mount:
         self.permission_key = PermissionMapping.MAPPING.get(self.permission)
         self.host_path_info = get_path_info(self.host_path)
 
-        sandbox_path = Path(self.sandbox_path)
+        # The sandbox is always a POSIX (Linux) container, so the sandbox
+        # path must be interpreted as a POSIX path regardless of the host OS.
+        # Using pathlib.Path here would resolve to WindowsPath on Windows,
+        # which incorrectly reports POSIX absolute paths like "/var/log" as
+        # relative (Windows requires a drive letter for an absolute path).
+        sandbox_path = PurePosixPath(self.sandbox_path)
 
         # Validate that sandbox_path is absolute
         if not sandbox_path.is_absolute():

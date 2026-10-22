@@ -71,7 +71,7 @@ _BYOK_ENV_PROVIDER_TYPE = "COPILOT_BYOK_PROVIDER_TYPE"
 _BYOK_ENV_BASE_URL = "COPILOT_BYOK_BASE_URL"
 _BYOK_ENV_API_KEY = "COPILOT_BYOK_API_KEY"
 _BYOK_ENV_BEARER_TOKEN = "COPILOT_BYOK_BEARER_TOKEN"
-_BYOK_ENV_WIRE_API = "COPILOT_BYOK_WIRE_API"
+_BYOK_ENV_WIRE_API = "COPILOT_BYOK_WIRE_API" # completions / responses
 _BYOK_ENV_AZURE_API_VERSION = "COPILOT_BYOK_AZURE_API_VERSION"
 _BYOK_ENV_MODEL = "COPILOT_BYOK_MODEL"
 
@@ -171,6 +171,21 @@ def resolve_auth_config(
         logger.info("🔑 BYOK auth resolved via environment variables (type=%s)", provider["type"])
         return env_model, None, provider
 
+    # ── 2.5. BYOK base_url set but no key/bearer → auto-detect via DefaultAzureCredential ──
+    # Only fires when COPILOT_BYOK_PROVIDER_TYPE is also set (explicit BYOK intent).
+    # Without it, a bare COPILOT_BYOK_BASE_URL would hijack tests that expect native Copilot auth.
+    env_provider_type = os.environ.get(_BYOK_ENV_PROVIDER_TYPE)
+    if env_base_url and env_provider_type and not (env_api_key or env_bearer_token) and not token_provider:
+        try:
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+            _credential = DefaultAzureCredential()
+            token_provider = get_bearer_token_provider(
+                _credential, "https://cognitiveservices.azure.com/.default"
+            )
+            logger.debug("DefaultAzureCredential configured for BYOK — falling through to step 3")
+        except Exception as e:
+            logger.debug("DefaultAzureCredential not available for BYOK: %s", e)
+
     # ── 3. Token provider (e.g. Azure AD) ────────────────────────────
     if token_provider:
         if not callable(token_provider):
@@ -196,7 +211,7 @@ def resolve_auth_config(
             azure_api_version=azure_api_version or os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
         )
         logger.info("🔑 BYOK auth resolved via token_provider (type=%s)", provider["type"])
-        return model, None, provider
+        return os.environ.get(_BYOK_ENV_MODEL, model), None, provider
 
     # ── 4. Native GitHub Copilot auth ────────────────────────────────
     resolved_github_token = (
@@ -304,12 +319,28 @@ class CopilotBot:
     ):
         try:
             from copilot import CopilotClient, ExternalServerConfig
-            from copilot.types import PermissionHandler
         except ImportError:
             raise ImportError(
                 "CopilotBot requires the github-copilot-sdk package. "
                 "Install with: pip install microbots[ghcp]"
             )
+
+        # ``PermissionHandler`` lives in ``copilot.session`` in
+        # github-copilot-sdk >= 0.3.0 and in ``copilot.types`` in older
+        # releases.  Try the new location first and fall back to the old
+        # one so we work with both.
+        try:
+            from copilot.session import PermissionHandler
+        except ImportError:
+            try:
+                from copilot.types import PermissionHandler
+            except ImportError as exc:
+                raise ImportError(
+                    "CopilotBot could not locate 'PermissionHandler' in the "
+                    "installed github-copilot-sdk (looked in copilot.session "
+                    "and copilot.types). Please install a compatible version, "
+                    "e.g. pip install -U microbots[ghcp]."
+                ) from exc
 
         self.additional_tools = additional_tools or []
 
@@ -364,6 +395,7 @@ class CopilotBot:
 
         # ── Connect SDK to in-container CLI ─────────────────────────
         container_ip = self.environment.get_ipv4_address()
+        logger.info("🔌 Connecting Copilot SDK to CLI server at %s:%d", container_ip, _CONTAINER_CLI_PORT)
         self._client = CopilotClient(
             ExternalServerConfig(url=f"{container_ip}:{_CONTAINER_CLI_PORT}")
         )
@@ -498,11 +530,12 @@ class CopilotBot:
             "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1",
             "apt-get install -y -qq nodejs > /dev/null 2>&1",
             # Install copilot-cli globally
-            "npm install -g @github/copilot > /dev/null 2>&1",
+            # NOTE: Pinning to 1.0.39 which is the latest @github/copilot release compatible with github-copilot-sdk==0.3.0 as of May 2026.
+            "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1",
         ]
 
         for cmd in install_commands:
-            result = self.environment.execute(cmd, timeout=300)
+            result = self.environment.execute_privileged(cmd, timeout=300)
             if result.return_code != 0:
                 raise RuntimeError(
                     f"Failed to install copilot-cli: {cmd}\n"
@@ -539,8 +572,8 @@ class CopilotBot:
         # Start copilot in headless mode in the background
         # Using nohup + & to run it as a background process inside the container's shell
         start_cmd = (
-            f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} "
-            f"> /var/log/copilot-cli.log 2>&1 &"
+            f"nohup copilot --headless --port {_CONTAINER_CLI_PORT} --host 0.0.0.0 "
+            f"> /var/log/microbots/copilot-cli.log 2>&1 &"
         )
         result = self.environment.execute(start_cmd)
         if result.return_code != 0:
@@ -563,13 +596,15 @@ class CopilotBot:
         deadline = time.time() + _CLI_STARTUP_TIMEOUT
         while time.time() < deadline:
             try:
+                self.environment.execute("pgrep -f 'copilot.*--headless' || true")
                 sock = _socket.create_connection(
-                    (container_ip, _CONTAINER_CLI_PORT), timeout=2
+                    (container_ip, _CONTAINER_CLI_PORT), timeout=5
                 )
                 sock.close()
                 return
             except (ConnectionRefusedError, OSError):
                 time.sleep(1)
+        self.environment.execute("cat /var/log/microbots/copilot-cli.log || true")
         raise TimeoutError(
             f"copilot-cli did not become ready within {_CLI_STARTUP_TIMEOUT}s "
             f"on {container_ip}:{_CONTAINER_CLI_PORT}"

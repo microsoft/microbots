@@ -6,11 +6,13 @@ wiring and lifecycle.  Integration tests (marked ``@pytest.mark.integration``)
 require a real Docker daemon, copilot-cli, and GitHub authentication.
 """
 
+import contextlib
 import importlib
 import os
 import shutil
 import subprocess
 import sys
+import types
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -28,6 +30,8 @@ _mock_copilot.ExternalServerConfig = MagicMock
 
 _mock_session = MagicMock()
 _mock_session.PermissionRequestResult = MagicMock
+_mock_session.PermissionHandler = MagicMock()
+_mock_session.PermissionHandler.approve_all = MagicMock()
 
 _mock_events = MagicMock()
 _mock_events.SessionEventType = MagicMock()
@@ -72,13 +76,76 @@ def _restore_real_copilot_modules():
         del sys.modules["microbots.bot.CopilotBot"]
 
 
+def _reinstall_default_copilot_mocks():
+    """Reinstall the module-level copilot mocks and reload CopilotBot.
+
+    Used to undo a temporary swap performed by ``_swap_copilot_sdk_layout``
+    so subsequent tests in this file see the original mock fixtures.
+    """
+    sys.modules["copilot"] = _mock_copilot
+    sys.modules["copilot.session"] = _mock_session
+    sys.modules["copilot.generated.session_events"] = _mock_events
+    sys.modules["copilot.tools"] = _mock_tools
+    sys.modules["copilot.types"] = _mock_types
+    if "microbots.bot.CopilotBot" in sys.modules:
+        importlib.reload(sys.modules["microbots.bot.CopilotBot"])
+
+
+@contextlib.contextmanager
+def _swap_copilot_sdk_layout(*, session_has_handler: bool, types_has_handler: bool):
+    """Temporarily install fresh stub modules for ``copilot.session`` and
+    ``copilot.types`` to simulate a specific SDK layout, then reload
+    ``microbots.bot.CopilotBot`` so the new import logic re-runs.
+
+    ``session_has_handler``/``types_has_handler`` control whether
+    ``PermissionHandler`` is exposed on the corresponding module.  The
+    returned tuple yields the two ``PermissionHandler`` sentinels (or
+    ``None`` when not present) so tests can assert which one was picked.
+    """
+    # Build a stub ``copilot`` package that still exposes CopilotClient and
+    # ExternalServerConfig so the first try/except in __init__ succeeds.
+    stub_copilot = types.ModuleType("copilot")
+    stub_copilot.CopilotClient = _mock_copilot.CopilotClient
+    stub_copilot.ExternalServerConfig = _mock_copilot.ExternalServerConfig
+
+    stub_session = types.ModuleType("copilot.session")
+    stub_session.PermissionRequestResult = MagicMock
+    session_handler = MagicMock(name="session.PermissionHandler") if session_has_handler else None
+    if session_handler is not None:
+        session_handler.approve_all = MagicMock(name="session.approve_all")
+        stub_session.PermissionHandler = session_handler
+
+    stub_types = types.ModuleType("copilot.types")
+    types_handler = MagicMock(name="types.PermissionHandler") if types_has_handler else None
+    if types_handler is not None:
+        types_handler.approve_all = MagicMock(name="types.approve_all")
+        stub_types.PermissionHandler = types_handler
+
+    saved = {
+        name: sys.modules.get(name)
+        for name in ("copilot", "copilot.session", "copilot.types")
+    }
+    sys.modules["copilot"] = stub_copilot
+    sys.modules["copilot.session"] = stub_session
+    sys.modules["copilot.types"] = stub_types
+    # Other submodules (generated.session_events, tools) keep the existing
+    # module-level mocks so CopilotBot's other imports still work.
+    try:
+        if "microbots.bot.CopilotBot" in sys.modules:
+            importlib.reload(sys.modules["microbots.bot.CopilotBot"])
+        yield session_handler, types_handler
+    finally:
+        for name, mod in saved.items():
+            if mod is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = mod
+        _reinstall_default_copilot_mocks()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _copilot_cli_available():
-    return shutil.which("copilot") is not None
-
 
 def _copilot_sdk_installed():
     try:
@@ -126,6 +193,7 @@ def mock_environment():
     success_return.stdout = "copilot version 1.0.0"
     success_return.stderr = ""
     env.execute = MagicMock(return_value=success_return)
+    env.execute_privileged = MagicMock(return_value=success_return)
     env.copy_to_container = MagicMock(return_value=True)
     env.stop = MagicMock()
     env.get_ipv4_address = MagicMock(return_value="172.17.0.2")
@@ -246,6 +314,91 @@ class TestCopilotBotInit:
             if "microbots.bot.CopilotBot" in sys.modules:
                 importlib.reload(sys.modules["microbots.bot.CopilotBot"])
 
+    # ──────────────────────────────────────────────────────────────────
+    # PermissionHandler import path — covers the new logic in __init__
+    # that supports both pre-0.3.0 and >=0.3.0 github-copilot-sdk layouts.
+    # ──────────────────────────────────────────────────────────────────
+
+    def _build_bot_under_swap(self, mock_environment, mock_copilot_client):
+        """Construct a CopilotBot using the reloaded module under the
+        currently-active ``_swap_copilot_sdk_layout`` context."""
+        from microbots.bot.CopilotBot import CopilotBot
+        with (
+            patch("microbots.bot.CopilotBot.LocalDockerEnvironment", return_value=mock_environment),
+            patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
+            patch("microbots.bot.CopilotBot.CopilotBot._install_copilot_cli"),
+            patch("microbots.bot.CopilotBot.CopilotBot._start_copilot_cli_server"),
+            patch("microbots.bot.CopilotBot.CopilotBot._wait_for_cli_ready"),
+            patch("copilot.CopilotClient", return_value=mock_copilot_client),
+            patch("copilot.ExternalServerConfig", return_value=MagicMock()),
+        ):
+            bot = CopilotBot(
+                model="gpt-4.1",
+                environment=mock_environment,
+                github_token="ghp_test",
+            )
+        return bot
+
+    def test_permission_handler_loaded_from_session(
+        self, mock_environment, mock_copilot_client
+    ):
+        """SDK >= 0.3.0: ``PermissionHandler`` is loaded from copilot.session
+        and is preferred over copilot.types when both expose it."""
+        with _swap_copilot_sdk_layout(
+            session_has_handler=True, types_has_handler=True
+        ) as (session_handler, types_handler):
+            bot = self._build_bot_under_swap(mock_environment, mock_copilot_client)
+            try:
+                assert bot._PermissionHandler is session_handler
+                assert bot._PermissionHandler is not types_handler
+            finally:
+                bot._loop.call_soon_threadsafe(bot._loop.stop)
+                bot._thread.join(timeout=2)
+                bot.environment = None
+
+    def test_permission_handler_falls_back_to_types(
+        self, mock_environment, mock_copilot_client
+    ):
+        """Pre-0.3.0 SDK: ``PermissionHandler`` is absent from copilot.session
+        and the import falls back to copilot.types."""
+        with _swap_copilot_sdk_layout(
+            session_has_handler=False, types_has_handler=True
+        ) as (session_handler, types_handler):
+            assert session_handler is None
+            bot = self._build_bot_under_swap(mock_environment, mock_copilot_client)
+            try:
+                assert bot._PermissionHandler is types_handler
+            finally:
+                bot._loop.call_soon_threadsafe(bot._loop.stop)
+                bot._thread.join(timeout=2)
+                bot.environment = None
+
+    def test_import_error_when_permission_handler_missing_everywhere(
+        self, mock_environment, mock_copilot_client
+    ):
+        """If neither copilot.session nor copilot.types exposes
+        ``PermissionHandler`` we raise a distinct, accurate ImportError
+        (and not the misleading "github-copilot-sdk is not installed" one)."""
+        with _swap_copilot_sdk_layout(
+            session_has_handler=False, types_has_handler=False
+        ):
+            from microbots.bot.CopilotBot import CopilotBot
+            with pytest.raises(ImportError, match="PermissionHandler"):
+                with (
+                    patch("microbots.bot.CopilotBot.LocalDockerEnvironment", return_value=mock_environment),
+                    patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
+                    patch("microbots.bot.CopilotBot.CopilotBot._install_copilot_cli"),
+                    patch("microbots.bot.CopilotBot.CopilotBot._start_copilot_cli_server"),
+                    patch("microbots.bot.CopilotBot.CopilotBot._wait_for_cli_ready"),
+                    patch("copilot.CopilotClient", return_value=mock_copilot_client),
+                    patch("copilot.ExternalServerConfig", return_value=MagicMock()),
+                ):
+                    CopilotBot(
+                        model="gpt-4.1",
+                        environment=mock_environment,
+                        github_token="ghp_test",
+                    )
+
 
 @pytest.mark.unit
 class TestCopilotBotRun:
@@ -352,8 +505,12 @@ class TestCopilotBotCLIInstall:
                 github_token="ghp_test",
             )
             # _install_copilot_cli was called during __init__
-            # Verify that execute was called with npm install command
-            calls = [str(c) for c in mock_environment.execute.call_args_list]
+            # Verify that the install commands ran on the privileged channel
+            calls = [
+                str(c)
+                for c in mock_environment.execute.call_args_list
+                + mock_environment.execute_privileged.call_args_list
+            ]
             npm_calls = [c for c in calls if "npm install" in c or "copilot" in c]
             assert len(npm_calls) > 0, "Expected copilot-cli install commands"
             bot.stop()
@@ -366,6 +523,7 @@ class TestCopilotBotCLIInstall:
         fail_return.stdout = ""
         fail_return.stderr = "npm ERR! not found"
         mock_environment.execute = MagicMock(return_value=fail_return)
+        mock_environment.execute_privileged = MagicMock(return_value=fail_return)
 
         with (
             patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
@@ -570,6 +728,44 @@ class TestResolveAuthConfig:
         )
         assert provider["type"] == "anthropic"
 
+    def test_env_base_url_only_credential_fails_falls_through_to_github(self, monkeypatch):
+        """Step 2.5: COPILOT_BYOK_BASE_URL + PROVIDER_TYPE set but DefaultAzureCredential raises
+        → falls through to native GitHub Copilot auth."""
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        monkeypatch.setenv("COPILOT_BYOK_PROVIDER_TYPE", "azure")
+        # No COPILOT_BYOK_API_KEY, no COPILOT_BYOK_BEARER_TOKEN
+
+        with patch("azure.identity.DefaultAzureCredential", side_effect=Exception("no credential")), \
+             patch("azure.identity.get_bearer_token_provider") as mock_gbt:
+            model, gh_token, provider = resolve_auth_config(
+                model="gpt-4.1",
+                github_token="ghp_fallback",
+            )
+
+        mock_gbt.assert_not_called()
+        assert provider is None
+        assert gh_token == "ghp_fallback"
+
+    def test_env_base_url_without_provider_type_skips_step25(self, monkeypatch):
+        """Step 2.5 does NOT fire when COPILOT_BYOK_PROVIDER_TYPE is absent —
+        falls through to native GitHub Copilot auth without touching DefaultAzureCredential."""
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        # No COPILOT_BYOK_PROVIDER_TYPE — step 2.5 should be skipped
+
+        with patch("azure.identity.DefaultAzureCredential") as mock_cred:
+            model, gh_token, provider = resolve_auth_config(
+                model="gpt-4.1",
+                github_token="ghp_native",
+            )
+
+        mock_cred.assert_not_called()
+        assert provider is None
+        assert gh_token == "ghp_native"
+
 
 @pytest.mark.unit
 class TestCopilotBotBYOKInit:
@@ -763,6 +959,7 @@ class TestCopilotBotCLIVerification:
             return success_ret
 
         mock_environment.execute = MagicMock(side_effect=side_effect)
+        mock_environment.execute_privileged = MagicMock(side_effect=side_effect)
 
         with (
             patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
@@ -1325,13 +1522,126 @@ class TestCopilotBotMountAdditional:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — require real Docker + copilot-cli + auth
+# Integration tests — SDK compatibility (both pre-0.3.0 and >=0.3.0 layouts)
+#
+# These exercise the full ``CopilotBot.__init__`` → ``run()`` → assistant-
+# response path against simulated SDK module layouts so we can verify *both*
+# supported ``github-copilot-sdk`` shapes in a single test run (only one
+# version of the real SDK can be installed at a time).  External I/O (Docker,
+# CLI startup, network) is stubbed out; everything else — the new
+# PermissionHandler import branch, the asyncio loop, session creation,
+# event handling, result extraction — runs for real.
 # ---------------------------------------------------------------------------
 
-_skip_no_copilot_cli = pytest.mark.skipif(
-    not _copilot_cli_available(),
-    reason="GitHub Copilot CLI not installed (copilot not in PATH)",
-)
+
+@pytest.mark.unit
+class TestCopilotBotSDKLayoutIntegration:
+    """Integration-level tests that drive a full ``run()`` against each
+    supported SDK module layout."""
+
+    def _run_bot_with_layout(self, *, session_has_handler, types_has_handler):
+        """Build and run a CopilotBot under a simulated SDK layout.
+
+        Returns ``(result, bot, session_handler, types_handler)`` where
+        ``result`` is the ``BotRunResult`` from ``bot.run()``.
+        """
+        # Mock Docker environment
+        env = MagicMock()
+        env.port = 9000
+        env.container_port = 8080
+        env.container = MagicMock()
+        env.container.id = "abc123"
+        env.image = "image:latest"
+        env.working_dir = "/tmp/work"
+        env.folder_to_mount = None
+        env.overlay_mount = False
+        ok = MagicMock()
+        ok.return_code = 0
+        ok.stdout = "copilot version 1.0.0"
+        ok.stderr = ""
+        env.execute = MagicMock(return_value=ok)
+        env.copy_to_container = MagicMock(return_value=True)
+        env.stop = MagicMock()
+        env.get_ipv4_address = MagicMock(return_value="172.17.0.2")
+
+        # Mock SDK session + client
+        session = AsyncMock()
+        session.disconnect = AsyncMock()
+        response = Mock()
+        response.data = Mock()
+        response.data.content = "Task completed successfully."
+        session.send_and_wait = AsyncMock(return_value=response)
+        session.on = MagicMock()
+        client = AsyncMock()
+        client.start = AsyncMock()
+        client.stop = AsyncMock()
+        client.create_session = AsyncMock(return_value=session)
+
+        with _swap_copilot_sdk_layout(
+            session_has_handler=session_has_handler,
+            types_has_handler=types_has_handler,
+        ) as (session_handler, types_handler):
+            from microbots.bot.CopilotBot import CopilotBot
+            with (
+                patch("microbots.bot.CopilotBot.LocalDockerEnvironment", return_value=env),
+                patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
+                patch("microbots.bot.CopilotBot.CopilotBot._install_copilot_cli"),
+                patch("microbots.bot.CopilotBot.CopilotBot._start_copilot_cli_server"),
+                patch("microbots.bot.CopilotBot.CopilotBot._wait_for_cli_ready"),
+                patch("copilot.CopilotClient", return_value=client),
+                patch("copilot.ExternalServerConfig", return_value=MagicMock()),
+            ):
+                bot = CopilotBot(
+                    model="gpt-4.1",
+                    environment=env,
+                    github_token="ghp_test",
+                )
+                try:
+                    result = bot.run("Do the thing")
+                finally:
+                    # Tear down the asyncio loop thread cleanly
+                    bot._loop.call_soon_threadsafe(bot._loop.stop)
+                    bot._thread.join(timeout=2)
+                    bot.environment = None
+            return result, bot, session_handler, types_handler, client
+
+    def test_run_with_new_sdk_layout_session(self):
+        """SDK >= 0.3.0: PermissionHandler lives in ``copilot.session``.
+
+        Verifies CopilotBot initialises, picks up the handler from
+        ``copilot.session``, and ``run()`` completes successfully passing
+        that handler as ``on_permission_request``."""
+        result, bot, session_handler, types_handler, client = self._run_bot_with_layout(
+            session_has_handler=True, types_has_handler=False
+        )
+        assert types_handler is None
+        assert bot._PermissionHandler is session_handler
+        assert result.status is True, f"run() failed: {result.error}"
+        assert result.error is None
+        # The new-SDK handler must be the one wired into the session.
+        kwargs = client.create_session.await_args.kwargs
+        assert kwargs["on_permission_request"] is session_handler.approve_all
+
+    def test_run_with_old_sdk_layout_types(self):
+        """Pre-0.3.0 SDK: PermissionHandler lives in ``copilot.types``.
+
+        Verifies CopilotBot falls back to ``copilot.types`` and ``run()``
+        still completes successfully wiring that handler through to the
+        session."""
+        result, bot, session_handler, types_handler, client = self._run_bot_with_layout(
+            session_has_handler=False, types_has_handler=True
+        )
+        assert session_handler is None
+        assert bot._PermissionHandler is types_handler
+        assert result.status is True, f"run() failed: {result.error}"
+        assert result.error is None
+        kwargs = client.create_session.await_args.kwargs
+        assert kwargs["on_permission_request"] is types_handler.approve_all
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — require real Docker + copilot-SDK + auth
+# ---------------------------------------------------------------------------
 
 _skip_no_copilot_sdk = pytest.mark.skipif(
     not _copilot_sdk_installed(),
@@ -1344,11 +1654,10 @@ _skip_no_copilot_auth = pytest.mark.skipif(
 )
 
 
-@_skip_no_copilot_cli
 @_skip_no_copilot_sdk
-@_skip_no_copilot_auth
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.ghcp
 class TestCopilotBotIntegration:
     """End-to-end integration tests with real Copilot SDK."""
 
@@ -1357,7 +1666,7 @@ class TestCopilotBotIntegration:
         _restore_real_copilot_modules()
         from microbots.bot.CopilotBot import CopilotBot
 
-        issue_text = issue_1[0]
+        issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
         bot = CopilotBot(
@@ -1382,53 +1691,80 @@ class TestCopilotBotIntegration:
 # ---------------------------------------------------------------------------
 
 def _byok_openai_available():
-    """Check if OpenAI BYOK credentials are configured via env vars."""
+    """Check if OpenAI BYOK credentials are configured.
+
+    Accepts either:
+    - Explicit key: AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT
+    - Keyless OIDC: COPILOT_BYOK_BASE_URL set (DefaultAzureCredential handles auth)
+    """
+    if os.environ.get("COPILOT_BYOK_BASE_URL"):
+        return True
     return bool(
-        os.environ.get("OPEN_AI_KEY")
-        and os.environ.get("OPEN_AI_END_POINT")
+        os.environ.get("AZURE_OPENAI_API_KEY")
+        and os.environ.get("AZURE_OPENAI_ENDPOINT")
     )
 
 
 _skip_no_byok_openai = pytest.mark.skipif(
     not _byok_openai_available(),
-    reason="OpenAI BYOK not configured (set OPEN_AI_KEY and OPEN_AI_END_POINT)",
+    reason="OpenAI BYOK not configured (set COPILOT_BYOK_BASE_URL or AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)",
+)
+
+def _azure_ad_auth_available():
+    """Check if Azure AD auth is available via DefaultAzureCredential."""
+    try:
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        # Attempt to get a token to verify credentials are working
+        credential.get_token("https://cognitiveservices.azure.com/.default")
+        return True
+    except Exception:
+        return False
+
+_skip_no_azure_ad_auth = pytest.mark.skipif(
+    not _azure_ad_auth_available(),
+    reason="Azure AD auth not available (set up DefaultAzureCredential)",
 )
 
 
-@_skip_no_copilot_cli
 @_skip_no_copilot_sdk
 @_skip_no_byok_openai
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.ghcp
 class TestCopilotBotBYOKOpenAIIntegration:
     """End-to-end integration tests for CopilotBot with OpenAI BYOK."""
 
     def test_byok_openai_simple_task(self, test_repo, issue_1):
-        """CopilotBot can fix a simple syntax error using OpenAI BYOK credentials."""
+        """CopilotBot can fix a simple syntax error using Azure AD keyless BYOK credentials."""
         _restore_real_copilot_modules()
         from microbots.bot.CopilotBot import CopilotBot
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
-        issue_text = issue_1[0]
+        issue_text = issue_1[0] + "\nFix the error in the original file."
         verify_function = issue_1[1]
 
-        api_key = os.environ["OPEN_AI_KEY"]
-        base_url = os.environ["OPEN_AI_END_POINT"]
+        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
         model = os.getenv(
             "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
+        )
+        credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
         )
 
         bot = CopilotBot(
             model=model,
             folder_to_mount=str(test_repo),
             permission="READ_WRITE",
-            api_key=api_key,
             base_url=base_url,
-            provider_type="openai",
+            provider_type="azure",
+            token_provider=token_provider,
         )
 
         try:
             assert bot._provider_config is not None
-            assert bot._provider_config["type"] == "openai"
+            assert bot._provider_config["type"] == "azure"
             assert bot.github_token is None
 
             result = bot.run(
@@ -1439,3 +1775,47 @@ class TestCopilotBotBYOKOpenAIIntegration:
             verify_function(test_repo)
         finally:
             bot.stop()
+
+    @_skip_no_azure_ad_auth
+    def test_byok_openai_simple_task_with_token_provider(self, test_repo, issue_1):
+        """CopilotBot can fix a simple syntax error using OpenAI BYOK credentials."""
+        _restore_real_copilot_modules()
+        from microbots.bot.CopilotBot import CopilotBot
+
+        issue_text = issue_1[0]
+        verify_function = issue_1[1]
+
+        base_url = os.environ["AZURE_OPENAI_ENDPOINT"]
+        model = os.getenv(
+            "AZURE_OPENAI_DEPLOYMENT_NAME", "mini-swe-agent-gpt5"
+        )
+
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+        credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
+        )
+
+        bot = CopilotBot(
+            model=model,
+            folder_to_mount=str(test_repo),
+            permission="READ_WRITE",
+            base_url=base_url,
+            provider_type="azure",
+            token_provider=token_provider,
+        )
+
+        try:
+            assert bot._provider_config is not None
+            assert bot._provider_config["type"] == "azure"
+            assert bot.github_token is None
+
+            result = bot.run(
+                issue_text,
+                timeout_in_seconds=300,
+            )
+            assert result.status is True, f"CopilotBot BYOK run failed: {result.error}"
+            verify_function(test_repo)
+        finally:
+            bot.stop()
+

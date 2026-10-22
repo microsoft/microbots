@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 360" role="img" aria-label="Microbots SETUP — sandbox and first LLM request" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    /* Default (light mode) palette */
+    .ink      { fill: #1F2937; }
+    .ink-soft { fill: #4B5563; }
+    .stroke   { stroke: #1F2937; }
+    .panel    { fill: #FFFFFF; fill-opacity: 0.0; stroke: #6B7280; stroke-width: 1.5; }
+
+    .title    { font-size: 20px; font-weight: 700; }
+    .sub      { font-size: 15px; }
+    .tag      { font-size: 13px; font-weight: 600; letter-spacing: 1px; }
+
+    .layer-write { fill: #7C3AED; fill-opacity: 0.18; stroke: #7C3AED; stroke-width: 2; stroke-dasharray: 8 5; }
+    .layer-read  { fill: #0EA5E9; fill-opacity: 0.18; stroke: #0EA5E9; stroke-width: 2; }
+    .layer-host  { fill: #6B7280; fill-opacity: 0.18; stroke: #6B7280; stroke-width: 2; }
+    .llm-box     { fill: #F59E0B; fill-opacity: 0.18; stroke: #F59E0B; stroke-width: 2; }
+
+    .edge { stroke: #6B7280; stroke-width: 2.5; fill: none; stroke-linecap: round; }
+
+    /* Dark mode overrides */
+    @media (prefers-color-scheme: dark) {
+      .ink      { fill: #F3F4F6; }
+      .ink-soft { fill: #D1D5DB; }
+      .panel    { stroke: #9CA3AF; }
+      .edge     { stroke: #9CA3AF; }
+      .layer-write { fill-opacity: 0.28; }
+      .layer-read  { fill-opacity: 0.28; }
+      .layer-host  { fill-opacity: 0.28; }
+      .llm-box     { fill-opacity: 0.28; }
+    }
+  </style>
+
+  <defs>
+    <marker id="a" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M0,1 L11,6 L0,11 L2,6 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <!-- ============== LEFT : OverlayFS sandbox ============== -->
+  <text x="50" y="40" class="ink title">🐳 Docker container — OverlayFS sandbox</text>
+
+  <!-- Outer container panel -->
+  <rect x="50" y="60" width="420" height="200" rx="14" class="panel"/>
+
+  <!-- Top layer: writable, dashed -->
+  <rect x="70" y="80" width="380" height="70" rx="10" class="layer-write"/>
+  <text x="260" y="112" text-anchor="middle" class="ink title">Disposable upper layer</text>
+  <text x="260" y="135" text-anchor="middle" class="ink-soft sub">writes land here · discarded on exit</text>
+
+  <!-- Bottom layer: read-only -->
+  <rect x="70" y="170" width="380" height="70" rx="10" class="layer-read"/>
+  <text x="260" y="202" text-anchor="middle" class="ink title">🔒 code/ — read-only mount</text>
+  <text x="260" y="225" text-anchor="middle" class="ink-soft sub">your files, exposed but not writable</text>
+
+  <!-- Host filesystem (below container) -->
+  <rect x="50" y="280" width="420" height="60" rx="10" class="layer-host"/>
+  <text x="260" y="307" text-anchor="middle" class="ink title">💻 Your host filesystem</text>
+  <text x="260" y="328" text-anchor="middle" class="ink-soft sub">unreachable through write syscalls</text>
+
+  <!-- ============== Connector: container → LLM ============== -->
+  <g color="#6B7280" class="edge-color">
+    <path d="M470,160 L560,160" class="edge" marker-end="url(#a)"/>
+  </g>
+  <text x="515" y="148" text-anchor="middle" class="ink-soft tag">sends</text>
+
+  <!-- ============== RIGHT : First request to LLM ============== -->
+  <text x="580" y="40" class="ink title">📤 First request to the LLM</text>
+
+  <rect x="580" y="60" width="280" height="200" rx="14" class="panel"/>
+
+  <!-- Task -->
+  <rect x="600" y="80" width="240" height="70" rx="10" class="llm-box"/>
+  <text x="720" y="110" text-anchor="middle" class="ink title">Your task</text>
+  <text x="720" y="133" text-anchor="middle" class="ink-soft sub">"Analyze the log file …"</text>
+
+  <text x="720" y="172" text-anchor="middle" class="ink-soft tag">+ packaged with</text>
+
+  <!-- System prompt -->
+  <rect x="600" y="180" width="240" height="70" rx="10" class="llm-box"/>
+  <text x="720" y="210" text-anchor="middle" class="ink title">System prompt</text>
+  <text x="720" y="233" text-anchor="middle" class="ink-soft sub">read-only tools · role guardrails</text>
+
+  <!-- Arrow down to LLM provider -->
+  <g color="#6B7280">
+    <line x1="720" y1="270" x2="720" y2="312" class="edge" marker-end="url(#a)"/>
+  </g>
+  <text x="720" y="334" text-anchor="middle" class="ink-soft sub">configured LLM provider</text>
+</svg>
