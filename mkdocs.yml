@@ -78,6 +78,7 @@ nav:
   - Advanced:
     - Bots:
       - CopilotBot: advanced/bots/copilot-bot.md
+    - "Sandbox Images": advanced/sandbox-images.md
     - "Authentication Setup": advanced/authentication.md
     - "Azure Managed Identity & Service Connection Setup": advanced/azure-managed-identity-setup.md
     - "Azure Pipelines Log Analyzer": advanced/azure-pipelines-log-analyzer.md

@@ -19,6 +19,7 @@ from microbots.llm.ollama_local import OllamaLocal
 from microbots.llm.llm import ToolCall, llm_output_format_str
 from microbots.tools.native_tools import OPENAI_NATIVE_TOOLS, RUN_COMMAND_TOOL, run_file_tool
 from microbots.tools.tool import ToolAbstract, get_tool_from_call
+from microbots.environment.local_docker.images import DEFAULT_IMAGE
 from microbots.extras.mount import Mount, MountType
 from microbots.utils.logger import LogLevelEmoji
 from microbots.utils.network import get_free_port
@@ -154,6 +155,9 @@ class MicroBot:
             A callable that returns a bearer token for Azure AD authentication.
             If not provided, it may be auto-created from environment variables.
             Defaults to None.
+        image : Optional[str]
+            Shell-server image of the auto-created environment, for example
+            ``images.AZURELINUX_IMAGE``. Defaults to None (``DEFAULT_IMAGE``).
     """
 
     def __init__(
@@ -165,6 +169,7 @@ class MicroBot:
         additional_tools: Optional[list[ToolAbstract]] = None,
         folder_to_mount: Optional[Mount] = None,
         token_provider: Optional[any] = None,
+        image: Optional[str] = None,
     ):
         """
         Init function for MicroBot class.
@@ -196,7 +201,23 @@ class MicroBot:
                 A callable that returns a bearer token for Azure AD authentication.
                 If not provided, it may be auto-created from environment variables.
                 Defaults to None.
+            image : Optional[str]
+                Shell-server image of the auto-created environment, for example
+                ``images.AZURELINUX_IMAGE``. Defaults to None (``DEFAULT_IMAGE``).
+                Cannot be combined with ``environment``.
+
+        Raises
+        ------
+            ValueError
+                If both ``image`` and ``environment`` are provided.
         """
+
+        if image is not None and environment is not None:
+            raise ValueError(
+                "Pass either `image` or `environment`, not both: the image of a "
+                "provided environment is chosen when that environment is created."
+            )
+        self.image = image or DEFAULT_IMAGE
 
         self.folder_to_mount = folder_to_mount
 
@@ -488,6 +509,7 @@ class MicroBot:
         self.environment = LocalDockerEnvironment(
             port=free_port,
             folder_to_mount=folder_to_mount,
+            image=self.image,
         )
 
     def _create_llm(self):

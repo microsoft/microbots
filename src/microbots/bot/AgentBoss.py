@@ -27,6 +27,9 @@ class AgentBoss(MicroBot):
         is created automatically when *None*.
     additional_tools : Optional[list[ToolAbstract]]
         Extra tools to install alongside the built-in ``microbot_sub`` tool.
+    image : Optional[str]
+        Shell-server image of the auto-created environment, for example
+        ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
 
     Workflow
     --------
@@ -45,6 +48,7 @@ class AgentBoss(MicroBot):
         folder_to_mount: str,
         environment: Optional[any] = None,
         additional_tools: Optional[list[ToolAbstract]] = None,
+        image: Optional[str] = None,
     ):
         """
         Create the bot with the ``microbot_sub`` tool and the repository mounted read-write.
@@ -60,6 +64,9 @@ class AgentBoss(MicroBot):
             is created automatically when *None*.
         additional_tools : Optional[list[ToolAbstract]]
             Extra tools to install alongside the built-in ``microbot_sub`` tool.
+        image : Optional[str]
+            Shell-server image of the auto-created environment, for example
+            ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
         """
         if additional_tools is None:
             additional_tools = []
@@ -115,6 +122,7 @@ microbot_sub --task "<task description>" --iterations <max_iterations> --timeout
             environment=environment,
             additional_tools=additional_tools,
             folder_to_mount=folder_mount_info,
+            image=image,
         )
 
     def run(
