@@ -1,7 +1,9 @@
+import io
 import logging
 import os
 import shlex
 import subprocess
+import tarfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -10,18 +12,63 @@ import docker
 import requests
 
 from microbots.environment.Environment import CmdReturn, Environment
+from microbots.environment.local_docker import shell_server
+from microbots.environment.local_docker.images import DEFAULT_IMAGE
 from microbots.constants import DOCKER_WORKING_DIR, WORKING_DIR, PermissionLabels
 from microbots.extras.mount import Mount
 
 logger = logging.getLogger(__name__)
 
+# Where the shell server and its venv live inside the sandbox (root-owned).
+MICROBOTS_HOME = "/opt/microbots"
+_SHELL_SERVER_DIR = Path(shell_server.__file__).parent
+_SHELL_SERVER_FILES = ("dockerShell.py", "ShellCommunicator.py", "prepare.sh")
+_SHELL_SERVER_LOG = "/var/log/microbots/shell_server.log"
+# Preparation may install packages and pip-install the server's dependencies.
+_SHELL_SERVER_READY_TIMEOUT = 120
+
+
+def _shell_server_archive() -> bytes:
+    """Tar ``shell_server/`` for ``put_archive``, root-owned so the bot cannot modify it."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        entries = [("shell_server", _SHELL_SERVER_DIR)]
+        entries += [(f"shell_server/{name}", _SHELL_SERVER_DIR / name) for name in _SHELL_SERVER_FILES]
+        for arcname, path in entries:
+            info = tar.gettarinfo(str(path), arcname=arcname)
+            info.uid = info.gid = 0
+            info.uname = info.gname = "root"
+            info.mode = 0o755 if info.isdir() or arcname.endswith(".sh") else 0o644
+            if info.isfile():
+                with open(path, "rb") as f:
+                    tar.addfile(info, f)
+            else:
+                tar.addfile(info)
+    return buffer.getvalue()
+
 
 class LocalDockerEnvironment(Environment):
+    """Sandboxed Docker container that hosts the bot's shell.
+
+    Parameters
+    ----------
+    port : int
+        Host loopback port mapped to the in-container shell server.
+    folder_to_mount : Optional[Mount]
+        Host folder to expose inside the sandbox.
+    image : str
+        Container image to run, for example ``images.DEBIAN_IMAGE``.  Stock
+        images are prepared on the fly: the shell server is copied in and
+        its prerequisites are installed when the environment starts.  Its
+        distribution is detected from the container's ``/etc/os-release``
+        when needed.  Defaults to ``DEFAULT_IMAGE``.
+    """
+
     def __init__(
         self,
         port: int,
         folder_to_mount: Optional[Mount] = None,
-        image: str = "kavyasree261002/shell_server:latest",
+        image: str = DEFAULT_IMAGE,
     ):
 
         self.image = image
@@ -85,19 +132,18 @@ class LocalDockerEnvironment(Environment):
 
         self.container = self.client.containers.run(
             self.image,
+            # Keep the stock image idle; the shell server is started over the
+            # control plane once the image has been prepared. init forwards
+            # SIGTERM so the container stops promptly.
+            entrypoint=["sleep", "infinity"],
+            init=True,
             volumes=volumes_config,
             ports=port_mapping,
             detach=True,
-            working_dir="/app",
             # SYS_ADMIN is the narrowest grant that allows the overlayfs mount;
             # the docker-default AppArmor profile denies mount regardless of caps.
             cap_add=["SYS_ADMIN"],
             security_opt=["no-new-privileges:true", "apparmor=unconfined"],
-            environment={
-                "BOT_PORT": str(self.container_port),
-                "BOT_WORKDIR": DOCKER_WORKING_DIR,
-                **self._host_identity(),
-            },
         )
         logger.info(
             "🚀 Started container %s with image %s on host port %s",
@@ -105,7 +151,12 @@ class LocalDockerEnvironment(Environment):
             self.image,
             self.port,
         )
-        time.sleep(2)  # Give some time for the server to start
+        try:
+            self._prepare_shell_server()
+            self._launch_shell_server()
+        except Exception:
+            self.stop()
+            raise
 
         if self.folder_to_mount and self.folder_to_mount.permission == PermissionLabels.READ_ONLY:
             self._setup_overlay_mount()
@@ -114,6 +165,79 @@ class LocalDockerEnvironment(Environment):
             self.execute(f"cd {self.folder_to_mount.sandbox_path}")
         else:
             self.execute("cd /")
+
+    def _shell_server_environment(self) -> dict:
+        """Environment for the shell server process inside the container."""
+        return {
+            "BOT_PORT": str(self.container_port),
+            "BOT_WORKDIR": DOCKER_WORKING_DIR,
+            **self._host_identity(),
+        }
+
+    def _prepare_shell_server(self):
+        """Copy the shell server into the container and prepare the image for it.
+
+        Runs over the root control plane: ``prepare.sh`` installs missing
+        prerequisites, creates the ``agent`` account and the server's venv.
+
+        Raises
+        ------
+        RuntimeError
+            If the files cannot be copied or preparation fails.
+        """
+        started = time.perf_counter()
+        ret = self.execute_privileged(f"mkdir -p {MICROBOTS_HOME}")
+        if ret.return_code != 0:
+            raise RuntimeError(f"Failed to create {MICROBOTS_HOME} in the sandbox: {ret.stderr}")
+
+        if not self.container.put_archive(MICROBOTS_HOME, _shell_server_archive()):
+            raise RuntimeError("Failed to copy the shell server into the sandbox")
+
+        identity = " ".join(f"{k}={v}" for k, v in self._host_identity().items())
+        ret = self.execute_privileged(
+            f"{identity} sh {MICROBOTS_HOME}/shell_server/prepare.sh".strip()
+        )
+        if ret.return_code != 0:
+            raise RuntimeError(
+                f"Failed to prepare image '{self.image}' for the shell server:\n"
+                f"{ret.stdout}\n{ret.stderr}"
+            )
+        logger.info(
+            "🛠️  Prepared %s for the shell server in %.1fs", self.image, time.perf_counter() - started
+        )
+
+    def _launch_shell_server(self):
+        """Start the shell server as root (it drops to ``agent`` itself) and
+        wait until it answers on the published port.
+
+        Raises
+        ------
+        RuntimeError
+            If the server does not become ready in time.
+        """
+        self.container.exec_run(
+            [
+                "sh",
+                "-c",
+                f"cd {MICROBOTS_HOME}/shell_server && exec {MICROBOTS_HOME}/venv/bin/python "
+                f"dockerShell.py >> {_SHELL_SERVER_LOG} 2>&1",
+            ],
+            user="root",
+            detach=True,
+            environment=self._shell_server_environment(),
+        )
+        deadline = time.monotonic() + _SHELL_SERVER_READY_TIMEOUT
+        while time.monotonic() < deadline:
+            try:
+                # Any HTTP answer (FastAPI rejects GET with 405) means it is up.
+                requests.get(f"http://localhost:{self.port}/", timeout=2)
+                return
+            except requests.exceptions.RequestException:
+                time.sleep(0.5)
+        log = self.execute_privileged(f"tail -n 50 {_SHELL_SERVER_LOG}").stdout
+        raise RuntimeError(
+            f"Shell server did not start within {_SHELL_SERVER_READY_TIMEOUT}s:\n{log}"
+        )
 
     @staticmethod
     def _host_identity() -> dict:

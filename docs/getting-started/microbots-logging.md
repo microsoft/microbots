@@ -38,7 +38,8 @@ Working directory creation, the host-to-container volume mapping, container star
 ```log
 INFO:microbots.environment.local_docker.LocalDockerEnvironment:🗂️  Created working directory at /home/user/MICROBOTS_WORKDIR_<id>
 INFO:microbots.environment.local_docker.LocalDockerEnvironment:📦 Volume mapping: /home/user/microbots-introduction/code → /ro/code
-INFO:microbots.environment.local_docker.LocalDockerEnvironment:🚀 Started container <container-id> with image microbots/shell_server:latest on host port <host-port>
+INFO:microbots.environment.local_docker.LocalDockerEnvironment:🚀 Started container <container-id> with image mcr.microsoft.com/devcontainers/python:3.11 on host port <host-port>
+INFO:microbots.environment.local_docker.LocalDockerEnvironment:🛠️  Prepared mcr.microsoft.com/devcontainers/python:3.11 for the shell server in 9.0s
 INFO:microbots.environment.local_docker.LocalDockerEnvironment:🔒 Set up overlay mount for read-only directory at /workdir/code
 INFO:microbots.environment.local_docker.LocalDockerEnvironment:✅ Successfully copied /home/user/microbots-introduction/code/build.log to container:/var/log
 ```

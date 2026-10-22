@@ -106,9 +106,10 @@ nav:
       - Environment: api-reference/microbots/environment/Environment.md
       - local_docker:
         - LocalDockerEnvironment: api-reference/microbots/environment/local_docker/LocalDockerEnvironment.md
-        - image_builder:
-          - dockerShell: api-reference/microbots/environment/local_docker/image_builder/dockerShell.md
-          - ShellCommunicator: api-reference/microbots/environment/local_docker/image_builder/ShellCommunicator.md
+        - images: api-reference/microbots/environment/local_docker/images.md
+        - shell_server:
+          - dockerShell: api-reference/microbots/environment/local_docker/shell_server/dockerShell.md
+          - ShellCommunicator: api-reference/microbots/environment/local_docker/shell_server/ShellCommunicator.md
     - extras:
       - mount: api-reference/microbots/extras/mount.md
     - llm:

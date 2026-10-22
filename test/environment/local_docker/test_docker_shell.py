@@ -11,7 +11,7 @@ from unittest.mock import Mock, call, patch
 
 import pytest
 
-from microbots.environment.local_docker import image_builder
+from microbots.environment.local_docker import shell_server
 
 
 pytestmark = pytest.mark.unit
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def shell_runtime(monkeypatch):
-    builder = Path(image_builder.__file__).parent
+    builder = Path(shell_server.__file__).parent
     runtime = Mock()
     runtime.geteuid.return_value = 0
     for name in ("geteuid", "setgroups", "setgid", "setuid"):

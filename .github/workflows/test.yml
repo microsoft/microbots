@@ -141,19 +141,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Docker Buildx
-        if: matrix.test-type != 'unit'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        if: matrix.test-type != 'unit'
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('src/microbots/environment/local_docker/image_builder/Dockerfile') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
       - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
@@ -194,19 +181,10 @@ jobs:
         if: matrix.test-type == 'unit'
         run: npm test --prefix azure-pipelines/MicrobotsLogAnalyzerTask
 
-      - name: Build Docker images for integration tests
+      - name: Pull the stock sandbox image for integration tests
         if: matrix.test-type != 'unit'
-        run: |
-          # Build the shell server image needed for Docker tests
-          docker buildx build \
-            --cache-from type=local,src=/tmp/.buildx-cache \
-            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
-            --load \
-            -f src/microbots/environment/local_docker/image_builder/Dockerfile \
-            -t kavyasree261002/shell_server:latest .
-          # Prevent cache from growing indefinitely
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+        # Sandboxes run this unmodified MCR image and are prepared on the fly.
+        run: docker pull mcr.microsoft.com/devcontainers/python:3.11
 
       - name: Check disk space before ollama installation
         if: matrix.test-type == 'ollama_local'

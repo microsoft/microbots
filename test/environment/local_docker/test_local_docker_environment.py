@@ -7,6 +7,7 @@ import socket
 import re
 import logging
 import time
+import requests
 from unittest.mock import patch, Mock, MagicMock, call
 
 # Add src to path for imports
@@ -15,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src")))
 
 from microbots.environment.local_docker.LocalDockerEnvironment import LocalDockerEnvironment
+from microbots.environment.local_docker.images import DEBIAN_IMAGE, DEFAULT_IMAGE
 from microbots.environment.Environment import CmdReturn
 from microbots.extras.mount import Mount
 from microbots.constants import DOCKER_WORKING_DIR, WORKING_DIR
@@ -587,24 +589,44 @@ class TestPrivilegedControlChannel:
         env.container_port = 8080
         env.client = Mock()
         env.client.containers.run.return_value.id = "test_container"
-        identity = {"AGENT_UID": "2001", "AGENT_GID": "2002"}
+        calls = []
 
-        with patch.object(env, "_host_identity", return_value=identity), \
-             patch("microbots.environment.local_docker.LocalDockerEnvironment.time.sleep"):
+        with patch.object(env, "_prepare_shell_server", side_effect=lambda: calls.append("prepare")), \
+             patch.object(env, "_launch_shell_server", side_effect=lambda: calls.append("launch")):
             env.start()
 
         env.client.containers.run.assert_called_once_with(
             "test_image",
+            entrypoint=["sleep", "infinity"],
+            init=True,
             volumes={"/tmp/test_workdir": {"bind": DOCKER_WORKING_DIR, "mode": "rw"}},
             ports={"8080/tcp": ("127.0.0.1", 12345)},
             detach=True,
-            working_dir="/app",
             cap_add=["SYS_ADMIN"],
             security_opt=["no-new-privileges:true", "apparmor=unconfined"],
-            environment={"BOT_PORT": "8080", "BOT_WORKDIR": DOCKER_WORKING_DIR, **identity},
         )
         assert env.container is env.client.containers.run.return_value
+        assert calls == ["prepare", "launch"]
         env.execute.assert_called_once_with("cd /")
+
+    @pytest.mark.parametrize("failing", ["_prepare_shell_server", "_launch_shell_server"])
+    def test_start_stops_container_when_shell_server_setup_fails(self, env, failing):
+        env.image = "test_image"
+        env.working_dir = "/tmp/test_workdir"
+        env.folder_to_mount = None
+        env.port = 12345
+        env.container_port = 8080
+        env.client = Mock()
+        env.client.containers.run.return_value.id = "test_container"
+        env.stop = Mock()
+
+        with patch.object(env, "_prepare_shell_server"), patch.object(env, "_launch_shell_server"), \
+             patch.object(env, failing, side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError, match="boom"):
+                env.start()
+
+        env.stop.assert_called_once_with()
+        env.execute.assert_not_called()
 
     @pytest.mark.parametrize(
         "exit_code, stdout, stderr, expected",
@@ -709,3 +731,118 @@ class TestPrivilegedControlChannel:
         assert "Failed to teardown overlay mount: container unavailable" in caplog.text
         assert env.overlay_mount is False
         env.execute.assert_not_called()
+
+
+@pytest.mark.unit
+class TestImageSelection:
+    """The caller picks the image; it defaults to the Debian shell-server image."""
+
+    @pytest.fixture
+    def make_env(self):
+        def _make(**kwargs):
+            with patch.object(LocalDockerEnvironment, "_create_working_dir"), \
+                 patch.object(LocalDockerEnvironment, "start"), \
+                 patch("microbots.environment.local_docker.LocalDockerEnvironment.docker"):
+                env = LocalDockerEnvironment(port=1234, **kwargs)
+            env.deleted = True
+            return env
+        return _make
+
+    def test_defaults_to_debian_image(self, make_env):
+        assert DEFAULT_IMAGE == DEBIAN_IMAGE == "mcr.microsoft.com/devcontainers/python:3.11"
+        assert make_env().image == DEFAULT_IMAGE
+
+    def test_explicit_image_is_used(self, make_env):
+        assert make_env(image="custom/shell:dev").image == "custom/shell:dev"
+
+
+@pytest.mark.unit
+class TestShellServerPreparation:
+    """The stock image is prepared and the shell server started over the root control plane."""
+
+    @pytest.fixture
+    def env(self):
+        env = LocalDockerEnvironment.__new__(LocalDockerEnvironment)
+        env.deleted = True
+        env.image = "mcr.example/stock:1"
+        env.port = 12345
+        env.container_port = 8080
+        env.container = Mock()
+        env.container.put_archive.return_value = True
+        env.execute_privileged = Mock(return_value=CmdReturn("ok", "", 0))
+        return env
+
+    def test_archive_contains_root_owned_shell_server(self):
+        import io
+        import tarfile
+        from microbots.environment.local_docker.LocalDockerEnvironment import _shell_server_archive
+
+        with tarfile.open(fileobj=io.BytesIO(_shell_server_archive())) as tar:
+            members = {m.name: m for m in tar.getmembers()}
+        assert set(members) == {
+            "shell_server",
+            "shell_server/dockerShell.py",
+            "shell_server/ShellCommunicator.py",
+            "shell_server/prepare.sh",
+        }
+        assert all(m.uid == 0 and m.gid == 0 for m in members.values())
+        assert members["shell_server"].mode == 0o755
+        assert members["shell_server/prepare.sh"].mode == 0o755
+        assert members["shell_server/dockerShell.py"].mode == 0o644
+
+    @pytest.mark.parametrize("identity, prefix", [
+        ({}, ""),
+        ({"AGENT_UID": "2001", "AGENT_GID": "2002"}, "AGENT_UID=2001 AGENT_GID=2002 "),
+    ])
+    def test_prepare_copies_server_and_runs_prepare_script_as_root(self, env, identity, prefix):
+        with patch.object(env, "_host_identity", return_value=identity):
+            env._prepare_shell_server()
+
+        env.container.put_archive.assert_called_once()
+        assert env.container.put_archive.call_args.args[0] == "/opt/microbots"
+        assert env.execute_privileged.call_args_list == [
+            call("mkdir -p /opt/microbots"),
+            call(f"{prefix}sh /opt/microbots/shell_server/prepare.sh"),
+        ]
+
+    def test_prepare_failure_reports_script_output(self, env):
+        env.execute_privileged.side_effect = [CmdReturn("", "", 0), CmdReturn("out", "no package manager", 1)]
+        with patch.object(env, "_host_identity", return_value={}):
+            with pytest.raises(RuntimeError, match="Failed to prepare image 'mcr.example/stock:1'(.|\n)*no package manager"):
+                env._prepare_shell_server()
+
+    def test_prepare_fails_when_copy_fails(self, env):
+        env.container.put_archive.return_value = False
+        with patch.object(env, "_host_identity", return_value={}):
+            with pytest.raises(RuntimeError, match="Failed to copy the shell server"):
+                env._prepare_shell_server()
+
+    def test_launch_starts_server_as_root_and_waits_until_it_answers(self, env):
+        identity = {"AGENT_UID": "2001", "AGENT_GID": "2002"}
+        with patch.object(env, "_host_identity", return_value=identity), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.requests.get",
+                   side_effect=[requests.exceptions.ConnectionError(), Mock(status_code=405)]) as get, \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.time.sleep"):
+            env._launch_shell_server()
+
+        args, kwargs = env.container.exec_run.call_args
+        assert args[0][:2] == ["sh", "-c"]
+        assert "exec /opt/microbots/venv/bin/python dockerShell.py" in args[0][2]
+        assert kwargs == {
+            "user": "root",
+            "detach": True,
+            "environment": {"BOT_PORT": "8080", "BOT_WORKDIR": DOCKER_WORKING_DIR, **identity},
+        }
+        assert get.call_count == 2
+        get.assert_called_with("http://localhost:12345/", timeout=2)
+
+    def test_launch_times_out_with_server_log(self, env):
+        env.execute_privileged.return_value = CmdReturn("Traceback: boom", "", 0)
+        clock = iter([0, 0, 200])
+        with patch.object(env, "_host_identity", return_value={}), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.requests.get",
+                   side_effect=requests.exceptions.ConnectionError()), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.time.sleep"), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.time.monotonic", side_effect=lambda: next(clock)):
+            with pytest.raises(RuntimeError, match="did not start within 120s(.|\n)*Traceback: boom"):
+                env._launch_shell_server()
