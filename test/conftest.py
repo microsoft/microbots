@@ -1,4 +1,5 @@
 import logging
+import os
 import pytest
 from pathlib import Path
 
@@ -17,6 +18,18 @@ if LOG_DIR.exists():
     for log_file in LOG_DIR.iterdir():
         log_file.unlink()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@pytest.fixture(params=["azure-openai", "openai"])
+def openai_model(request):
+    """Model string for each OpenAI provider, so a test runs once with Azure OpenAI and once with OpenAI."""
+    if request.param == "openai":
+        # Entra ID tokens only work with an Azure endpoint, so azure_ad alone is not enough.
+        entra_configured = os.getenv("AZURE_AUTH_METHOD", "").strip().lower() == "azure_ad" and os.getenv("OPENAI_ENDPOINT")
+        if not os.getenv("OPENAI_API_KEY") and not entra_configured:
+            pytest.skip("OpenAI is not configured: set OPENAI_API_KEY, or OPENAI_ENDPOINT with AZURE_AUTH_METHOD=azure_ad")
+        return f"openai/{os.getenv('OPENAI_MODEL', 'gpt-5')}"
+    return f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
 
 
 @pytest.hookimpl(tryfirst=True)
