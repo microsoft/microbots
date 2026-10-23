@@ -127,10 +127,9 @@ class TestLogAnalysisBot:
             subprocess.run(["rm", "-rf", str(tmpdir)])
 
     @pytest.fixture(scope="function")
-    def log_analysis_bot(self, test_repo):
-        model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
+    def log_analysis_bot(self, test_repo, openai_model):
         log_analysis_bot = LogAnalysisBot(
-            model=model,
+            model=openai_model,
             folder_to_mount=str(test_repo)
         )
 

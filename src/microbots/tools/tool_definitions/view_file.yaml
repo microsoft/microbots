@@ -1,0 +1,24 @@
+name: view_file
+tool_type: internal
+description: >-
+  Show a text file with line numbers. Use start_line and end_line to view part
+  of a large file.
+
+# Native tools are described to the LLM by their function schema, not the system prompt.
+usage_instructions_to_llm: ""
+
+# JSON schema of the function arguments.
+parameters:
+  type: object
+  properties:
+    path:
+      type: string
+      description: Path of the file, absolute or relative to the current directory.
+    start_line:
+      type: [integer, "null"]
+      description: First line to show, counting from 1. Null starts at the first line.
+    end_line:
+      type: [integer, "null"]
+      description: Last line to show, inclusive. Null shows up to the last line.
+  required: [path, start_line, end_line]
+  additionalProperties: false

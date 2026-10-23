@@ -7,7 +7,7 @@ import socket
 import re
 import logging
 import time
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import patch, Mock, MagicMock, call
 
 # Add src to path for imports
 import sys
@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src")))
 
 from microbots.environment.local_docker.LocalDockerEnvironment import LocalDockerEnvironment
+from microbots.environment.Environment import CmdReturn
 from microbots.extras.mount import Mount
 from microbots.constants import DOCKER_WORKING_DIR, WORKING_DIR
 
@@ -543,3 +544,168 @@ class TestGetIpv4Address:
 
         with pytest.raises(RuntimeError, match="Could not determine container IP address"):
             env.get_ipv4_address()
+
+
+@pytest.mark.unit
+class TestPrivilegedControlChannel:
+    """Unit tests for privileged setup isolated from the bot's shell."""
+
+    @pytest.fixture
+    def env(self):
+        env = LocalDockerEnvironment.__new__(LocalDockerEnvironment)
+        env.deleted = True
+        env.container = Mock()
+        env.execute = Mock()
+        env.overlay_mount = False
+        env.folder_to_mount = Mock(sandbox_path=f"{DOCKER_WORKING_DIR}/repo")
+        return env
+
+    @pytest.mark.parametrize(
+        "uid, expected",
+        [
+            (None, {}),
+            (0, {}),
+            (2001, {"AGENT_UID": "2001", "AGENT_GID": "2002"}),
+        ],
+    )
+    def test_host_identity(self, monkeypatch, uid, expected):
+        if uid is None:
+            monkeypatch.delattr(os, "getuid")
+        else:
+            monkeypatch.setattr(os, "getuid", lambda: uid)
+        monkeypatch.setattr(os, "getgid", Mock(return_value=2002))
+
+        assert LocalDockerEnvironment._host_identity() == expected
+        if not expected:
+            os.getgid.assert_not_called()
+
+    def test_start_restricts_container_privileges_and_published_port(self, env):
+        env.image = "test_image"
+        env.working_dir = "/tmp/test_workdir"
+        env.folder_to_mount = None
+        env.port = 12345
+        env.container_port = 8080
+        env.client = Mock()
+        env.client.containers.run.return_value.id = "test_container"
+        identity = {"AGENT_UID": "2001", "AGENT_GID": "2002"}
+
+        with patch.object(env, "_host_identity", return_value=identity), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.time.sleep"):
+            env.start()
+
+        env.client.containers.run.assert_called_once_with(
+            "test_image",
+            volumes={"/tmp/test_workdir": {"bind": DOCKER_WORKING_DIR, "mode": "rw"}},
+            ports={"8080/tcp": ("127.0.0.1", 12345)},
+            detach=True,
+            working_dir="/app",
+            cap_add=["SYS_ADMIN"],
+            security_opt=["no-new-privileges:true", "apparmor=unconfined"],
+            environment={"BOT_PORT": "8080", "BOT_WORKDIR": DOCKER_WORKING_DIR, **identity},
+        )
+        assert env.container is env.client.containers.run.return_value
+        env.execute.assert_called_once_with("cd /")
+
+    @pytest.mark.parametrize(
+        "exit_code, stdout, stderr, expected",
+        [
+            (0, b"output", b"", CmdReturn("output", "", 0)),
+            (7, b"out\xff", b"err\xff", CmdReturn("out\ufffd", "err\ufffd", 7)),
+            (None, None, None, CmdReturn("", "", 0)),
+        ],
+    )
+    def test_execute_privileged_uses_root_docker_exec(self, env, exit_code, stdout, stderr, expected):
+        env.container.exec_run.return_value = (exit_code, (stdout, stderr))
+
+        result = env.execute_privileged("echo test", timeout=15)
+
+        env.container.exec_run.assert_called_once_with(
+            ["bash", "-lc", "echo test"], user="root", demux=True
+        )
+        env.execute.assert_not_called()
+        assert result == expected
+
+    def test_execute_privileged_requires_container(self, env):
+        env.container = None
+
+        with pytest.raises(RuntimeError, match="No active container"):
+            env.execute_privileged("echo test")
+
+        env.execute.assert_not_called()
+
+    @pytest.mark.parametrize("sensitive", [False, True])
+    def test_execute_privileged_logging(self, env, caplog, sensitive):
+        env.container.exec_run.return_value = (0, (None, None))
+
+        with caplog.at_level(logging.DEBUG):
+            env.execute_privileged("echo private-value", sensitive=sensitive)
+
+        assert ("echo private-value" in caplog.text) is not sensitive
+        assert ("<redacted>" in caplog.text) is sensitive
+        env.container.exec_run.assert_called_once_with(
+            ["bash", "-lc", "echo private-value"], user="root", demux=True
+        )
+
+    @pytest.mark.parametrize("identity", [{}, {"AGENT_UID": "2001", "AGENT_GID": "2002"}])
+    def test_setup_overlay_uses_privileged_channel(self, env, identity):
+        env.execute_privileged = Mock(return_value=CmdReturn("", "", 0))
+        sandbox = env.folder_to_mount.sandbox_path
+        overlay = f"{DOCKER_WORKING_DIR}/overlay/repo"
+
+        with patch.object(env, "_host_identity", return_value=identity):
+            env._setup_overlay_mount()
+
+        expected_calls = [
+            call(
+                f"mkdir -p {sandbox} {overlay}/upper {overlay}/work && "
+                f"mount -t overlay overlay "
+                f"-o lowerdir=/ro/repo/,upperdir={overlay}/upper/,workdir={overlay}/work/ "
+                f"{sandbox}"
+            )
+        ]
+        if identity:
+            expected_calls.append(call(f"chown 2001:2002 {sandbox}"))
+        assert env.execute_privileged.call_args_list == expected_calls
+        assert env.overlay_mount is True
+        env.execute.assert_not_called()
+
+    def test_setup_overlay_failure_does_not_mark_mounted(self, env):
+        env.execute_privileged = Mock(return_value=CmdReturn("", "mount denied", 1))
+
+        with pytest.raises(RuntimeError, match="Failed to set up overlay mount for repo: mount denied"):
+            env._setup_overlay_mount()
+
+        env.execute_privileged.assert_called_once()
+        assert env.overlay_mount is False
+        env.execute.assert_not_called()
+
+    @pytest.mark.parametrize("unmount_code, remove_code", [(0, 0), (1, 0), (0, 1)])
+    def test_teardown_overlay_cleans_up_and_resets_state(self, env, caplog, unmount_code, remove_code):
+        env.overlay_mount = True
+        env.execute_privileged = Mock(side_effect=[
+            CmdReturn("", "unmount denied" if unmount_code else "", unmount_code),
+            CmdReturn("", "remove denied" if remove_code else "", remove_code),
+        ])
+
+        with caplog.at_level(logging.INFO):
+            env._teardown_overlay_mount()
+
+        assert env.execute_privileged.call_args_list == [
+            call(f"umount -l {DOCKER_WORKING_DIR}/repo"),
+            call(f"rm -rf {DOCKER_WORKING_DIR}/repo {DOCKER_WORKING_DIR}/overlay/repo"),
+        ]
+        assert ("Failed to unmount overlay: unmount denied" in caplog.text) == bool(unmount_code)
+        assert ("Failed to remove overlay directories: remove denied" in caplog.text) == bool(remove_code)
+        assert env.overlay_mount is False
+        env.execute.assert_not_called()
+
+    def test_teardown_overlay_exception_resets_state(self, env, caplog):
+        env.overlay_mount = True
+        env.execute_privileged = Mock(side_effect=RuntimeError("container unavailable"))
+
+        with caplog.at_level(logging.ERROR):
+            env._teardown_overlay_mount()
+
+        assert "Failed to teardown overlay mount: container unavailable" in caplog.text
+        assert env.overlay_mount is False
+        env.execute.assert_not_called()

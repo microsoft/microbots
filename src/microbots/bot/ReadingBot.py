@@ -1,13 +1,34 @@
+"""ReadingBot: a bot with read-only access to a repository."""
 import os
 from typing import Optional
 
 from microbots.constants import DOCKER_WORKING_DIR, PermissionLabels
-from microbots.MicroBot import BotType, MicroBot, system_prompt_common
+from microbots.MicroBot import BotType, MicroBot, system_prompt_common_for
 from microbots.tools.tool import ToolAbstract
 from microbots.extras.mount import Mount
 
 
 class ReadingBot(MicroBot):
+    """
+    A bot that investigates a repository without changing it.
+
+    The repository is mounted read-only into the bot's sandbox.
+
+    Parameters
+    ----------
+    model : str
+        The model to use, in the format ``<provider>/<model_name>``.
+    folder_to_mount : str
+        Absolute host path to the repository, mounted read-only.
+    environment : Optional[any]
+        The execution environment for the bot. If not provided, a default
+        environment is created. Defaults to None.
+    additional_tools : Optional[list[ToolAbstract]]
+        Extra tools to install in the bot's environment. Defaults to None.
+    token_provider : Optional[any]
+        A callable that returns a bearer token for Azure AD authentication.
+        Defaults to None.
+    """
 
     def __init__(
         self,
@@ -17,6 +38,24 @@ class ReadingBot(MicroBot):
         additional_tools: Optional[list[ToolAbstract]] = None,
         token_provider: Optional[any] = None,
     ):
+        """
+        Create the bot with the repository mounted read-only.
+
+        Parameters
+        ----------
+        model : str
+            The model to use, in the format ``<provider>/<model_name>``.
+        folder_to_mount : str
+            Absolute host path to the repository, mounted read-only.
+        environment : Optional[any]
+            The execution environment for the bot. If not provided, a default
+            environment is created. Defaults to None.
+        additional_tools : Optional[list[ToolAbstract]]
+            Extra tools to install in the bot's environment. Defaults to None.
+        token_provider : Optional[any]
+            A callable that returns a bearer token for Azure AD authentication.
+            Defaults to None.
+        """
         # validate init values before assigning
         bot_type = BotType.READING_BOT
 
@@ -26,7 +65,7 @@ class ReadingBot(MicroBot):
         )
 
         system_prompt = f"""
-        {system_prompt_common}
+        {system_prompt_common_for(model)}
         You are a reading bot.
         You are only provided access to read files inside the mounted directory.
         The directory is mounted at {folder_mount_info.sandbox_path} in your current environment.

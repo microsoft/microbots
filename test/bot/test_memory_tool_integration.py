@@ -1,5 +1,4 @@
 import json
-import os
 from unittest.mock import Mock, patch
 
 import pytest
@@ -15,20 +14,20 @@ from microbots.tools.tool_definitions.memory_tool import MemoryTool
 # ---------------------------------------------------------------------------
 
 def _make_anthropic_response(task_done, thoughts, command=""):
-    """Build a mock Anthropic API response."""
-    payload = json.dumps({
-        "task_done": task_done,
-        "thoughts": thoughts,
-        "command": command,
-    })
-
+    """Build a mock Anthropic API response; unless done, it calls the run_command tool with ``command``."""
     text_block = Mock()
     text_block.type = "text"
-    text_block.text = payload
+    text_block.text = thoughts
 
     resp = Mock()
-    resp.stop_reason = "end_turn"
     resp.content = [text_block]
+    if not task_done:
+        tool_use_block = Mock()
+        tool_use_block.type = "tool_use"
+        tool_use_block.id = "toolu_1"
+        tool_use_block.name = "run_command"
+        tool_use_block.input = {"command": command}
+        resp.content.append(tool_use_block)
     return resp
 
 
@@ -159,17 +158,11 @@ class TestMemoryToolWiring:
 
         assert result.status is True
 
-        # Verify the view result was passed back to the API as the next user message
-        calls = self._mock_client.messages.create.call_args_list
-        assert len(calls) == 2
-        # The second call should have messages including the file content
-        second_call_messages = calls[1].kwargs.get("messages") or calls[1][1].get("messages", [])
-        user_messages = [
-            m for m in second_call_messages
-            if m.get("role") == "user" and isinstance(m.get("content"), str)
-        ]
-        assert len(user_messages) >= 2, "Expected the command output to be sent as a user message"
-        assert "Previously saved content" in user_messages[-1]["content"]
+        # The view output is sent back to the API as the result of the tool call
+        assert self._mock_client.messages.create.call_count == 2
+        tool_result = bot.llm.messages[2]["content"][0]
+        assert tool_result["type"] == "tool_result"
+        assert "Previously saved content" in tool_result["content"]
 
     # -- Multiple tool calls in sequence ------------------------------------
 
@@ -358,18 +351,14 @@ class TestMemoryToolWiringOpenAI:
 
 
 # ---------------------------------------------------------------------------
-# Real integration tests — require Azure OpenAI + Docker
+# Real integration tests — require Azure OpenAI or OpenAI + Docker
 # ---------------------------------------------------------------------------
 
-from microbots.llm.llm import llm_output_format_str
+from microbots.MicroBot import system_prompt_common_for
 
-def _memory_system_prompt(sandbox_path):
-    return f"""You are a helpful assistant with access to a shell environment.
+def _memory_system_prompt(sandbox_path, model):
+    return f"""{system_prompt_common_for(model)}
 The project code is available at {sandbox_path} in your shell environment.
-All your responses must be in this JSON format:
-{llm_output_format_str}
-The properties (task_done, thoughts, command) are mandatory on each response.
-When you are done, set task_done to true and command to an empty string.
 """
 
 
@@ -414,7 +403,7 @@ def _create_test_project(base_dir):
 @pytest.mark.integration
 @pytest.mark.slow
 class TestMemoryToolRealIntegration:
-    """End-to-end integration tests with Azure OpenAI.
+    """End-to-end integration tests with Azure OpenAI and OpenAI.
 
     These tests exercise the full MicroBot → LLM → memory tool pipeline
     with no mocking.  A small Python project with deliberate code issues
@@ -425,7 +414,10 @@ class TestMemoryToolRealIntegration:
         pytest -m integration test/bot/test_memory_tool_integration.py -v
 
     Requires ``AZURE_OPENAI_DEPLOYMENT_NAME`` (or defaults to
-    ``mini-swe-agent-gpt5``) and valid Azure OpenAI credentials.
+    ``mini-swe-agent-gpt5``) and valid Azure OpenAI credentials. The
+    OpenAI run uses ``OPENAI_MODEL`` (or ``gpt-5``) and is skipped unless
+    ``OPENAI_API_KEY``, or ``OPENAI_ENDPOINT`` with ``AZURE_AUTH_METHOD=azure_ad``,
+    is set.
     """
 
     @pytest.fixture()
@@ -439,12 +431,10 @@ class TestMemoryToolRealIntegration:
         return _create_test_project(tmp_path)
 
     @pytest.fixture()
-    def memory_bot(self, memory_dir, test_project):
+    def memory_bot(self, memory_dir, test_project, openai_model):
         tool = MemoryTool(
             memory_dir=str(memory_dir),
         )
-
-        model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
 
         sandbox_path = f"{DOCKER_WORKING_DIR}/{test_project.name}"
         folder_mount = Mount(
@@ -454,8 +444,8 @@ class TestMemoryToolRealIntegration:
         )
 
         bot = MicroBot(
-            model=model,
-            system_prompt=_memory_system_prompt(sandbox_path),
+            model=openai_model,
+            system_prompt=_memory_system_prompt(sandbox_path, openai_model),
             additional_tools=[tool],
             folder_to_mount=folder_mount,
         )
