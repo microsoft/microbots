@@ -1,9 +1,10 @@
+"""AgentBoss: a bot that delegates subtasks to ``microbot_sub`` sub-agents."""
 import logging
 import os
 from typing import Optional
 
 from microbots.constants import DOCKER_WORKING_DIR, PermissionLabels
-from microbots.MicroBot import BotType, MicroBot, system_prompt_common
+from microbots.MicroBot import BotType, MicroBot, system_prompt_common_for
 from microbots.tools.tool import ToolAbstract
 from microbots.tools.tool_definitions.microbot_sub_agent import MicrobotSubAgent
 from microbots.extras.mount import Mount
@@ -14,6 +15,18 @@ logger = logging.getLogger(__name__)
 class AgentBoss(MicroBot):
     """A leadership bot that decomposes a complex task into subtasks
     and delegates each one to a ``microbot_sub`` agent running inside the sandbox.
+
+    Parameters
+    ----------
+    model : str
+        Model identifier in ``<provider>/<deployment>`` format.
+    folder_to_mount : str
+        Absolute host path to the repository the bot should operate on.
+    environment : Optional[any]
+        Pre-created execution environment.  A ``LocalDockerEnvironment``
+        is created automatically when *None*.
+    additional_tools : Optional[list[ToolAbstract]]
+        Extra tools to install alongside the built-in ``microbot_sub`` tool.
 
     Workflow
     --------
@@ -34,6 +47,8 @@ class AgentBoss(MicroBot):
         additional_tools: Optional[list[ToolAbstract]] = None,
     ):
         """
+        Create the bot with the ``microbot_sub`` tool and the repository mounted read-write.
+
         Parameters
         ----------
         model : str
@@ -61,7 +76,7 @@ class AgentBoss(MicroBot):
         )
 
         system_prompt = f"""
-{system_prompt_common}
+{system_prompt_common_for(model)}
 
 You are an **Agent Boss** — a senior technical lead responsible for solving a complex task by breaking it down into smaller, focused subtasks and delegating each one to a sub-agent.
 

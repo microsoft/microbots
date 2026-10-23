@@ -3,7 +3,7 @@ aiohttp==3.12.15
 aiosignal==1.4.0
 annotated-types==0.7.0
 anthropic==0.75.0
-anyio==4.10.0
+anyio==4.14.2
 attrs==25.3.0
 bashlex==0.18
 certifi==2026.10.19
@@ -33,14 +33,14 @@ propcache==0.3.2
 ptyprocess==0.7.0
 pydantic==2.11.9
 pydantic_core==2.33.2
-Pygments==2.19.2
+Pygments==2.20.0
 pytest==8.4.2
 pytest-cov==7.0.0
 python-dateutil==2.9.0.post0
-python-dotenv==1.1.1
+python-dotenv==1.2.2
 python-multipart==0.0.31
 PyYAML==6.0.2
-requests==2.32.5
+requests==2.33.0
 rich==15.0.0
 shellingham==1.5.4
 six==1.17.0
@@ -51,6 +51,6 @@ tqdm==4.67.1
 typer-slim==0.21.1
 typing-inspection==0.4.1
 typing_extensions==4.15.0
-urllib3==2.5.0
+urllib3==2.8.0
 uvicorn==0.35.0
 yarl==1.20.1

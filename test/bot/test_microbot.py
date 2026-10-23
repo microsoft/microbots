@@ -4,10 +4,9 @@ https://github.com/SWE-agent/test-repo/issues/1.
 This test will create multiple custom bots - a reading bot, a writing bot using the base class.
 """
 
-import json
+import base64
 import os
 from pathlib import Path
-from pprint import pformat
 import shutil
 import subprocess
 import sys
@@ -24,10 +23,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from microbots import MicroBot, BotRunResult
+from microbots.MicroBot import system_prompt_common_for
 from microbots.constants import DOCKER_WORKING_DIR, PermissionLabels
 from microbots.extras.mount import Mount, MountType
 from microbots.environment.Environment import CmdReturn
-from microbots.llm.llm import llm_output_format_str, LLMAskResponse
+from microbots.llm.llm import llm_output_format_str, LLMAskResponse, ToolCall
 from microbots.tools.internal_tool import Tool
 
 
@@ -134,21 +134,27 @@ class TestMicrobotIntegration:
         assert isinstance(anthropic_microBot.llm, AnthropicApi)
 
     @pytest.mark.slow
-    def test_microbot_2bot_combo(self, log_file_path, test_repo, issue_1):
+    def test_microbot_2bot_combo(self, log_file_path, test_repo, issue_1, openai_model):
         assert test_repo is not None
         assert log_file_path is not None
 
         verify_function = issue_1[1]
+
+        # SYSTEM_PROMPT asks for JSON replies, which providers that call tools don't use.
+        system_prompt = f"""{system_prompt_common_for(openai_model)}
+You have the python repo where you're working mounted at {DOCKER_WORKING_DIR}.
+Do not run recursive `find`, `tree`, or `sed` across the whole repo (especially `.git`). Inspect only directories/files directly related to the failure.
+When running pytest, ONLY test the specific file mentioned in the task - do not run the entire test directory or test suite.
+"""
 
         test_repo_mount_ro = Mount(
             str(test_repo),
             f"{DOCKER_WORKING_DIR}/{test_repo.name}",
             PermissionLabels.READ_ONLY
         )
-        model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
         testing_bot = MicroBot(
-            model=model,
-            system_prompt=SYSTEM_PROMPT,
+            model=openai_model,
+            system_prompt=system_prompt,
             folder_to_mount=test_repo_mount_ro,
         )
 
@@ -169,10 +175,9 @@ class TestMicrobotIntegration:
         test_repo_mount_rw = Mount(
             str(test_repo), f"{DOCKER_WORKING_DIR}/{test_repo.name}", PermissionLabels.READ_WRITE
         )
-        model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}"
         coding_bot = MicroBot(
-            model=model,
-            system_prompt=SYSTEM_PROMPT,
+            model=openai_model,
+            system_prompt=system_prompt,
             folder_to_mount=test_repo_mount_rw,
         )
 
@@ -595,151 +600,6 @@ class TestMicrobotUnit:
             assert isinstance(bot.llm, OllamaLocal)
             assert bot.llm.system_prompt == base_system_prompt
 
-    def test_run_json_output_with_content_key(self):
-        """Test anthropic-text-editor hack: JSON output with 'content' key is reformatted using pformat."""
-        json_content = {"content": ["line 1", "line 2"], "other_key": "data"}
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=json.dumps(json_content), stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
-             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # The output passed to LLM should be pformat of the "content" value
-        assert captured_output[0] == pformat(json_content["content"])
-
-    def test_run_json_output_without_content_key(self):
-        """Test anthropic-text-editor hack: JSON output without 'content' key preserves raw stdout."""
-        json_data = {"other": "data", "number": 42}
-        raw_stdout = json.dumps(json_data)
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=raw_stdout, stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
-             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # Without "content" key, raw stdout is preserved
-        assert captured_output[0] == raw_stdout
-
-    def test_run_non_json_output_json_decode_error(self):
-        """Test anthropic-text-editor hack: non-JSON stdout triggers JSONDecodeError, raw stdout kept."""
-        raw_stdout = "this is plain text, not JSON"
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=raw_stdout, stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
-             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # JSONDecodeError is caught silently, raw stdout preserved
-        assert captured_output[0] == raw_stdout
-
-    def test_run_json_parse_blanket_exception(self, caplog):
-        """Test anthropic-text-editor hack: blanket exception during JSON parsing logs warning and keeps raw stdout."""
-        raw_stdout = '{"content": "valid json"}'
-        mock_env = Mock()
-        mock_env.execute.return_value = Mock(
-            return_code=0, stdout=raw_stdout, stderr=""
-        )
-
-        with patch('microbots.llm.azure_openai_api.api_key', 'test-key'), \
-             patch('microbots.llm.azure_openai_api.AzureOpenAI'):
-            bot = MicroBot(
-                model="azure-openai/test-model",
-                system_prompt="test prompt",
-                environment=mock_env,
-            )
-
-        call_count = [0]
-        captured_output = [None]
-
-        def mock_ask(message: str):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return LLMAskResponse(command="echo test", task_done=False, thoughts="running")
-            else:
-                captured_output[0] = message
-                return LLMAskResponse(command="", task_done=True, thoughts="done")
-
-        bot.llm.ask = mock_ask
-
-        caplog.set_level(logging.WARNING)
-        with patch('microbots.MicroBot.json.loads', side_effect=TypeError("test type error")):
-            result = bot.run("test task", max_iterations=5, timeout_in_seconds=60)
-
-        assert result.status is True
-        # Blanket exception caught, raw stdout preserved
-        assert captured_output[0] == raw_stdout
-        # Warning should be logged
-        assert "Failed to parse command output as JSON, using raw stdout" in caplog.text
-
     def test_explicit_token_provider_is_stored(self):
         """When token_provider is passed explicitly it is stored as-is, regardless of env."""
         mock_env = Mock()
@@ -780,6 +640,21 @@ class TestMicrobotUnit:
             mock_credential, "https://cognitiveservices.azure.com/.default"
         )
         assert bot.token_provider is mock_provider
+
+    def test_azure_ad_env_creates_token_provider_for_openai_provider(self):
+        """When AZURE_AUTH_METHOD=azure_ad and provider is openai, the OpenAI client authenticates with the token."""
+        mock_provider = Mock(return_value="fake-token")
+        mock_azure_identity = MagicMock()
+        mock_azure_identity.get_bearer_token_provider.return_value = mock_provider
+
+        with patch.dict('os.environ', {'AZURE_AUTH_METHOD': 'azure_ad'}), \
+             patch.dict('sys.modules', {'azure': MagicMock(), 'azure.identity': mock_azure_identity}), \
+             patch('microbots.llm.openai_api.api_key', None), \
+             patch('microbots.llm.openai_api.OpenAI') as mock_openai:
+            bot = MicroBot(model="openai/gpt-5", system_prompt="test", environment=Mock())
+
+        assert bot.token_provider is mock_provider
+        assert mock_openai.call_args.kwargs["api_key"] is mock_provider
 
     def test_azure_ad_env_does_not_create_token_provider_for_anthropic(self):
         """When AZURE_AUTH_METHOD=azure_ad but provider is anthropic, no auto token_provider is created."""
@@ -850,6 +725,85 @@ class TestMicrobotUnit:
         assert isinstance(bot.llm, OpenAIApi)
         assert bot.deployment_name == "gpt-4"
         assert bot.model_provider == "openai"
+
+
+@pytest.mark.unit
+class TestMicrobotNativeTools:
+    """Unit tests for the native tool calling loop used with the OpenAI provider."""
+
+    def _openai_bot(self, env, system_prompt="test"):
+        with patch('microbots.llm.openai_api.OpenAI'), \
+             patch('microbots.llm.openai_api.api_key', 'test-key'):
+            return MicroBot(model="openai/gpt-5", system_prompt=system_prompt, environment=env)
+
+    def test_shared_prompt_is_selected_by_provider(self):
+        from microbots.MicroBot import tool_calling_system_prompt_common, system_prompt_common, system_prompt_common_for
+
+        assert system_prompt_common_for("openai/gpt-5") == tool_calling_system_prompt_common
+        assert system_prompt_common_for("anthropic/claude-sonnet-4-5") == tool_calling_system_prompt_common
+        assert system_prompt_common_for("azure-openai/gpt-5") == system_prompt_common
+
+    def test_openai_llm_gets_native_tools(self):
+        bot = self._openai_bot(Mock(), system_prompt="You are a writing bot.")
+
+        assert [tool["name"] for tool in bot.llm.tools] == ["run_command", "view_file", "create_file", "str_replace"]
+        assert bot.llm.system_prompt == "You are a writing bot."
+
+    def test_anthropic_llm_gets_only_the_run_command_tool(self):
+        with patch('microbots.llm.anthropic_api.Anthropic'), \
+             patch('microbots.llm.anthropic_api.api_key', 'test-key'):
+            bot = MicroBot(model="anthropic/claude-sonnet-4-5", system_prompt="test", environment=Mock())
+
+        assert [tool["name"] for tool in bot.llm.tools] == ["run_command"]
+
+    def test_run_executes_tool_calls_and_returns_final_answer(self):
+        def execute(command):
+            if command == "base64 notes.txt":
+                return CmdReturn(stdout=base64.b64encode(b"hello\n").decode(), stderr="", return_code=0)
+            return CmdReturn(stdout="notes.txt", stderr="", return_code=0)
+
+        env = Mock()
+        env.execute.side_effect = execute
+        bot = self._openai_bot(env)
+        bot.llm.ask = Mock(return_value=LLMAskResponse(tool_calls=[
+            ToolCall(call_id="call_1", name="run_command", arguments={"command": "ls"}),
+            ToolCall(call_id="call_2", name="view_file", arguments={"path": "notes.txt", "start_line": None, "end_line": None}),
+        ]))
+        bot.llm.send_tool_outputs = Mock(return_value=LLMAskResponse(task_done=True, thoughts="All done."))
+
+        result = bot.run("Read the notes", max_iterations=5, timeout_in_seconds=60)
+
+        assert result.status is True
+        assert result.result == "All done."
+        bot.llm.send_tool_outputs.assert_called_once_with({"call_1": "notes.txt", "call_2": "     1\thello"})
+
+    def test_failed_command_output_reports_the_error(self):
+        env = Mock()
+        env.execute.return_value = CmdReturn(stdout="", stderr="ls: cannot access 'missing'", return_code=2)
+        bot = self._openai_bot(env)
+        bot.llm.ask = Mock(return_value=LLMAskResponse(tool_calls=[
+            ToolCall(call_id="call_1", name="run_command", arguments={"command": "ls missing"}),
+        ]))
+        bot.llm.send_tool_outputs = Mock(return_value=LLMAskResponse(task_done=True, thoughts="Done."))
+
+        bot.run("List the missing file", max_iterations=5, timeout_in_seconds=60)
+
+        output = bot.llm.send_tool_outputs.call_args.args[0]["call_1"]
+        assert output == "COMMAND EXECUTION FAILED\nreturn code: 2\nstdout: \nstderr: ls: cannot access 'missing'"
+
+    def test_dangerous_bash_call_is_blocked(self):
+        env = Mock()
+        bot = self._openai_bot(env)
+        bot.llm.ask = Mock(return_value=LLMAskResponse(tool_calls=[
+            ToolCall(call_id="call_1", name="run_command", arguments={"command": "ls -R /"}),
+        ]))
+        bot.llm.send_tool_outputs = Mock(return_value=LLMAskResponse(task_done=True, thoughts="Stopped."))
+
+        bot.run("List everything", max_iterations=5, timeout_in_seconds=60)
+
+        env.execute.assert_not_called()
+        output = bot.llm.send_tool_outputs.call_args.args[0]["call_1"]
+        assert output.startswith("COMMAND_ERROR: Dangerous command detected and blocked: ls -R /")
 
 
 @pytest.mark.integration
@@ -1068,7 +1022,7 @@ int multiply_numbers(int a, int b) {
 
     @pytest.mark.integration
     @pytest.mark.docker
-    def test_llm_finds_symbols_using_cscope(self, cscope_tool, c_code_repo):
+    def test_llm_finds_symbols_using_cscope(self, cscope_tool, c_code_repo, openai_model):
         """End-to-end test: LLM uses cscope to find symbol definitions and callers in C code."""
         c_repo_mount = Mount(
             str(c_code_repo),
@@ -1076,23 +1030,20 @@ int multiply_numbers(int a, int b) {
             PermissionLabels.READ_ONLY
         )
 
-        cscope_system_prompt = f"""
+        cscope_system_prompt = f"""{system_prompt_common_for(openai_model)}
 You are a C code analyst. You have a C project mounted at {DOCKER_WORKING_DIR}/{c_code_repo.name}.
 The cscope tool is installed and its database has been built for you.
 You MUST use cscope non-interactive batch mode commands (cscope -L <flag> <symbol>) to answer questions.
 Always cd to {DOCKER_WORKING_DIR}/{c_code_repo.name} before running cscope commands.
 Do not run interactive commands. Do not rebuild the database.
 
-{llm_output_format_str}
-
-You must send `task_done` as true only when you have found all the requested information.
-Put your final answer in the `thoughts` field. The answer MUST include:
+Finish only when you have found all the requested information. Your final answer MUST include:
 1. The file and function where `add_numbers` is defined
 2. Which function(s) call `add_numbers`
 """
 
         bot = MicroBot(
-            model = f"azure-openai/{os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'mini-swe-agent-gpt5')}",
+            model=openai_model,
             system_prompt=cscope_system_prompt,
             folder_to_mount=c_repo_mount,
             additional_tools=[cscope_tool],
