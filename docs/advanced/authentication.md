@@ -6,7 +6,7 @@ Microbots supports multiple LLM providers, each with their own authentication me
 
 | Provider string | Description | SDK | Authentication |
 |---|---|---|---|
-| `openai` | OpenAI or Azure OpenAI via OpenAI SDK | OpenAI SDK | API key |
+| `openai` | OpenAI or Azure OpenAI via OpenAI SDK | OpenAI SDK | API key, or Azure AD token for Azure endpoints |
 | `azure-openai` | Azure OpenAI via Azure SDK | AzureOpenAI SDK | API key or Azure AD token |
 | `anthropic` | Anthropic models | Anthropic SDK | API key or Azure AD token (Foundry) |
 | `ollama-local` | Local models via Ollama | — | None (local) |
@@ -30,6 +30,8 @@ export OPENAI_API_KEY="your-azure-api-key"
 export OPENAI_ENDPOINT="https://your-resource.openai.azure.com/openai/v1/"
 ```
 
+If the Azure resource has key-based authentication disabled, leave out `OPENAI_API_KEY` and use an Azure AD token instead, the same way as for `azure-openai` (see [Azure AD Token Authentication](#azure-ad-token-authentication)).
+
 Usage:
 ```python
 from microbots.MicroBot import MicroBot
@@ -37,7 +39,7 @@ from microbots.MicroBot import MicroBot
 bot = MicroBot(model="openai/gpt-5")
 ```
 
-> **When to use this:** Use the `openai` provider when you have an API key and want to use the OpenAI SDK — whether pointing at OpenAI directly or at an Azure OpenAI endpoint that supports the OpenAI SDK.
+> **When to use this:** Use the `openai` provider when you want to use the OpenAI SDK, whether pointing at OpenAI directly or at an Azure OpenAI endpoint that supports the OpenAI SDK.
 
 ---
 
@@ -105,7 +107,7 @@ export AZURE_OPENAI_API_VERSION="2024-02-01"
 export AZURE_OPENAI_DEPLOYMENT_NAME="your-deployment"
 ```
 
-> **Note:** `AZURE_AUTH_METHOD=azure_ad` only auto-creates a token provider for the `azure-openai` provider (using the `https://cognitiveservices.azure.com/.default` scope). For `anthropic` (Azure AI Foundry), the required scope is different and cannot be inferred automatically. You must pass `token_provider` explicitly — see **Option B** below.
+> **Note:** `AZURE_AUTH_METHOD=azure_ad` only auto-creates a token provider for the `azure-openai` and `openai` providers (using the `https://cognitiveservices.azure.com/.default` scope). For `openai`, only set it when `OPENAI_ENDPOINT` is an Azure endpoint. For `anthropic` (Azure AI Foundry), the required scope is different and cannot be inferred automatically. You must pass `token_provider` explicitly — see **Option B** below.
 
 #### Option B: Pass a Token Provider Programmatically
 
@@ -169,7 +171,7 @@ For Anthropic on Azure AI Foundry, pass a `token_provider` explicitly (see Optio
 
 - `get_bearer_token_provider` returns a `Callable[[], str]` backed by `BearerTokenCredentialPolicy`.
 - The token is cached and **proactively refreshed** before expiry — no manual refresh needed.
-- Both `AzureOpenAI` and `AnthropicFoundry` SDKs call the provider **before every request**, so the token is always fresh.
+- `OpenAI`, `AzureOpenAI` and `AnthropicFoundry` SDKs call the provider **before every request**, so the token is always fresh.
 - Tasks are **never interrupted** by token expiration.
 
 ## How the Provider Is Selected
@@ -178,7 +180,8 @@ For Anthropic on Azure AI Foundry, pass a `token_provider` explicitly (see Optio
 |---|---|---|
 | Yes | `azure-openai` | `AzureOpenAI(azure_ad_token_provider=...)` |
 | No | `azure-openai` | `AzureOpenAI(api_key=...)` |
-| — | `openai` | `OpenAI(base_url=..., api_key=...)` |
+| Yes | `openai` | `OpenAI(base_url=..., api_key=token_provider)` |
+| No | `openai` | `OpenAI(base_url=..., api_key=...)` |
 | Yes | `anthropic` | `AnthropicFoundry(azure_ad_token_provider=...)` |
 | No | `anthropic` | `Anthropic(api_key=...)` |
 

@@ -5,14 +5,53 @@ import pytest
 import json
 import sys
 import os
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from dataclasses import asdict
 
 # Add src to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src")))
 
-from microbots.llm.openai_api import OpenAIApi
-from microbots.llm.llm import LLMAskResponse, LLMInterface
+from microbots.llm.openai_api import DEFAULT_COMPACT_THRESHOLD, OpenAIApi
+from microbots.llm.llm import LLMAskResponse, LLMInterface, ToolCall
+
+
+BASH_TOOL = SimpleNamespace(
+    name="bash",
+    description="Run a shell command.",
+    parameters={
+        "type": "object",
+        "properties": {"command": {"type": "string"}},
+        "required": ["command"],
+        "additionalProperties": False,
+    },
+)
+
+OPENAI_BASH_TOOL = {
+    "type": "function",
+    "name": "bash",
+    "description": "Run a shell command.",
+    "parameters": BASH_TOOL.parameters,
+    "strict": True,
+}
+
+
+def make_response(response_id="resp_1", text="", tool_calls=(), usage=None):
+    """Build a fake Responses API response; tool_calls are (call_id, name, arguments) tuples."""
+    output = [
+        SimpleNamespace(type="function_call", call_id=call_id, name=name, arguments=json.dumps(arguments))
+        for call_id, name, arguments in tool_calls
+    ]
+    usage = usage or SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+    return SimpleNamespace(id=response_id, output=output, output_text=text, usage=usage)
+
+
+def make_api(**kwargs):
+    return OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-5", tools=[BASH_TOOL], **kwargs)
+
+
+def sent_request(api, call=-1):
+    """Return the keyword arguments of a responses.create call."""
+    return api.ai_client.responses.create.call_args_list[call].kwargs
 
 
 @pytest.fixture(autouse=True)
@@ -28,269 +67,130 @@ def patch_openai_config():
 class TestOpenAIApiInitialization:
     """Tests for OpenAIApi initialization"""
 
-    def test_init_with_deployment_name(self):
-        """Test initialization with deployment name"""
-        system_prompt = "You are a helpful assistant"
+    def test_init_stores_settings(self):
+        api = make_api()
 
-        api = OpenAIApi(system_prompt=system_prompt, deployment_name="gpt-4")
-
-        assert api.system_prompt == system_prompt
-        assert api.deployment_name == "gpt-4"
-        assert api.max_retries == 3
-        assert api.retries == 0
-        assert len(api.messages) == 1
-        assert api.messages[0]["role"] == "system"
-        assert api.messages[0]["content"] == system_prompt
-
-    def test_init_with_custom_max_retries(self):
-        """Test initialization with custom max_retries"""
-        api = OpenAIApi(
-            system_prompt="You are a helpful assistant",
-            deployment_name="gpt-4",
-            max_retries=5
-        )
-
-        assert api.max_retries == 5
-        assert api.retries == 0
-
-    def test_init_creates_openai_client(self):
-        """Test that initialization creates OpenAI client"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
+        assert api.system_prompt == "You are a helpful assistant"
+        assert api.deployment_name == "gpt-5"
+        assert api.tools == [OPENAI_BASH_TOOL]
+        assert api.previous_response_id is None
         assert api.ai_client is not None
 
     def test_init_raises_when_no_api_key(self):
         """ValueError is raised when OPENAI_API_KEY is not set."""
         with patch('microbots.llm.openai_api.api_key', None):
             with pytest.raises(ValueError, match="No authentication configured for OpenAI"):
-                OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+                make_api()
+
+    def test_init_uses_token_provider_instead_of_api_key(self, patch_openai_config):
+        token_provider = Mock(return_value="entra-token")
+
+        with patch('microbots.llm.openai_api.api_key', None):
+            make_api(token_provider=token_provider)
+
+        patch_openai_config.assert_called_once_with(base_url="https://api.openai.com/v1", api_key=token_provider)
+
+    @pytest.mark.parametrize("token_provider, error", [
+        ("not-callable", "must be a callable"),
+        (Mock(return_value=""), "non-empty string"),
+        (Mock(side_effect=RuntimeError("no credential")), "failed during validation: no credential"),
+    ])
+    def test_init_rejects_invalid_token_provider(self, token_provider, error):
+        with pytest.raises(ValueError, match=error):
+            make_api(token_provider=token_provider)
+
+    def test_openai_api_is_llm_interface(self):
+        assert isinstance(make_api(), LLMInterface)
 
 
 @pytest.mark.unit
-class TestOpenAIApiAsk:
-    """Tests for OpenAIApi.ask method"""
+class TestOpenAIApiConversation:
+    """Tests for the request flow: ask, tool outputs and previous_response_id chaining"""
 
-    def test_ask_successful_response(self):
-        """Test ask method with successful response"""
-        api = OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-4")
+    def test_first_ask_sends_the_message_with_instructions_and_tools(self):
+        api = make_api()
+        api.ai_client.responses.create = Mock(return_value=make_response())
 
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "echo 'hello'",
-            "thoughts": None
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
+        api.ask("Fix the bug")
 
-        result = api.ask("Please say hello")
+        request = sent_request(api)
+        assert request["model"] == "gpt-5"
+        assert request["instructions"] == "You are a helpful assistant"
+        assert request["tools"] == [OPENAI_BASH_TOOL]
+        assert request["input"] == [{"role": "user", "content": "Fix the bug"}]
+        assert "previous_response_id" not in request
+
+    def test_ask_returns_the_tool_calls(self):
+        api = make_api()
+        api.ai_client.responses.create = Mock(return_value=make_response(
+            text="Let me look around.",
+            tool_calls=[("call_1", "bash", {"command": "ls"})],
+        ))
+
+        result = api.ask("Fix the bug")
 
         assert isinstance(result, LLMAskResponse)
         assert result.task_done is False
-        assert result.command == "echo 'hello'"
-        assert api.retries == 0
-        assert len(api.messages) == 3  # system + user + assistant
-        assert api.messages[1]["role"] == "user"
-        assert api.messages[1]["content"] == "Please say hello"
-        assert api.messages[2]["role"] == "assistant"
+        assert result.thoughts == "Let me look around."
+        assert result.tool_calls == [ToolCall(call_id="call_1", name="bash", arguments={"command": "ls"})]
 
-    def test_ask_with_task_done_true(self):
-        """Test ask method when task is complete"""
-        api = OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-4")
+    def test_reply_without_tool_calls_is_the_final_answer(self):
+        api = make_api()
+        api.ai_client.responses.create = Mock(return_value=make_response(text="The bug is fixed."))
 
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": True,
-            "command": "",
-            "thoughts": "Task completed successfully"
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
-
-        result = api.ask("Complete the task")
+        result = api.ask("Fix the bug")
 
         assert result.task_done is True
-        assert result.command == ""
-        assert result.thoughts == "Task completed successfully"
+        assert result.thoughts == "The bug is fixed."
+        assert result.tool_calls == []
 
-    def test_ask_with_retry_on_invalid_response(self):
-        """Test ask method retries on invalid response then succeeds"""
-        api = OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-4")
+    def test_send_tool_outputs_continues_from_the_previous_response(self):
+        api = make_api()
+        api.ai_client.responses.create = Mock(side_effect=[
+            make_response("resp_1", tool_calls=[("call_1", "bash", {"command": "ls"}), ("call_2", "bash", {"command": "pwd"})]),
+            make_response("resp_2", text="Done."),
+        ])
 
-        mock_invalid_response = Mock()
-        mock_invalid_response.output_text = "invalid json"
+        api.ask("Fix the bug")
+        result = api.send_tool_outputs({"call_1": "a.py", "call_2": "/repo"})
 
-        mock_valid_response = Mock()
-        mock_valid_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "ls -la",
-            "thoughts": None
-        })
+        request = sent_request(api)
+        assert request["previous_response_id"] == "resp_1"
+        assert request["instructions"] == "You are a helpful assistant"
+        assert request["input"] == [
+            {"type": "function_call_output", "call_id": "call_1", "output": "a.py"},
+            {"type": "function_call_output", "call_id": "call_2", "output": "/repo"},
+        ]
+        assert result.task_done is True
 
-        api.ai_client.responses.create = Mock(
-            side_effect=[mock_invalid_response, mock_valid_response]
-        )
+    def test_ask_answers_tool_calls_left_from_a_stopped_run(self):
+        api = make_api()
+        api.ai_client.responses.create = Mock(side_effect=[
+            make_response("resp_1", tool_calls=[("call_1", "bash", {"command": "ls"})]),
+            make_response("resp_2", text="Hello."),
+        ])
 
-        result = api.ask("List files")
+        api.ask("First task")
+        api.ask("Second task")
 
-        assert result.task_done is False
-        assert result.command == "ls -la"
-        assert api.ai_client.responses.create.call_count == 2
+        assert sent_request(api)["input"] == [
+            {"type": "function_call_output", "call_id": "call_1", "output": "Not run: the previous run stopped."},
+            {"role": "user", "content": "Second task"},
+        ]
 
-    def test_ask_appends_user_message(self):
-        """Test that ask appends user message to messages list"""
-        api = OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-4")
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "pwd",
-            "thoughts": None
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
-
-        api.ask("What directory am I in?")
-
-        user_messages = [m for m in api.messages if m["role"] == "user"]
-        assert user_messages[-1]["content"] == "What directory am I in?"
-
-    def test_ask_appends_assistant_response_as_json(self):
-        """Test that ask appends assistant response as JSON string"""
-        api = OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-4")
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "echo test",
-            "thoughts": None
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
-
-        api.ask("Run echo test")
-
-        assistant_messages = [m for m in api.messages if m["role"] == "assistant"]
-        assert len(assistant_messages) > 0
-
-        assistant_content = json.loads(assistant_messages[-1]["content"])
-        assert assistant_content["task_done"] is False
-        assert assistant_content["command"] == "echo test"
-
-    def test_ask_resets_retries_to_zero(self):
-        """Test that ask resets retries to 0 at the start"""
-        api = OpenAIApi(system_prompt="You are a helpful assistant", deployment_name="gpt-4")
-        api.retries = 5
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "ls",
-            "thoughts": None
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
-
-        api.ask("List files")
-
-        assert api.retries == 0
-
-
-@pytest.mark.unit
-class TestOpenAIApiClearHistory:
-    """Tests for OpenAIApi.clear_history method"""
-
-    def test_clear_history_resets_messages(self):
-        """Test that clear_history resets messages to only system prompt"""
-        system_prompt = "You are a helpful assistant"
-        api = OpenAIApi(system_prompt=system_prompt, deployment_name="gpt-4")
-
-        api.messages.append({"role": "user", "content": "Hello"})
-        api.messages.append({"role": "assistant", "content": "Hi there"})
-
-        result = api.clear_history()
-
-        assert result is True
-        assert len(api.messages) == 1
-        assert api.messages[0]["role"] == "system"
-        assert api.messages[0]["content"] == system_prompt
-
-    def test_clear_history_returns_true(self):
-        """Test that clear_history returns True"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
+    def test_clear_history_starts_a_new_conversation(self):
+        api = make_api()
+        api.ai_client.responses.create = Mock(return_value=make_response(
+            tool_calls=[("call_1", "bash", {"command": "ls"})],
+        ))
+        api.ask("First task")
 
         assert api.clear_history() is True
+        api.ask("Second task")
 
-    def test_clear_history_preserves_system_prompt(self):
-        """Test that clear_history preserves the original system prompt"""
-        system_prompt = "You are a code assistant specialized in Python"
-        api = OpenAIApi(system_prompt=system_prompt, deployment_name="gpt-4")
-
-        for i in range(3):
-            api.messages.append({"role": "user", "content": f"Message {i}"})
-            api.clear_history()
-
-        assert len(api.messages) == 1
-        assert api.messages[0]["content"] == system_prompt
-
-
-@pytest.mark.unit
-class TestOpenAIApiInheritance:
-    """Tests to verify OpenAIApi correctly inherits from LLMInterface"""
-
-    def test_openai_api_is_llm_interface(self):
-        """Test that OpenAIApi is an instance of LLMInterface"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        assert isinstance(api, LLMInterface)
-
-    def test_openai_api_implements_ask(self):
-        """Test that OpenAIApi implements the ask method"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        assert hasattr(api, 'ask')
-        assert callable(api.ask)
-
-    def test_openai_api_implements_clear_history(self):
-        """Test that OpenAIApi implements the clear_history method"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        assert hasattr(api, 'clear_history')
-        assert callable(api.clear_history)
-
-
-@pytest.mark.unit
-class TestOpenAIApiEdgeCases:
-    """Edge case tests for OpenAIApi"""
-
-    def test_ask_with_empty_message(self):
-        """Test ask with an empty message string"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "echo empty",
-            "thoughts": None
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
-
-        result = api.ask("")
-
-        assert result.command == "echo empty"
-
-    def test_multiple_ask_calls_append_messages(self):
-        """Test that multiple ask calls accumulate messages"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False,
-            "command": "cmd1",
-            "thoughts": None
-        })
-        api.ai_client.responses.create = Mock(return_value=mock_response)
-
-        api.ask("First message")
-        api.ask("Second message")
-
-        # system + (user + assistant) * 2 = 5
-        assert len(api.messages) == 5
+        request = sent_request(api)
+        assert "previous_response_id" not in request
+        assert request["input"] == [{"role": "user", "content": "Second task"}]
 
 
 @pytest.mark.unit
@@ -299,14 +199,9 @@ class TestOpenAIApiTokenUsageLogging:
 
     def test_ask_logs_token_usage(self, caplog):
         """Token usage from response.usage is logged after each call"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False, "command": "cmd", "thoughts": None
-        })
-        mock_response.usage = Mock(input_tokens=12, output_tokens=34, total_tokens=46)
-        api.ai_client.responses.create = Mock(return_value=mock_response)
+        api = make_api()
+        usage = SimpleNamespace(input_tokens=12, output_tokens=34, total_tokens=46)
+        api.ai_client.responses.create = Mock(return_value=make_response(usage=usage))
 
         with caplog.at_level("INFO"):
             api.ask("hello")
@@ -316,14 +211,10 @@ class TestOpenAIApiTokenUsageLogging:
 
     def test_ask_warns_when_token_usage_is_missing(self, caplog):
         """A warning is logged when the response carries no usage information"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False, "command": "cmd", "thoughts": None
-        })
-        mock_response.usage = None
-        api.ai_client.responses.create = Mock(return_value=mock_response)
+        api = make_api()
+        response = make_response()
+        response.usage = None
+        api.ai_client.responses.create = Mock(return_value=response)
 
         with caplog.at_level("WARNING"):
             api.ask("hello")
@@ -333,112 +224,35 @@ class TestOpenAIApiTokenUsageLogging:
 
 @pytest.mark.unit
 class TestOpenAIApiCompaction:
-    """Tests for compaction request wiring and history reset"""
-
-    def _mock_response(self, output=None):
-        mock_response = Mock()
-        mock_response.output_text = json.dumps({
-            "task_done": False, "command": "cmd", "thoughts": None
-        })
-        mock_response.usage = Mock(input_tokens=1, output_tokens=1, total_tokens=2)
-        mock_response.output = output if output is not None else []
-        return mock_response
+    """Tests for server-side compaction request wiring"""
 
     def test_context_management_sent_with_default_threshold(self):
         """context_management is sent using DEFAULT_COMPACT_THRESHOLD by default"""
-        from microbots.llm.openai_api import DEFAULT_COMPACT_THRESHOLD
-
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+        api = make_api()
+        api.ai_client.responses.create = Mock(return_value=make_response())
 
         api.ask("hello")
 
-        _, kwargs = api.ai_client.responses.create.call_args
-        assert kwargs["context_management"] == [
+        assert sent_request(api)["context_management"] == [
             {"type": "compaction", "compact_threshold": DEFAULT_COMPACT_THRESHOLD}
         ]
 
     def test_context_management_sent_with_custom_threshold(self):
         """context_management uses a custom compact_threshold when provided"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4", compact_threshold=500)
-        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+        api = make_api(compact_threshold=500)
+        api.ai_client.responses.create = Mock(return_value=make_response())
 
         api.ask("hello")
 
-        _, kwargs = api.ai_client.responses.create.call_args
-        assert kwargs["context_management"] == [
+        assert sent_request(api)["context_management"] == [
             {"type": "compaction", "compact_threshold": 500}
         ]
 
     def test_context_management_omitted_when_disabled(self):
         """context_management is not sent when compact_threshold is None"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4", compact_threshold=None)
-        api.ai_client.responses.create = Mock(return_value=self._mock_response())
+        api = make_api(compact_threshold=None)
+        api.ai_client.responses.create = Mock(return_value=make_response())
 
         api.ask("hello")
 
-        _, kwargs = api.ai_client.responses.create.call_args
-        assert "context_management" not in kwargs
-
-    def test_extract_compaction_item_returns_none_without_compaction(self):
-        """_extract_compaction_item returns None when no compaction item is present"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        other_item = Mock(type="message")
-        assert api._extract_compaction_item(self._mock_response(output=[other_item])) is None
-
-    def test_extract_compaction_item_parses_compaction(self):
-        """_extract_compaction_item returns a plain input-ready dict"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        compaction_output_item = Mock(type="compaction", id="comp_123", encrypted_content="abc")
-        result = api._extract_compaction_item(self._mock_response(output=[compaction_output_item]))
-
-        assert result == {"type": "compaction", "id": "comp_123", "encrypted_content": "abc"}
-
-    def test_ask_does_not_reset_messages_without_compaction(self):
-        """self.messages keeps growing normally when no compaction occurs"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-        api.ai_client.responses.create = Mock(return_value=self._mock_response())
-
-        api.ask("hello")
-        api.ask("hello again")
-
-        # system + 2x(user + assistant)
-        assert len(api.messages) == 5
-
-    def test_ask_resets_messages_when_compaction_present(self):
-        """self.messages is reset to [system, compaction_item, user, assistant] after compaction"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        compaction_output_item = Mock(type="compaction", id="comp_123", encrypted_content="abc")
-        api.ai_client.responses.create = Mock(
-            return_value=self._mock_response(output=[compaction_output_item])
-        )
-
-        api.ask("first message")
-        api.ask("second message")
-
-        assert len(api.messages) == 4
-        assert api.messages[0] == {"role": "system", "content": "test"}
-        assert api.messages[1] == {
-            "type": "compaction", "id": "comp_123", "encrypted_content": "abc"
-        }
-        assert api.messages[2]["role"] == "user"
-        assert api.messages[2]["content"] == "second message"
-        assert api.messages[3]["role"] == "assistant"
-
-    def test_ask_logs_when_compaction_occurs(self, caplog):
-        """A log line identifies when compaction occurred and its item id"""
-        api = OpenAIApi(system_prompt="test", deployment_name="gpt-4")
-
-        compaction_output_item = Mock(type="compaction", id="comp_123", encrypted_content="abc")
-        api.ai_client.responses.create = Mock(
-            return_value=self._mock_response(output=[compaction_output_item])
-        )
-
-        with caplog.at_level("INFO"):
-            api.ask("hello")
-
-        assert any("compaction occurred" in r.message and "comp_123" in r.message
-                   for r in caplog.records)
+        assert "context_management" not in sent_request(api)
