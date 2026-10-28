@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Dict, Optional, List, Union
 from pydantic import field_validator
 from pydantic.dataclasses import dataclass, Field
@@ -120,7 +120,7 @@ class ToolAbstract(ABC):
             normalized[distro] = commands
         return normalized
 
-    def resolve_commands(self, kind: str, get_distro_ids: Callable[[], Sequence[str]]) -> List[str]:
+    def resolve_commands(self, kind: str, distro_ids: Sequence[str]) -> List[str]:
         """Select the ``<kind>_commands`` to run on the target distro.
 
         A list applies to every distro.  For a map, the first entry matching the
@@ -133,8 +133,9 @@ class ToolAbstract(ABC):
         ----------
         kind : str
             ``"install"``, ``"verify"``, ``"setup"`` or ``"uninstall"``.
-        get_distro_ids : Callable[[], Sequence[str]]
-            Returns the target's distro IDs; only called for command maps.
+        distro_ids : Sequence[str]
+            The target's distro IDs (``ID`` then ``ID_LIKE``); empty when the
+            distro is unknown.  Only consulted for command maps.
 
         Returns
         -------
@@ -154,7 +155,7 @@ class ToolAbstract(ABC):
         if not spec:
             return []
 
-        ids = [i.lower() for i in get_distro_ids()]
+        ids = [i.lower() for i in distro_ids]
         for key in (*ids, GENERIC_COMMANDS_KEY):
             if key in spec:
                 return list(spec[key])

@@ -24,14 +24,14 @@ def _tool(cls=Tool, **commands):
 
 
 def _ids(*ids):
-    return Mock(return_value=list(ids))
+    return list(ids)
 
 
 class TestResolveCommands:
-    def test_list_is_generic_and_skips_distro_lookup(self):
-        lookup = _ids("azurelinux")
-        assert _tool(install_commands=["a", "b"]).resolve_commands("install", lookup) == ["a", "b"]
-        lookup.assert_not_called()
+    def test_list_is_generic_on_every_distro(self):
+        tool = _tool(install_commands=["a", "b"])
+        assert tool.resolve_commands("install", _ids("azurelinux")) == ["a", "b"]
+        assert tool.resolve_commands("install", _ids()) == ["a", "b"]
 
     @pytest.mark.parametrize("value", [None, [], {}])
     def test_empty_or_missing_commands_resolve_to_nothing(self, value):
@@ -166,4 +166,4 @@ def test_bundled_apt_tools_are_debian_only():
         tool = parse_tool_definition(name)
         assert set(tool.install_commands) == {"debian"}
         with pytest.raises(UnsupportedDistroError):
-            tool.resolve_commands("install", lambda: ["azurelinux"])
+            tool.resolve_commands("install", ["azurelinux"])

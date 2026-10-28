@@ -12,6 +12,9 @@ class CmdReturn:
 
 
 class Environment(ABC):
+    # Cached result of get_distro_ids(); None until /etc/os-release has been read.
+    _distro_ids: Optional[list[str]] = None
+
     @abstractmethod
     def start(self):
         pass
@@ -42,14 +45,12 @@ class Environment(ABC):
             ``ID`` followed by the ``ID_LIKE`` entries (for example
             ``["ubuntu", "debian"]``), or an empty list if unknown.
         """
-        cached = getattr(self, "_distro_ids", None)
-        if cached is None:
+        if self._distro_ids is None:
             ret = self.execute_privileged("cat /etc/os-release")
             if ret.return_code != 0:
                 return []
-            cached = distro_ids(parse_os_release(ret.stdout))
-            self._distro_ids = cached
-        return list(cached)
+            self._distro_ids = distro_ids(parse_os_release(ret.stdout))
+        return list(self._distro_ids)
 
     def copy_to_container(self, src_path: str, dest_path: str) -> bool:
         raise NotImplementedError(
