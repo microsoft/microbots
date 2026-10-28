@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from microbots.environment.local_docker import image_builder
+from microbots.environment.local_docker import shell_server
 
 
 pytestmark = pytest.mark.unit
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def shell(monkeypatch):
     spec = importlib.util.spec_from_file_location(
-        "ShellCommunicator", Path(image_builder.__file__).parent / "ShellCommunicator.py"
+        "ShellCommunicator", Path(shell_server.__file__).parent / "ShellCommunicator.py"
     )
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "ShellCommunicator", module)
@@ -39,7 +39,7 @@ def shell(monkeypatch):
 def unstarted_shell(monkeypatch):
     """A ShellCommunicator instance that has never had start_session() called."""
     spec = importlib.util.spec_from_file_location(
-        "ShellCommunicator", Path(image_builder.__file__).parent / "ShellCommunicator.py"
+        "ShellCommunicator", Path(shell_server.__file__).parent / "ShellCommunicator.py"
     )
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "ShellCommunicator", module)
