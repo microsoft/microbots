@@ -1,0 +1,51 @@
+name: azldev
+tool_type: internal
+description: Azure Linux Dev Tools (azldev) — manages Azure Linux components, locks, rendered specs and mock builds.
+
+# azldev drives mock for render/build, so also install the `mock` and `rpm` tool
+# definitions and create the bot with image=AZURELINUX_IMAGE (images module) and sudo_access=True.
+usage_instructions_to_llm: |
+  # `azldev` (Azure Linux Dev Tools) is installed, together with mock and rpm.
+  # Run it from the Azure Linux repo root (where azldev.toml lives) or pass
+  # `-C <repo-root>`. Follow the repository's AGENTS.md and azldev-* skills;
+  # they describe the supported workflows. Run azldev as yourself, never with sudo.
+  #
+  # Agent-friendly global flags: -q (quiet) and -O json (machine-readable output).
+  # Common commands:
+  #   azldev comp list -p <name> -q -O json     # inspect a component's config
+  #   azldev comp update -p <name>              # refresh locks/<name>.lock
+  #   azldev comp render -p <name>              # re-render specs/<c>/<name>/
+  #   azldev comp build -p <name>               # build RPMs with mock (slow)
+  #   azldev adv mock shell -p <rpm> <<'CMDS'   # smoke-test inside a mock chroot
+  #   ...commands...
+  #   CMDS
+  # Use `azldev <command> --help` for current syntax; the tool evolves quickly.
+  # render/build start mock chroots and download from the network; they may take minutes.
+  # End of instructions.
+
+install_commands:
+  azurelinux:
+    - tdnf install -y golang git ca-certificates
+    - &install_azldev |
+      set -e
+      # Prefer the azldev version pinned by a mounted Azure Linux repo.
+      version=""
+      for pin in /workdir/*/.azldev-version; do
+        if [ -f "$pin" ]; then version="$(tr -d '[:space:]' < "$pin")"; break; fi
+      done
+      # MS_GOTOOLCHAIN_ALLOW_NON_LOCAL lets Microsoft Go (Azure Linux) fetch a newer
+      # toolchain like upstream Go does, if azldev ever needs one.
+      export GOTOOLCHAIN=auto MS_GOTOOLCHAIN_ALLOW_NON_LOCAL=1
+      export GOPATH=/opt/go GOBIN=/usr/local/bin GOFLAGS=-buildvcs=false
+      go install "github.com/microsoft/azure-linux-dev-tools/cmd/azldev@${version:-latest}"
+  debian:
+    - rm -f /etc/apt/sources.list.d/yarn.list
+    - apt-get update -qq
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq golang-go git ca-certificates > /dev/null
+    - *install_azldev
+
+verify_commands:
+  - azldev --version
+
+uninstall_commands:
+  - rm -f /usr/local/bin/azldev
