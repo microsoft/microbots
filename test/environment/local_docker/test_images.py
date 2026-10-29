@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../src")))
 
 from microbots.environment.local_docker import shell_server
-from microbots.environment.local_docker.images import DEBIAN_IMAGE, DEFAULT_IMAGE
+from microbots.environment.local_docker.images import AZURELINUX_IMAGE, DEBIAN_IMAGE, DEFAULT_IMAGE
 
 pytestmark = pytest.mark.unit
 
@@ -21,6 +21,10 @@ PREPARE = Path(shell_server.__file__).parent / "prepare.sh"
 def test_default_image_is_stock_mcr_debian():
     assert DEFAULT_IMAGE == DEBIAN_IMAGE
     assert DEBIAN_IMAGE.startswith("mcr.microsoft.com/")
+
+
+def test_azurelinux_image_is_stock_mcr():
+    assert AZURELINUX_IMAGE == "mcr.microsoft.com/azurelinux/base/core:3.0"
 
 
 def test_prepare_script_is_executable_posix_sh():

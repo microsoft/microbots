@@ -184,7 +184,9 @@ jobs:
       - name: Pull the stock sandbox image for integration tests
         if: matrix.test-type != 'unit'
         # Sandboxes run this unmodified MCR image and are prepared on the fly.
-        run: docker pull mcr.microsoft.com/devcontainers/python:3.11
+        run: |
+          docker pull mcr.microsoft.com/devcontainers/python:3.11
+          docker pull mcr.microsoft.com/azurelinux/base/core:3.0
 
       - name: Check disk space before ollama installation
         if: matrix.test-type == 'ollama_local'

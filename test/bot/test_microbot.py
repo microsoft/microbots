@@ -1074,3 +1074,49 @@ Finish only when you have found all the requested information. Your final answer
                 f"LLM should have found that main() calls add_numbers. Got: {response.result}"
         finally:
             del bot
+
+
+@pytest.mark.unit
+class TestMicroBotImage:
+    """image selects the shell-server image of the auto-created environment."""
+
+    @pytest.mark.parametrize("image, expected", [
+        (None, "mcr.microsoft.com/devcontainers/python:3.11"),
+        ("mcr.microsoft.com/azurelinux/base/core:3.0", "mcr.microsoft.com/azurelinux/base/core:3.0"),
+    ])
+    def test_forwarded_to_auto_created_environment(self, image, expected):
+        with patch("microbots.MicroBot.LocalDockerEnvironment") as lde, \
+             patch("microbots.MicroBot.get_free_port", return_value=4242), \
+             patch.object(MicroBot, "_create_llm"):
+            bot = MicroBot(model="azure-openai/test-deploy", image=image)
+
+        assert bot.image == expected
+        lde.assert_called_once_with(port=4242, folder_to_mount=None, image=expected)
+
+    def test_rejects_image_with_provided_environment(self):
+        with patch.object(MicroBot, "_create_llm"), \
+             pytest.raises(ValueError, match="Pass either `image` or `environment`"):
+            MicroBot(model="azure-openai/test-deploy", environment=MagicMock(), image="custom/shell:dev")
+
+    def test_provided_environment_is_used_as_is(self):
+        env = MagicMock()
+        with patch.object(MicroBot, "_create_environment") as create_env, \
+             patch.object(MicroBot, "_create_llm"):
+            bot = MicroBot(model="azure-openai/test-deploy", environment=env)
+        assert bot.environment is env
+        create_env.assert_not_called()
+
+    @pytest.mark.parametrize("bot_name, kwargs", [
+        ("ReadingBot", {"folder_to_mount": "/tmp/repo"}),
+        ("WritingBot", {"folder_to_mount": "/tmp/repo"}),
+        ("LogAnalysisBot", {"folder_to_mount": "/tmp/repo"}),
+        ("BrowsingBot", {}),
+        ("AgentBoss", {"folder_to_mount": "/tmp/repo"}),
+    ])
+    @pytest.mark.parametrize("image", [None, "custom/shell:dev"])
+    def test_subclasses_forward_image(self, bot_name, kwargs, image):
+        import microbots.bot as bots
+
+        with patch.object(MicroBot, "__init__", return_value=None) as base_init:
+            getattr(bots, bot_name)(model="azure-openai/test-deploy", image=image, **kwargs)
+        assert base_init.call_args.kwargs["image"] == image

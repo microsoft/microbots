@@ -11,6 +11,25 @@ BROWSER_USE_TOOL = parse_tool_definition("browser-use.yaml")
 
 
 class BrowsingBot(MicroBot):
+    """
+    A bot that searches the web with the ``browser`` tool.
+
+    Parameters
+    ----------
+    model : str
+        The model to use, in the format ``<provider>/<model_name>``.
+    environment : Optional[Environment]
+        The execution environment for the bot. If not provided, a default
+        environment is created. Defaults to None.
+    additional_tools : Optional[list[ToolAbstract]]
+        Extra tools to install alongside the browser tool. Defaults to None.
+    token_provider : Optional[any]
+        A callable that returns a bearer token for Azure AD authentication.
+        Defaults to None.
+    image : Optional[str]
+        Shell-server image of the auto-created environment. The browser tool
+        only supports Debian-based images (the default). Defaults to None.
+    """
 
     def __init__(
         self,
@@ -18,6 +37,7 @@ class BrowsingBot(MicroBot):
         environment: Optional[Environment] = None,
         additional_tools: Optional[list[ToolAbstract]] = None,
         token_provider: Optional[any] = None,
+        image: Optional[str] = None,
     ):
         # validate init values before assigning
         bot_type = BotType.BROWSING_BOT
@@ -32,6 +52,7 @@ class BrowsingBot(MicroBot):
             environment=environment,
             additional_tools=(additional_tools or []) + [BROWSER_USE_TOOL],
             token_provider=token_provider,
+            image=image,
         )
 
     def run(self, task, timeout_in_seconds=200) -> BotRunResult:

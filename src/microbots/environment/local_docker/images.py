@@ -15,4 +15,8 @@ when needed; it is never configured separately.
 # Debian with Python and a full developer toolset (git, curl, build tools).
 DEBIAN_IMAGE = "mcr.microsoft.com/devcontainers/python:3.11"
 
+# Azure Linux 3. Minimal: Python and the user tools are installed on the fly
+# (with tdnf), and its repos package RPM tooling such as mock and rpm-build.
+AZURELINUX_IMAGE = "mcr.microsoft.com/azurelinux/base/core:3.0"
+
 DEFAULT_IMAGE = DEBIAN_IMAGE

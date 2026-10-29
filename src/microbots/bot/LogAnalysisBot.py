@@ -43,6 +43,9 @@ class LogAnalysisBot(MicroBot):
     token_provider : Optional[any]
         An optional callable that supplies authentication tokens for the
         model provider. Defaults to None.
+    image : Optional[str]
+        Shell-server image of the auto-created environment, for example
+        ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
 
     Attributes
     ----------
@@ -76,6 +79,7 @@ class LogAnalysisBot(MicroBot):
         environment: Optional[any] = None,
         additional_tools: Optional[list[ToolAbstract]] = None,
         token_provider: Optional[any] = None,
+        image: Optional[str] = None,
     ):
         """
         Initialize a LogAnalysisBot instance.
@@ -97,6 +101,9 @@ class LogAnalysisBot(MicroBot):
         token_provider : Optional[any]
             An optional callable that supplies authentication tokens for the
             model provider. Defaults to None.
+        image : Optional[str]
+            Shell-server image of the auto-created environment, for example
+            ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
         """
         # validate init values before assigning
         bot_type = BotType.LOG_ANALYSIS_BOT
@@ -124,6 +131,7 @@ Only when you have run all necessary commands and identified the root cause, you
             additional_tools=additional_tools or [],
             folder_to_mount=folder_mount_info,
             token_provider=token_provider,
+            image=image,
         )
 
     def run(
