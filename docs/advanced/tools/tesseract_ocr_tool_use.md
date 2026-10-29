@@ -29,10 +29,10 @@ A tool YAML file supports the following fields:
 | `name` | Yes | Unique identifier for the tool |
 | `tool_type` | Yes | `internal` (runs in sandbox) or `external` (runs on host) |
 | `description` | Yes | Short description of the tool |
-| `install_commands` | No | Shell commands to install the tool. Executed when the Environment is set up |
-| `verify_commands` | No | Commands to confirm installation succeeded |
-| `setup_commands` | No | Commands executed after code is mounted, before the LLM runs |
-| `uninstall_commands` | No | Cleanup commands run during environment teardown. Can be omitted if the environment is not reused |
+| `install_commands` | No | Shell commands to install the tool. Executed when the Environment is set up. A list, or a map of [distro-specific commands](#distro-specific-commands) |
+| `verify_commands` | No | Commands to confirm installation succeeded. A list or a distro map |
+| `setup_commands` | No | Commands executed after code is mounted, before the LLM runs. A list or a distro map |
+| `uninstall_commands` | No | Cleanup commands run during environment teardown. Can be omitted if the environment is not reused. A list or a distro map |
 | `env_variables` | No | Environment variables to copy from the host into the sandbox |
 | `files_to_copy` | No | Files to copy into the environment with explicit permissions |
 | `parameters` | No | Parameter schema exposed to the LLM |
@@ -49,6 +49,31 @@ Following the table of fields above, create a file called `tesseract_ocr.yaml`:
 ```
 
 Because `tool_type` is `internal`, every command in `install_commands` executes **inside the Docker sandbox**. The `apt-get install` never touches your host — even if it fails, only the disposable container is affected.
+
+### Distro-specific commands
+
+`apt-get` only exists on Debian-based sandboxes, so the example keys its `install_commands` by distro. Each `*_commands` field accepts either form:
+
+- **A list**: generic commands that run on every distro.
+- **A map**: keys are distro IDs, as in the sandbox's `/etc/os-release` (for example `debian` or `azurelinux`), and/or `generic`.
+
+For a map, Microbots reads the sandbox's `/etc/os-release` and picks the first entry that matches its `ID`, then its `ID_LIKE` entries (so `debian` also covers Ubuntu), and finally `generic`.
+
+- **Known distro, no match:** installation fails with `UnsupportedDistroError` before any command runs.
+- **Distro can't be detected:** Microbots logs a warning and runs `generic`, or the first entry in the map. If those commands don't suit the image, the failing command reports the problem.
+
+```yaml
+install_commands:
+  debian:
+    - apt-get update
+    - apt-get install -y tesseract-ocr
+  azurelinux:
+    - tdnf install -y tesseract
+verify_commands:          # a list applies to every distro
+  - tesseract --version
+```
+
+External tools resolve the map against the host's `/etc/os-release`.
 
 The `usage_instructions_to_llm` block is injected verbatim into the LLM's system prompt. Write it as if you are explaining the tool to a colleague who has shell access but has never used it before.
 

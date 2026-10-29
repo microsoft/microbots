@@ -11,11 +11,14 @@ files_to_copy:
     dest: /sbin/browser
     permissions: 7  # rwx
 
+# `playwright install --with-deps` installs browser libraries with apt-get, so
+# only Debian-based sandboxes are supported.
 install_commands:
-  # Install it system-wide using pip
-  - pip install --no-input browser-use==0.5.4 playwright
-  - playwright install --with-deps
-  - playwright install chromium --with-deps --no-shell
+  debian:
+    # Install it system-wide using pip
+    - pip install --no-input browser-use==0.5.4 playwright
+    - playwright install --with-deps
+    - playwright install chromium --with-deps --no-shell
 
 setup_commands:
   - cat /sbin/browser

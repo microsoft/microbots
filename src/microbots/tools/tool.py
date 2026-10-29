@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List
+from collections.abc import Sequence
+from typing import Dict, Optional, List, Union
+from pydantic import field_validator
 from pydantic.dataclasses import dataclass, Field
 import logging
 from enum import Enum
@@ -9,6 +11,19 @@ from microbots.environment.Environment import Environment
 from microbots.constants import TOOL_FILE_BASE_PATH
 
 logger = logging.getLogger(" 🔧 Tool")
+
+
+# Key of a command map whose commands apply to any distro without its own entry.
+GENERIC_COMMANDS_KEY = "generic"
+
+# A command field is either a list (generic: runs on every distro) or a map
+# from distro ID (as in /etc/os-release, e.g. "debian", "azurelinux") and/or
+# "generic" to the commands for that distro.
+ToolCommands = Union[List[str], Dict[str, List[str]]]
+
+
+class UnsupportedDistroError(RuntimeError):
+    """Raised when a tool defines no commands for the target distro."""
 
 
 class TOOLTYPE(str, Enum):
@@ -63,7 +78,9 @@ class ToolAbstract(ABC):
     # while commands for external tools will be executed in the current environment (Host).
     # So, you should be careful about it as it is making changes to your system.
     # These commands will be executed in the order they are provided.
-    install_commands: Optional[List[str]] = Field(default_factory=list)
+    # Every *_commands field takes either a list (generic, any distro) or a map
+    # keyed by distro ID and/or "generic"; see resolve_commands().
+    install_commands: Optional[ToolCommands] = Field(default_factory=list)
 
     # Optional parameters for the tool
     parameters: Optional[dict] = Field(default_factory=dict)
@@ -75,15 +92,85 @@ class ToolAbstract(ABC):
 
     # This set of commands will be executed to verify if the tool is installed correctly.
     # If any of these commands fail, the tool installation is considered to have failed.
-    verify_commands: Optional[List[str]] = Field(default_factory=list)
+    verify_commands: Optional[ToolCommands] = Field(default_factory=list)
 
     # This set of commands will be executed after the code is copied to the environment
     # and before the llm is invoked.
     # For internal tools, these commands will be executed inside the mounted folder.
-    setup_commands: Optional[List[str]] = Field(default_factory=list)
+    setup_commands: Optional[ToolCommands] = Field(default_factory=list)
 
     # This set of commands will be executed when the environment is being torn down.
-    uninstall_commands: Optional[List[str]] = Field(default_factory=list)
+    uninstall_commands: Optional[ToolCommands] = Field(default_factory=list)
+
+    @field_validator(
+        "install_commands", "verify_commands", "setup_commands", "uninstall_commands"
+    )
+    @classmethod
+    def _normalize_command_map(cls, value):
+        """Lower-case distro keys of a command map and reject empty/duplicate keys."""
+        if not isinstance(value, dict):
+            return value
+        normalized = {}
+        for key, commands in value.items():
+            distro = key.strip().lower()
+            if not distro:
+                raise ValueError("command map keys must be non-empty distro IDs or 'generic'")
+            if distro in normalized:
+                raise ValueError(f"duplicate command map key {key!r}")
+            normalized[distro] = commands
+        return normalized
+
+    def resolve_commands(self, kind: str, distro_ids: Sequence[str]) -> List[str]:
+        """Select the ``<kind>_commands`` to run on the target distro.
+
+        A list applies to every distro.  For a map, the first entry matching the
+        distro IDs (``ID`` then ``ID_LIKE``) wins, then ``generic``.  When the
+        distro cannot be determined (no ``/etc/os-release``), ``generic`` is
+        used, else the first entry in the map; a failing command is then the
+        last line of defence.
+
+        Parameters
+        ----------
+        kind : str
+            ``"install"``, ``"verify"``, ``"setup"`` or ``"uninstall"``.
+        distro_ids : Sequence[str]
+            The target's distro IDs (``ID`` then ``ID_LIKE``); empty when the
+            distro is unknown.  Only consulted for command maps.
+
+        Returns
+        -------
+        List[str]
+            The commands to run, in order (possibly empty).
+
+        Raises
+        ------
+        UnsupportedDistroError
+            If the distro is known but the command map has neither a matching
+            entry nor ``generic``.
+        """
+        spec = getattr(self, f"{kind}_commands") or []
+        if isinstance(spec, list):
+            return list(spec)
+
+        if not spec:
+            return []
+
+        ids = [i.lower() for i in distro_ids]
+        for key in (*ids, GENERIC_COMMANDS_KEY):
+            if key in spec:
+                return list(spec[key])
+        if not ids:
+            fallback = next(iter(spec))
+            logger.warning(
+                "⚠️  Could not detect the distro for tool '%s'; trying its '%s' %s commands",
+                self.name, fallback, kind,
+            )
+            return list(spec[fallback])
+        raise UnsupportedDistroError(
+            f"Tool '{self.name}' has no {kind} commands for distro "
+            f"{'/'.join(ids)}; it defines {sorted(spec)}. "
+            f"Add a '{ids[0]}' or '{GENERIC_COMMANDS_KEY}' entry."
+        )
 
     def is_invoked(self, command: str) -> bool:
         return False  # Default implementation, override in subclasses if needed

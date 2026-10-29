@@ -7,6 +7,7 @@ from pydantic.dataclasses import dataclass, Field
 
 from microbots.tools.tool import TOOLTYPE, ToolAbstract, EnvFileCopies
 from microbots.environment.Environment import Environment
+from microbots.utils.os_release import host_distro_ids
 
 logger = logging.getLogger(" 🔧 ExternalTool")
 
@@ -110,7 +111,8 @@ class ExternalTool(ToolAbstract):
         """Install the tool by running install commands on the **host**.
          Files listed in ``files_to_copy`` are also copied to the host."""
         logger.debug("Installing external tool on host: %s", self.name)
-        for command in self.install_commands or []:
+        distro_ids = host_distro_ids()
+        for command in self.resolve_commands("install", distro_ids):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
@@ -128,7 +130,8 @@ class ExternalTool(ToolAbstract):
     def verify_tool_installation(self, env: Environment):
         """Verify the tool by running verify commands on the **host**."""
         logger.debug("Verifying installation of external tool: %s", self.name)
-        for command in self.verify_commands or []:
+        distro_ids = host_distro_ids()
+        for command in self.resolve_commands("verify", distro_ids):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
@@ -150,7 +153,8 @@ class ExternalTool(ToolAbstract):
         """
         self._verify_env_variables()
 
-        for command in self.setup_commands or []:
+        distro_ids = host_distro_ids()
+        for command in self.resolve_commands("setup", distro_ids):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(
@@ -181,7 +185,8 @@ class ExternalTool(ToolAbstract):
                     dest, self.name,
                 )
 
-        for command in self.uninstall_commands or []:
+        distro_ids = host_distro_ids()
+        for command in self.resolve_commands("uninstall", distro_ids):
             result = self._run_host_command(command)
             if result.returncode != 0:
                 logger.error(

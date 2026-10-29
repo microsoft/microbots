@@ -54,9 +54,12 @@ usage_instructions_to_llm: |
 
   # End of non-interactive instructions.
 
+# Commands are keyed by distro (/etc/os-release ID); installation fails on
+# distros without an entry.
 install_commands:
-  - apt-get update
-  - apt-get install -y cscope
+  debian:
+    - apt-get update
+    - apt-get install -y cscope
 
 verify_commands:
   - cscope -V
@@ -66,5 +69,6 @@ setup_commands:
   - cscope -bR
 
 uninstall_commands:
-  - apt-get remove -y cscope
-  - apt-get autoremove -y
+  debian:
+    - apt-get remove -y cscope
+    - apt-get autoremove -y

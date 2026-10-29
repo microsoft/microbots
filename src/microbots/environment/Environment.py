@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Optional
 from dataclasses import dataclass
 
+from microbots.utils.os_release import distro_ids, parse_os_release
+
 @dataclass
 class CmdReturn:
     stdout: str
@@ -10,6 +12,9 @@ class CmdReturn:
 
 
 class Environment(ABC):
+    # Cached result of get_distro_ids(); None until /etc/os-release has been read.
+    _distro_ids: Optional[list[str]] = None
+
     @abstractmethod
     def start(self):
         pass
@@ -27,6 +32,25 @@ class Environment(ABC):
         than the bot's own channel. Defaults to the bot channel.
         Override this one while implementing custom Environment subclasses."""
         return self.execute(command, timeout=timeout, sensitive=sensitive)
+
+    def get_distro_ids(self) -> list[str]:
+        """Identify the environment's Linux distribution from ``/etc/os-release``.
+
+        Tools use these identifiers to pick distro-specific commands.  The
+        result is cached after the first successful lookup.
+
+        Returns
+        -------
+        list[str]
+            ``ID`` followed by the ``ID_LIKE`` entries (for example
+            ``["ubuntu", "debian"]``), or an empty list if unknown.
+        """
+        if self._distro_ids is None:
+            ret = self.execute_privileged("cat /etc/os-release")
+            if ret.return_code != 0:
+                return []
+            self._distro_ids = distro_ids(parse_os_release(ret.stdout))
+        return list(self._distro_ids)
 
     def copy_to_container(self, src_path: str, dest_path: str) -> bool:
         raise NotImplementedError(
