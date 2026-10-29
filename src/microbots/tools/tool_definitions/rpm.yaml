@@ -1,0 +1,41 @@
+name: rpm
+tool_type: internal
+description: RPM package tooling (rpm, rpmbuild, rpmspec, rpm2cpio, createrepo_c) for inspecting and building RPM packages.
+
+usage_instructions_to_llm: |
+  # RPM tooling is installed: rpm, rpmbuild, rpmspec, rpm2cpio, cpio and createrepo_c.
+  # Use them to inspect packages and spec files. Build and smoke-test packages
+  # inside a mock chroot instead of on the sandbox itself.
+  #
+  # Examples:
+  #   rpm -qpi <file.rpm>                  # package metadata
+  #   rpm -qlp <file.rpm>                  # files in a package
+  #   rpm -qp --requires <file.rpm>        # runtime dependencies
+  #   rpm2cpio <file.rpm> | cpio -idmv     # extract a package into the current directory
+  #   rpmspec -q --srpm --qf '%{VERSION}-%{RELEASE}\n' <file.spec>
+  #   createrepo_c <dir-with-rpms>         # build a local repo
+  #
+  # Never install a built RPM on the sandbox itself with `rpm -i`.
+  # End of instructions.
+
+install_commands:
+  azurelinux:
+    - tdnf install -y rpm rpm-build createrepo_c cpio
+  debian:
+    # Stale third-party apt sources with expired keys would break apt-get update.
+    - rm -f /etc/apt/sources.list.d/yarn.list
+    - apt-get update -qq
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rpm rpm2cpio cpio python3-rpm createrepo-c > /dev/null
+
+verify_commands:
+  - rpm --version
+  - rpmbuild --version
+  - rpmspec --version
+  - createrepo_c --version
+
+uninstall_commands:
+  azurelinux:
+    - tdnf remove -y rpm-build createrepo_c
+  debian:
+    - apt-get remove -y rpm rpm2cpio python3-rpm createrepo-c
+    - apt-get autoremove -y

@@ -38,6 +38,50 @@ class TestParseToolDefinitionValidYaml:
         assert tool.name == "browser-use"
         assert tool.tool_type == TOOLTYPE.INTERNAL
 
+    @pytest.mark.parametrize(
+        "yaml_name, verify_binary",
+        [("rpm.yaml", "rpm"), ("mock.yaml", "mock"), ("azldev.yaml", "azldev")],
+    )
+    def test_parse_azure_linux_build_tool_yamls(self, yaml_name, verify_binary):
+        """The Azure Linux build tools parse and support Azure Linux."""
+        tool = parse_tool_definition(yaml_name)
+        assert isinstance(tool, Tool)
+        assert tool.name == yaml_name.removesuffix(".yaml")
+        assert tool.usage_instructions_to_llm.strip()
+        install = tool.resolve_commands("install", ["azurelinux"])
+        verify = tool.resolve_commands("verify", ["azurelinux"])
+        assert install and all(isinstance(c, str) and c.strip() for c in install + verify)
+        assert install[0].startswith("tdnf install -y")
+        assert any(c.startswith(f"{verify_binary} --version") for c in verify)
+
+    def test_mock_yaml_is_azure_linux_only_and_runs_through_mock_group(self):
+        from microbots.tools.tool import UnsupportedDistroError
+
+        tool = parse_tool_definition("mock.yaml")
+        with pytest.raises(UnsupportedDistroError):
+            tool.resolve_commands("install", ["debian"])
+        install = tool.resolve_commands("install", ["azurelinux"])
+        assert install[0] == "tdnf install -y mock mock-rpmautospec"
+        assert "usermod -aG mock agent" in install[1]
+        # No root wrapper: the agent runs mock itself through the mock group.
+        assert not any("/usr/bin/mock" in c for c in install)
+        verify = tool.resolve_commands("verify", ["azurelinux"])
+        assert "NoNewPrivs" in verify[0] and "sudo_access=True" in verify[0]
+        # Verify commands share the bot's persistent shell, so they must never `exit`.
+        assert "exit" not in verify[0]
+
+    def test_azldev_yaml_shares_install_steps_across_distros(self):
+        tool = parse_tool_definition("azldev.yaml")
+        azl = tool.resolve_commands("install", ["azurelinux"])
+        deb = tool.resolve_commands("install", ["ubuntu", "debian"])
+        assert azl[-1] == deb[-1]
+        install = azl[-1]
+        assert "/workdir/*/.azldev-version" in install
+        assert "azldev@${version:-latest}" in install
+        assert "GOBIN=/usr/local/bin" in install
+        # azldev runs as the agent, so it needs no root override.
+        assert not any("AZLDEV_ALLOW_ROOT" in c for c in azl + deb)
+
     def test_parse_absolute_path(self, tmp_path):
         """Test parsing with absolute path works correctly."""
         yaml_content = """
