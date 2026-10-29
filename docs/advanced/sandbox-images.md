@@ -45,3 +45,23 @@ env = LocalDockerEnvironment(port=8080, image="mcr.microsoft.com/devcontainers/b
 ## Tools and distros
 
 You never declare the sandbox's distribution. Tools read it from the running container's `/etc/os-release` and pick their [distro-specific commands](tools/tesseract_ocr_tool_use.md#distro-specific-commands) from it. A tool that only defines `debian` commands, such as `cscope` or `browser-use`, fails to install on the Azure Linux image with `UnsupportedDistroError`.
+
+## Sudo access
+
+By default the sandbox shell drops to an unprivileged `agent` account that has your host user's uid, and the container blocks privilege escalation (`no-new-privileges`). Some tools, such as `mock`, need root for part of their work. Pass `sudo_access=True` to any bot or to `LocalDockerEnvironment` to give the agent passwordless `sudo`:
+
+```python
+bot = WritingBot(
+    model="azure-openai/your-deployment",
+    folder_to_mount="/path/to/repo",
+    image=AZURELINUX_IMAGE,
+    sudo_access=True,
+)
+```
+
+- The agent's commands still run as your uid unless it explicitly uses `sudo`, so files it writes in a `READ_WRITE` mount stay owned by you. Files it writes through `sudo` are owned by root and are left that way.
+- `sudo_access` applies to the environment the bot creates. If you pass your own `environment`, create it with `LocalDockerEnvironment(..., sudo_access=True)`.
+- The container is started without `no-new-privileges`, so `sudo` and setuid helpers (such as `mock`'s launcher) work. If `sudo` doesn't work in the image, the environment fails to start with a `RuntimeError`.
+
+!!! warning
+    Sudo access turns the sandbox into a guardrail rather than an isolation boundary. Through `sudo` the agent has root with the container's `SYS_ADMIN` capability and AppArmor unconfined, so it can mount filesystems and reach host-wide kernel interfaces (for example `core_pattern` or a cgroup `release_agent`). A misbehaving or prompt-injected agent could therefore remount a `READ_ONLY` mount as writable, or gain root on the host. A `READ_ONLY` mount still works for a cooperative agent, and its changes are discarded with the sandbox. Enable sudo access only for trusted tasks and trusted repositories, skills, and instructions.

@@ -158,6 +158,11 @@ class MicroBot:
         image : Optional[str]
             Shell-server image of the auto-created environment, for example
             ``images.AZURELINUX_IMAGE``. Defaults to None (``DEFAULT_IMAGE``).
+        sudo_access : bool
+            Give the sandbox's agent account passwordless ``sudo`` (needed by
+            tools such as ``mock``). Applies to the auto-created environment;
+            a provided ``environment`` must already have sudo access.
+            Defaults to False.
     """
 
     def __init__(
@@ -170,6 +175,7 @@ class MicroBot:
         folder_to_mount: Optional[Mount] = None,
         token_provider: Optional[any] = None,
         image: Optional[str] = None,
+        sudo_access: bool = False,
     ):
         """
         Init function for MicroBot class.
@@ -205,12 +211,27 @@ class MicroBot:
                 Shell-server image of the auto-created environment, for example
                 ``images.AZURELINUX_IMAGE``. Defaults to None (``DEFAULT_IMAGE``).
                 Cannot be combined with ``environment``.
+            sudo_access : bool
+                Give the sandbox's ``agent`` account (the host user's uid)
+                passwordless ``sudo``. Needed by tools such as ``mock``.
+                Applies to the auto-created environment; a provided
+                ``environment`` must already have been created with
+                ``sudo_access=True``. Defaults to False.
 
         Raises
         ------
             ValueError
-                If both ``image`` and ``environment`` are provided.
+                If both ``image`` and ``environment`` are provided, or if
+                ``sudo_access`` is requested with an ``environment`` that does
+                not grant sudo access.
         """
+
+        if sudo_access and environment is not None and not getattr(environment, "sudo_access", False):
+            raise ValueError(
+                "sudo_access=True requires the provided environment to be created "
+                "with LocalDockerEnvironment(..., sudo_access=True)."
+            )
+        self.sudo_access = sudo_access
 
         if image is not None and environment is not None:
             raise ValueError(
@@ -510,6 +531,7 @@ class MicroBot:
             port=free_port,
             folder_to_mount=folder_to_mount,
             image=self.image,
+            sudo_access=self.sudo_access,
         )
 
     def _create_llm(self):
