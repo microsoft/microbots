@@ -34,17 +34,19 @@ Prerequisites:
 """
 
 import asyncio
+import inspect
 import os
 import time
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from logging import getLogger
-from typing import Optional
+from typing import Any, Optional
 
 from microbots.constants import (
     DOCKER_WORKING_DIR,
     PermissionLabels,
 )
+from microbots.environment.local_docker.images import DEFAULT_IMAGE
 from microbots.environment.local_docker.LocalDockerEnvironment import (
     LocalDockerEnvironment,
 )
@@ -65,6 +67,96 @@ _CLI_STARTUP_TIMEOUT = 60
 
 # copilot-cli port inside the container
 _CONTAINER_CLI_PORT = 4321
+
+# ``create_session`` arguments CopilotBot sets itself, mapped to where callers
+# configure them instead of ``session_options``.
+_RESERVED_SESSION_OPTIONS = {
+    "model": "the 'model' argument (or COPILOT_BYOK_MODEL)",
+    "provider": "the BYOK arguments (api_key, bearer_token, base_url, provider_type, ...)",
+    "streaming": "run(streaming=...)",
+    "hooks": "nothing — CopilotBot uses them for tool-call logging",
+    "system_message": "folder_to_mount / additional_tools usage instructions",
+}
+
+
+def _validate_session_options(
+    session_options: Optional[Mapping[str, Any]],
+    create_session: Callable,
+) -> dict[str, Any]:
+    """Return a copy of *session_options* after checking each key is an
+    argument of the SDK's ``create_session`` that CopilotBot does not own.
+
+    Parameters
+    ----------
+    session_options : Optional[Mapping[str, Any]]
+        Keyword arguments destined for ``create_session``.
+    create_session : Callable
+        The SDK's ``create_session`` whose signature defines accepted keys.
+
+    Returns
+    -------
+    dict[str, Any]
+        A shallow copy of the options, or an empty dict when *None*.
+
+    Raises
+    ------
+    TypeError
+        If *session_options* is not a mapping.
+    ValueError
+        If a key is managed by CopilotBot or unknown to the installed SDK.
+    """
+    if session_options is None:
+        return {}
+    if not isinstance(session_options, Mapping):
+        raise TypeError("session_options must be a mapping of create_session keyword arguments.")
+
+    for key in session_options:
+        if key in _RESERVED_SESSION_OPTIONS:
+            raise ValueError(
+                f"session_options cannot set '{key}'; it is managed by CopilotBot "
+                f"via {_RESERVED_SESSION_OPTIONS[key]}."
+            )
+
+    accepted = {
+        name
+        for name, param in inspect.signature(create_session).parameters.items()
+        if param.kind in (param.KEYWORD_ONLY, param.POSITIONAL_OR_KEYWORD) and name != "self"
+    }
+    unknown = sorted(set(session_options) - accepted)
+    if unknown:
+        raise ValueError(
+            f"Unsupported session_options {unknown} for the installed github-copilot-sdk. "
+            f"Supported options: {sorted(accepted - set(_RESERVED_SESSION_OPTIONS))}"
+        )
+    return dict(session_options)
+
+
+# copilot-cli needs Node.js 22+; how to get it differs per sandbox distro.
+# NOTE: Pinning to 1.0.39 which is the latest @github/copilot release compatible with github-copilot-sdk==0.3.0 as of May 2026.
+_COPILOT_CLI_PACKAGE = "@github/copilot@1.0.39"
+_NODE_INSTALL_COMMANDS = {
+    "debian": [
+        # Remove stale third-party repos that may have expired GPG keys
+        "rm -f /etc/apt/sources.list.d/yarn.list",
+        "apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null 2>&1",
+        "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1",
+        "apt-get install -y -qq nodejs > /dev/null 2>&1",
+    ],
+    # Azure Linux 3 only packages Node.js 20: install the official Node.js 22
+    # build, verified against the release's SHASUMS256.txt.
+    "azurelinux": [
+        "tdnf install -y curl ca-certificates tar xz > /dev/null",
+        "set -e; base=https://nodejs.org/dist/latest-v22.x; "
+        "case \"$(uname -m)\" in x86_64) arch=x64;; aarch64) arch=arm64;; *) arch=$(uname -m);; esac; "
+        "cd /tmp; curl -fsSL \"$base/SHASUMS256.txt\" -o SHASUMS256.txt; "
+        "tarball=$(grep -o \"node-v22[^ ]*-linux-$arch.tar.xz\" SHASUMS256.txt | head -1); "
+        "curl -fsSL \"$base/$tarball\" -o \"$tarball\"; "
+        "grep \" $tarball\\$\" SHASUMS256.txt | sha256sum -c - > /dev/null; "
+        "tar -xJf \"$tarball\" -C /usr/local --strip-components=1 --no-same-owner; "
+        "rm -f \"$tarball\" SHASUMS256.txt",
+    ],
+}
+
 
 # Environment variable names for BYOK configuration
 _BYOK_ENV_PROVIDER_TYPE = "COPILOT_BYOK_PROVIDER_TYPE"
@@ -308,6 +400,21 @@ class CopilotBot:
         tasks and repositories.
         Applies to the auto-created environment; a passed-in ``environment``
         must already have been created with ``sudo_access=True``.
+    image : Optional[str]
+        Shell-server image of the auto-created environment, for example
+        ``images.AZURELINUX_IMAGE``.  Defaults to the Debian image.  Cannot
+        be combined with ``environment``.  copilot-cli is installed to suit
+        the image's distro (from its ``/etc/os-release``).
+    session_options : Optional[Mapping[str, Any]]
+        Extra keyword arguments forwarded to the SDK's
+        ``CopilotClient.create_session`` for every run — for example
+        ``skill_directories``, ``disabled_skills``, ``custom_agents``,
+        ``mcp_servers``, ``working_directory``, ``enable_config_discovery``,
+        ``reasoning_effort`` or ``on_permission_request``.  Paths are
+        resolved inside the sandbox (the mounted folder lives at
+        ``/workdir/<folder name>``).  ``model``, ``provider``,
+        ``streaming``, ``hooks`` and ``system_message`` are managed by
+        CopilotBot and rejected here.  ``run()`` accepts per-run overrides.
     """
 
     def __init__(
@@ -326,6 +433,8 @@ class CopilotBot:
         azure_api_version: Optional[str] = None,
         token_provider: Optional[Callable[[], str]] = None,
         sudo_access: bool = False,
+        image: Optional[str] = None,
+        session_options: Optional[Mapping[str, Any]] = None,
     ):
         try:
             from copilot import CopilotClient, ExternalServerConfig
@@ -334,6 +443,19 @@ class CopilotBot:
                 "CopilotBot requires the github-copilot-sdk package. "
                 "Install with: pip install microbots[ghcp]"
             )
+
+        self._sdk_create_session = CopilotClient.create_session
+        self.session_options = _validate_session_options(
+            session_options, self._sdk_create_session
+        )
+        self.invoked_skills: list[str] = []
+
+        if image is not None and environment is not None:
+            raise ValueError(
+                "Pass either `image` or `environment`, not both: the image of a "
+                "provided environment is chosen when that environment is created."
+            )
+        self.image = image or DEFAULT_IMAGE
 
         # ``PermissionHandler`` lives in ``copilot.session`` in
         # github-copilot-sdk >= 0.3.0 and in ``copilot.types`` in older
@@ -440,6 +562,7 @@ class CopilotBot:
         additional_mounts: Optional[list[Mount]] = None,
         timeout_in_seconds: int = 600,
         streaming: bool = False,
+        session_options: Optional[Mapping[str, Any]] = None,
     ) -> BotRunResult:
         """Send *task* to the Copilot agent and wait for completion.
 
@@ -457,6 +580,9 @@ class CopilotBot:
             Maximum wall-clock time for the agent run.
         streaming : bool
             Whether to enable streaming delta events (logged at DEBUG level).
+        session_options : Optional[Mapping[str, Any]]
+            Per-run ``create_session`` arguments, merged over (and taking
+            precedence on) the constructor's ``session_options``.
 
         Returns
         -------
@@ -465,6 +591,12 @@ class CopilotBot:
             or status=False with an error description.
         """
         logger.info("🚀 Starting CopilotBot run — task: %.120s...", task)
+
+        run_session_options = {
+            **self.session_options,
+            **_validate_session_options(session_options, self._sdk_create_session),
+        }
+        self.invoked_skills = []
 
         # Setup additional tools (env vars, files, setup_commands)
         for tool in self.additional_tools:
@@ -485,6 +617,7 @@ class CopilotBot:
                     system_content=system_content,
                     timeout=timeout_in_seconds,
                     streaming=streaming,
+                    session_options=run_session_options,
                 )
             )
             logger.info("✅ CopilotBot run completed successfully")
@@ -536,6 +669,7 @@ class CopilotBot:
         self.environment = LocalDockerEnvironment(
             port=free_port,
             folder_to_mount=self.folder_to_mount,
+            image=self.image,
             sudo_access=self.sudo_access,
         )
 
@@ -543,17 +677,9 @@ class CopilotBot:
         """Install copilot-cli inside the Docker container."""
         logger.info("📦 Installing copilot-cli inside container...")
 
-        # Install Node.js (required for copilot-cli via npm)
         install_commands = [
-            # Remove stale third-party repos that may have expired GPG keys
-            "rm -f /etc/apt/sources.list.d/yarn.list",
-            # Install Node.js 22.x (copilot-cli requires Node 22+)
-            "apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null 2>&1",
-            "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1",
-            "apt-get install -y -qq nodejs > /dev/null 2>&1",
-            # Install copilot-cli globally
-            # NOTE: Pinning to 1.0.39 which is the latest @github/copilot release compatible with github-copilot-sdk==0.3.0 as of May 2026.
-            "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1",
+            *self._node_install_commands(),
+            f"npm install -g {_COPILOT_CLI_PACKAGE} > /dev/null 2>&1",
         ]
 
         for cmd in install_commands:
@@ -571,6 +697,31 @@ class CopilotBot:
                 f"copilot-cli installation verification failed: {verify.stderr}"
             )
         logger.info("✅ copilot-cli installed: %s", verify.stdout.strip())
+
+    def _node_install_commands(self) -> list[str]:
+        """Return the commands that install Node.js 22+ on the sandbox's distro.
+
+        Returns
+        -------
+        list[str]
+            Commands for the first supported distro ID (``ID`` then
+            ``ID_LIKE``); Debian's when the distro cannot be detected.
+
+        Raises
+        ------
+        RuntimeError
+            If the sandbox runs a detected but unsupported distro.
+        """
+        ids = list(self.environment.get_distro_ids())
+        for distro_id in ids:
+            if distro_id in _NODE_INSTALL_COMMANDS:
+                return _NODE_INSTALL_COMMANDS[distro_id]
+        if not ids:
+            return _NODE_INSTALL_COMMANDS["debian"]
+        raise RuntimeError(
+            f"CopilotBot cannot install copilot-cli on distro {'/'.join(ids)}; "
+            f"supported: {sorted(_NODE_INSTALL_COMMANDS)}."
+        )
 
     def _start_copilot_cli_server(self):
         """Start copilot-cli in headless server mode inside the container.
@@ -647,6 +798,7 @@ class CopilotBot:
         system_content: str,
         timeout: int,
         streaming: bool,
+        session_options: Optional[Mapping[str, Any]] = None,
     ) -> str:
         """Create a Copilot session, send the task, and collect the result."""
         from copilot.generated.session_events import SessionEventType
@@ -669,10 +821,16 @@ class CopilotBot:
 
         logger.info("📡 Creating Copilot session (model=%s, streaming=%s, byok=%s)", self.model, streaming, self._provider_config is not None)
         logger.debug("Session kwargs: %s", session_kwargs)
+        if session_options:
+            # Only keys are logged: values (e.g. MCP server env/headers) may hold secrets.
+            logger.info("🧩 Extra session options: %s", sorted(session_options))
+            session_kwargs.update(session_options)
         session = await self._client.create_session(**session_kwargs)
 
         collected_text = []
         done_event = asyncio.Event()
+        skill_invoked = getattr(SessionEventType, "SKILL_INVOKED", None)
+        skills_loaded = getattr(SessionEventType, "SESSION_SKILLS_LOADED", None)
 
         def _on_event(event):
             if event.type == SessionEventType.ASSISTANT_MESSAGE:
@@ -685,6 +843,13 @@ class CopilotBot:
             elif event.type == SessionEventType.SESSION_IDLE:
                 logger.info("⏹️  Session idle — agent finished processing")
                 done_event.set()
+            elif skill_invoked is not None and event.type == skill_invoked:
+                name = getattr(event.data, "name", None) or "unknown"
+                self.invoked_skills.append(name)
+                logger.info("🧠 Skill invoked: %s (%s)", name, getattr(event.data, "path", ""))
+            elif skills_loaded is not None and event.type == skills_loaded:
+                names = [s.name for s in (getattr(event.data, "skills", None) or [])]
+                logger.info("📚 Skills loaded (%d): %s", len(names), ", ".join(names))
             else:
                 logger.debug("📨 Session event: %s", event.type)
 

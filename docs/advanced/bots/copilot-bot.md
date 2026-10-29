@@ -226,6 +226,8 @@ When multiple auth methods are configured simultaneously, CopilotBot resolves th
 | `azure_api_version` | `str` | `None` | Azure API version (for `provider_type="azure"` only). |
 | `token_provider` | `Callable[[], str]` | `None` | Callable returning a bearer token string. |
 | `sudo_access` | `bool` | `False` | Give the agent passwordless `sudo` inside the sandbox. See [Sudo access](../sandbox-images.md#sudo-access). |
+| `image` | `str` | `None` | Shell-server image of the auto-created sandbox, e.g. `AZURELINUX_IMAGE`. See [Sandbox Images](../sandbox-images.md). |
+| `session_options` | `Mapping[str, Any]` | `None` | Extra keyword arguments forwarded to the SDK's `create_session` on every run. See [Copilot SDK session options](#copilot-sdk-session-options). |
 
 ### `run()` method
 
@@ -235,6 +237,9 @@ When multiple auth methods are configured simultaneously, CopilotBot resolves th
 | `additional_mounts` | `list[Mount]` | `None` | Extra folders to copy into the container. |
 | `timeout_in_seconds` | `int` | `600` | Maximum wall-clock time for the agent run. |
 | `streaming` | `bool` | `False` | Enable streaming delta events (logged at DEBUG level). |
+| `session_options` | `Mapping[str, Any]` | `None` | Per-run `create_session` arguments. They override the constructor's `session_options` for this run only. |
+
+After a run, `bot.invoked_skills` lists the names of the agent skills used during that run.
 
 ### Return value — `BotRunResult`
 
@@ -325,6 +330,55 @@ result = bot.run(
 )
 bot.stop()
 ```
+
+## Copilot SDK session options
+
+`session_options` passes extra keyword arguments to the Copilot SDK's `CopilotClient.create_session`. Use it to configure agent skills, custom agents, MCP servers, or the working directory:
+
+```python
+bot = CopilotBot(
+    folder_to_mount="/path/to/project",
+    session_options={
+        "working_directory": "/workdir/project",
+        "skill_directories": ["/workdir/project/.agents/skills"],
+        "disabled_skills": ["experimental-skill"],
+    },
+)
+```
+
+- Paths are resolved inside the sandbox. The mounted folder is at `/workdir/<folder name>`.
+- CopilotBot checks each key against the installed SDK's `create_session` signature and raises `ValueError` for unknown keys.
+- CopilotBot manages `model`, `provider`, `streaming`, `hooks`, and `system_message` itself, so `session_options` rejects them. Use the matching CopilotBot parameters instead.
+- Only option names are logged, never values, because values such as MCP server environment variables can contain secrets.
+
+The Copilot CLI always loads `AGENTS.md` and `.github/copilot-instructions.md` from the working directory.
+
+## Using a repository's agent skills (Azure Linux example)
+
+The Azure Linux repository ships `AGENTS.md` and `azldev-*` skills under `.agents/skills`. These skills drive `azldev`, `mock`, and `rpm`, which Microbots provides as the `azldev.yaml`, `mock.yaml`, and `rpm.yaml` [tool definitions](../sandbox-images.md#azure-linux-build-tools). They run in the Azure Linux sandbox image, and `mock` requires `sudo_access=True`.
+
+```python
+from microbots.bot.CopilotBot import CopilotBot
+from microbots.environment.local_docker.images import AZURELINUX_IMAGE
+from microbots.tools.tool_yaml_parser import parse_tool_definition
+
+bot = CopilotBot(
+    folder_to_mount="/mnt/azurelinux",
+    permission="READ_WRITE",  # use READ_ONLY to try changes without keeping them
+    image=AZURELINUX_IMAGE,
+    sudo_access=True,
+    additional_tools=[parse_tool_definition(n) for n in ("rpm.yaml", "mock.yaml", "azldev.yaml")],
+    session_options={
+        "working_directory": "/workdir/azurelinux",
+        "skill_directories": ["/workdir/azurelinux/.agents/skills"],
+    },
+)
+result = bot.run("Upgrade the util-linux component to the newest Fedora rawhide version.")
+print(bot.invoked_skills)
+bot.stop()
+```
+
+See `test/bot/test_copilot_bot_azurelinux_skills.py` for an end-to-end example.
 
 ## Cleanup
 

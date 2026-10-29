@@ -1640,6 +1640,245 @@ class TestCopilotBotSDKLayoutIntegration:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests — session_options, distro and skill tracking
+# ---------------------------------------------------------------------------
+
+async def _fake_create_session(
+    self, *, model=None, streaming=None, hooks=None, provider=None,
+    system_message=None, on_permission_request=None, skill_directories=None,
+    disabled_skills=None, working_directory=None, mcp_servers=None,
+):
+    """Stand-in with the keyword surface of the SDK's ``create_session``."""
+
+
+@contextlib.contextmanager
+def _bot_dependencies(mock_environment, client):
+    client_cls = MagicMock(return_value=client)
+    client_cls.create_session = _fake_create_session
+    with (
+        patch("microbots.bot.CopilotBot.LocalDockerEnvironment", return_value=mock_environment) as lde,
+        patch("microbots.bot.CopilotBot.get_free_port", return_value=9000),
+        patch("microbots.bot.CopilotBot.CopilotBot._install_copilot_cli"),
+        patch("microbots.bot.CopilotBot.CopilotBot._start_copilot_cli_server"),
+        patch("microbots.bot.CopilotBot.CopilotBot._wait_for_cli_ready"),
+        patch("copilot.CopilotClient", new=client_cls),
+        patch("copilot.ExternalServerConfig", return_value=MagicMock()),
+    ):
+        from microbots.bot.CopilotBot import CopilotBot
+        yield CopilotBot, lde
+
+
+@pytest.mark.unit
+class TestValidateSessionOptions:
+    """Tests for the module-level _validate_session_options helper."""
+
+    def _validate(self, options):
+        from microbots.bot.CopilotBot import _validate_session_options
+        return _validate_session_options(options, _fake_create_session)
+
+    def test_none_returns_empty_dict(self):
+        assert self._validate(None) == {}
+
+    def test_returns_copy_of_valid_options(self):
+        options = {"skill_directories": ["/workdir/repo/.agents/skills"], "disabled_skills": ["x"]}
+        validated = self._validate(options)
+        assert validated == options
+        assert validated is not options
+
+    def test_rejects_non_mapping(self):
+        with pytest.raises(TypeError, match="must be a mapping"):
+            self._validate([("skill_directories", [])])
+
+    @pytest.mark.parametrize("key", ["model", "provider", "streaming", "hooks", "system_message"])
+    def test_rejects_reserved_keys(self, key):
+        with pytest.raises(ValueError, match=f"cannot set '{key}'"):
+            self._validate({key: "value"})
+
+    def test_rejects_unknown_keys_and_lists_supported(self):
+        with pytest.raises(ValueError, match=r"Unsupported session_options \['skill_dirs'\]") as err:
+            self._validate({"skill_dirs": []})
+        assert "skill_directories" in str(err.value)
+        assert "'self'" not in str(err.value)
+        assert "'model'" not in str(err.value)
+
+
+@pytest.mark.unit
+class TestCopilotBotSessionOptions:
+    """session_options are validated up front and forwarded to create_session."""
+
+    def test_invalid_option_fails_before_environment_creation(self, mock_environment, mock_copilot_client):
+        with _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, lde):
+            with pytest.raises(ValueError, match="Unsupported session_options"):
+                CopilotBot(model="gpt-4.1", github_token="ghp_test", session_options={"nope": 1})
+            lde.assert_not_called()
+
+    def test_options_forwarded_and_run_overrides_take_precedence(
+        self, mock_environment, mock_copilot_client
+    ):
+        with _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, _):
+            bot = CopilotBot(
+                model="gpt-4.1",
+                environment=mock_environment,
+                github_token="ghp_test",
+                session_options={
+                    "skill_directories": ["/workdir/repo/.agents/skills"],
+                    "working_directory": "/workdir/repo",
+                },
+            )
+            result = bot.run("task", session_options={"working_directory": "/workdir/other"})
+            bot.stop()
+
+        assert result.status is True, result.error
+        kwargs = mock_copilot_client.create_session.call_args.kwargs
+        assert kwargs["skill_directories"] == ["/workdir/repo/.agents/skills"]
+        assert kwargs["working_directory"] == "/workdir/other"
+        assert kwargs["model"] == "gpt-4.1"
+        # Per-run overrides do not leak into the bot's defaults.
+        assert bot.session_options["working_directory"] == "/workdir/repo"
+
+    def test_invalid_run_option_raises(self, mock_environment, mock_copilot_client):
+        with _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, _):
+            bot = CopilotBot(model="gpt-4.1", environment=mock_environment, github_token="ghp_test")
+            with pytest.raises(ValueError, match="cannot set 'model'"):
+                bot.run("task", session_options={"model": "other"})
+            bot.stop()
+        mock_copilot_client.create_session.assert_not_called()
+
+    def test_option_values_are_not_logged(self, mock_environment, mock_copilot_client, caplog):
+        import logging
+
+        secret_servers = {"srv": {"env": {"TOKEN": "super-secret"}}}
+        with _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, _):
+            bot = CopilotBot(
+                model="gpt-4.1",
+                environment=mock_environment,
+                github_token="ghp_test",
+                session_options={"mcp_servers": secret_servers},
+            )
+            with caplog.at_level(logging.DEBUG):
+                bot.run("task")
+            bot.stop()
+
+        assert "mcp_servers" in caplog.text
+        assert "super-secret" not in caplog.text
+        assert mock_copilot_client.create_session.call_args.kwargs["mcp_servers"] == secret_servers
+
+
+@pytest.mark.unit
+class TestCopilotBotSkillEvents:
+    """Skill events from the session are logged and recorded per run."""
+
+    def test_records_invoked_skills_and_resets_each_run(
+        self, mock_environment, mock_copilot_client, mock_copilot_session, caplog
+    ):
+        import logging
+
+        captured = []
+        mock_copilot_session.on = MagicMock(side_effect=captured.append)
+
+        def _event(event_type, **data):
+            return Mock(type=event_type, data=Mock(**data))
+
+        loaded = _event("session.skills_loaded", skills=[Mock(), Mock()])
+        loaded.data.skills[0].name = "azldev-comp-toml"
+        loaded.data.skills[1].name = "azldev-update-component"
+        invoked = _event("skill.invoked", path="/workdir/repo/.agents/skills/x/SKILL.md")
+        invoked.data.name = "azldev-update-component"
+        events = [loaded, invoked]
+
+        response = Mock()
+        response.data = Mock(content="done")
+
+        async def _send_and_wait(task, timeout):
+            for event in events:
+                captured[-1](event)
+            return response
+
+        mock_copilot_session.send_and_wait = _send_and_wait
+
+        with (
+            _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, _),
+            patch.object(_mock_events.SessionEventType, "SKILL_INVOKED", "skill.invoked", create=True),
+            patch.object(
+                _mock_events.SessionEventType, "SESSION_SKILLS_LOADED", "session.skills_loaded", create=True
+            ),
+        ):
+            bot = CopilotBot(model="gpt-4.1", environment=mock_environment, github_token="ghp_test")
+            with caplog.at_level(logging.INFO):
+                assert bot.run("first").status is True
+            assert bot.invoked_skills == ["azldev-update-component"]
+
+            events = []
+            assert bot.run("second").status is True
+            assert bot.invoked_skills == []
+            bot.stop()
+
+        assert "Skills loaded (2): azldev-comp-toml, azldev-update-component" in caplog.text
+        assert "Skill invoked: azldev-update-component" in caplog.text
+
+
+@pytest.mark.unit
+class TestCopilotBotImage:
+    """image selects the sandbox image; copilot-cli is installed per detected distro."""
+
+    @pytest.mark.parametrize("image, expected", [
+        (None, "mcr.microsoft.com/devcontainers/python:3.11"),
+        ("mcr.microsoft.com/azurelinux/base/core:3.0", "mcr.microsoft.com/azurelinux/base/core:3.0"),
+    ])
+    def test_forwarded_to_auto_created_environment(
+        self, mock_environment, mock_copilot_client, image, expected
+    ):
+        with _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, lde):
+            bot = CopilotBot(model="gpt-4.1", github_token="ghp_test", image=image)
+            bot.stop()
+        assert bot.image == expected
+        assert lde.call_args.kwargs["image"] == expected
+
+    def test_rejects_image_with_provided_environment(self, mock_environment, mock_copilot_client):
+        with _bot_dependencies(mock_environment, mock_copilot_client) as (CopilotBot, lde):
+            with pytest.raises(ValueError, match="Pass either `image` or `environment`"):
+                CopilotBot(model="gpt-4.1", environment=mock_environment, github_token="ghp_test", image="x/y:z")
+        lde.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "ids, first_command",
+        [
+            (["debian"], "rm -f /etc/apt/sources.list.d/yarn.list"),
+            (["ubuntu", "debian"], "rm -f /etc/apt/sources.list.d/yarn.list"),
+            ([], "rm -f /etc/apt/sources.list.d/yarn.list"),
+            (["azurelinux"], "tdnf install -y curl ca-certificates tar xz > /dev/null"),
+        ],
+    )
+    def test_copilot_cli_install_matches_sandbox_distro(self, mock_environment, ids, first_command):
+        import importlib
+
+        bot_module = importlib.import_module("microbots.bot.CopilotBot")
+        bot = bot_module.CopilotBot.__new__(bot_module.CopilotBot)
+        bot.environment = mock_environment
+        mock_environment.get_distro_ids = MagicMock(return_value=ids)
+
+        bot._install_copilot_cli()
+
+        commands = [c.args[0] for c in mock_environment.execute_privileged.call_args_list]
+        assert commands[0] == first_command
+        assert commands[-1] == f"npm install -g {bot_module._COPILOT_CLI_PACKAGE} > /dev/null 2>&1"
+        if ids == ["azurelinux"]:
+            assert "sha256sum -c" in commands[1] and "latest-v22.x" in commands[1]
+
+    def test_copilot_cli_install_rejects_unsupported_distro(self, mock_environment):
+        import importlib
+
+        bot_module = importlib.import_module("microbots.bot.CopilotBot")
+        bot = bot_module.CopilotBot.__new__(bot_module.CopilotBot)
+        bot.environment = mock_environment
+        mock_environment.get_distro_ids = MagicMock(return_value=["alpine"])
+
+        with pytest.raises(RuntimeError, match="cannot install copilot-cli on distro alpine"):
+            bot._install_copilot_cli()
+        mock_environment.execute_privileged.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Unit tests — sudo_access
 # ---------------------------------------------------------------------------
 
