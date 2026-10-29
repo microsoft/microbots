@@ -1,0 +1,47 @@
+name: mock
+tool_type: internal
+description: Fedora's mock — builds RPMs and runs commands inside clean, distro-specific chroots.
+
+# mock's launcher (consolehelper/userhelper) is setuid, and the agent runs mock as
+# itself through its `mock` group membership, so the sandbox must allow privilege
+# escalation: create the bot/environment with image=AZURELINUX_IMAGE (images module)
+# and sudo_access=True.
+usage_instructions_to_llm: |
+  # `mock` is installed. It builds SRPMs/RPMs and runs commands inside clean chroots
+  # described by a mock config (.cfg). Run it as yourself (you are in the `mock`
+  # group); do not use sudo, or the files it creates will be owned by root.
+  #
+  # Always pass the project's config explicitly:
+  #   mock -r <path/to/config.cfg> --configdir <dir-of-config> <action>
+  # Common actions:
+  #   --init                         create/refresh the chroot
+  #   --rebuild <file.src.rpm>       build binary RPMs (add --resultdir <dir>)
+  #   --install <pkg|file.rpm> ...   install packages into the chroot
+  #   --copyin <src> <dest>          copy a file into the chroot
+  #   --chroot '<command>'           run a command inside the chroot (non-interactive)
+  #   --scrub=chroot | --scrub=all   reset the chroot (all also drops the bootstrap)
+  # Add --enable-network when the chroot needs network access.
+  #
+  # Never start an interactive `mock --shell` without a heredoc; there is no TTY.
+  # Use: mock -r <cfg> --shell <<'CMDS' ... CMDS
+  # Builds can take many minutes; run them in the foreground and wait for them.
+  # End of instructions.
+
+# Only Azure Linux packages mock; other distros fail to install this tool.
+install_commands:
+  azurelinux:
+    - tdnf install -y mock mock-rpmautospec
+    # mock and azldev check the group database, so this applies to the running shell too.
+    - if id agent > /dev/null 2>&1; then usermod -aG mock agent; fi
+
+verify_commands:
+  # `false` rather than `exit`: verify commands share the bot's persistent shell.
+  - >-
+    if grep -q '^NoNewPrivs:[[:space:]]*1' /proc/self/status; then
+    echo "mock needs sudo_access=True (its setuid launcher is blocked by no-new-privileges)" >&2;
+    false; fi
+  - mock --version
+
+uninstall_commands:
+  azurelinux:
+    - tdnf remove -y mock mock-rpmautospec

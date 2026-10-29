@@ -46,6 +46,33 @@ env = LocalDockerEnvironment(port=8080, image="mcr.microsoft.com/devcontainers/b
 
 You never declare the sandbox's distribution. Tools read it from the running container's `/etc/os-release` and pick their [distro-specific commands](tools/tesseract_ocr_tool_use.md#distro-specific-commands) from it. A tool that only defines `debian` commands, such as `cscope` or `browser-use`, fails to install on the Azure Linux image with `UnsupportedDistroError`.
 
+## Azure Linux build tools
+
+Microbots ships tool definitions for Azure Linux and RPM work:
+
+| Tool | Provides | Distros |
+|------|----------|---------|
+| `rpm.yaml` | `rpm`, `rpmbuild`, `rpmspec`, `rpm2cpio`, `createrepo_c` | Azure Linux, Debian |
+| `mock.yaml` | `mock` with the `rpmautospec` plugin. Needs `sudo_access=True`. | Azure Linux |
+| `azldev.yaml` | [Azure Linux Dev Tools](https://github.com/microsoft/azure-linux-dev-tools). Uses `mock` for render and build. | Azure Linux, Debian |
+
+```python
+from microbots import WritingBot
+from microbots.environment.local_docker.images import AZURELINUX_IMAGE
+from microbots.tools.tool_yaml_parser import parse_tool_definition
+
+bot = WritingBot(
+    model="azure-openai/your-deployment",
+    folder_to_mount="/path/to/azurelinux",
+    image=AZURELINUX_IMAGE,
+    sudo_access=True,
+    additional_tools=[parse_tool_definition(n) for n in ("rpm.yaml", "mock.yaml", "azldev.yaml")],
+)
+```
+
+- `mock.yaml` adds the agent to the `mock` group, so the agent runs `mock` (and `azldev`, which drives it) as itself. `mock`'s setuid launcher does the privileged work, which is why it needs `sudo_access=True`. Files that `azldev` and `mock` write into the repository stay owned by the host user.
+- `azldev.yaml` installs the `azldev` version pinned in the mounted repository's `.azldev-version` file, or the latest release if there is no pin.
+
 ## Sudo access
 
 By default the sandbox shell drops to an unprivileged `agent` account that has your host user's uid, and the container blocks privilege escalation (`no-new-privileges`). Some tools, such as `mock`, need root for part of their work. Pass `sudo_access=True` to any bot or to `LocalDockerEnvironment` to give the agent passwordless `sudo`:
