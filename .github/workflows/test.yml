@@ -167,7 +167,7 @@ jobs:
       - name: Install GitHub Copilot SDK dependencies for GHCP tests
         if: matrix.test-type == 'ghcp'
         run: |
-          pip install "github-copilot-sdk==0.3.0"
+          pip install -e ".[ghcp]"
 
       - name: Install Azure AD / keyless auth dependencies
         run: |
@@ -238,7 +238,10 @@ jobs:
           COPILOT_BYOK_PROVIDER_TYPE: ${{ matrix.test-type == 'ghcp' && 'azure' || '' }}
           COPILOT_BYOK_MODEL: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_DEPLOYMENT_NAME || '' }}
           COPILOT_BYOK_AZURE_API_VERSION: ${{ matrix.test-type == 'ghcp' && vars.AZURE_OPENAI_API_VERSION || '' }}
-          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'completions' || '' }}
+          COPILOT_BYOK_WIRE_API: ${{ matrix.test-type == 'ghcp' && 'responses' || '' }}
+          # The deployment name (AZURE_OPENAI_DEPLOYMENT_NAME) is not a model copilot-cli
+          # knows: tell it the model behind it so it sends gpt-5-compatible requests.
+          COPILOT_BYOK_MODEL_ID: ${{ matrix.test-type == 'ghcp' && 'gpt-5' || '' }}
         run: |
           python -m pytest ${{ matrix.pytest-args }} \
             -n auto \

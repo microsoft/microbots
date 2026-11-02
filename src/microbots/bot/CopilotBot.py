@@ -10,8 +10,9 @@ CopilotBot reuses the Microbots infrastructure:
   - Docker sandbox (LocalDockerEnvironment) for isolated execution
   - Mount system for folder access control
   - ToolAbstract lifecycle (install → verify → setup) for additional tools
-  - copilot-cli is installed **inside** the container and run in headless
-    server mode; the SDK on the host connects to it via TCP.
+  - copilot-cli is installed **inside** the container (from the
+    ``copilot-cli.yaml`` tool definition) and run in headless server mode;
+    the SDK on the host connects to it via TCP.
 
 Architecture:
 
@@ -20,7 +21,7 @@ Architecture:
     CopilotBot                    copilot-cli --headless --port <P>
         │                              │
         ├── Copilot SDK ──TCP──────────┘
-        │   (ExternalServerConfig)
+        │   (UriRuntimeConnection)
         │
         ├── additional tools
         │   (define_tool → SDK session)
@@ -34,17 +35,19 @@ Prerequisites:
 """
 
 import asyncio
+import inspect
 import os
 import time
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from logging import getLogger
-from typing import Optional
+from typing import Any, Optional
 
 from microbots.constants import (
     DOCKER_WORKING_DIR,
     PermissionLabels,
 )
+from microbots.environment.local_docker.images import DEFAULT_IMAGE
 from microbots.environment.local_docker.LocalDockerEnvironment import (
     LocalDockerEnvironment,
 )
@@ -52,6 +55,7 @@ from microbots.extras.mount import Mount, MountType
 from microbots.MicroBot import BotRunResult
 from microbots.tools.external_tool import ExternalTool
 from microbots.tools.tool import ToolAbstract
+from microbots.tools.tool_yaml_parser import parse_tool_definition
 from microbots.utils.copilot_auth import get_copilot_token
 from microbots.utils.network import get_free_port  # still used for _create_environment
 
@@ -66,6 +70,74 @@ _CLI_STARTUP_TIMEOUT = 60
 # copilot-cli port inside the container
 _CONTAINER_CLI_PORT = 4321
 
+# ``create_session`` arguments CopilotBot sets itself, mapped to where callers
+# configure them instead of ``session_options``.
+_RESERVED_SESSION_OPTIONS = {
+    "model": "the 'model' argument (or COPILOT_BYOK_MODEL)",
+    "provider": "the BYOK arguments (api_key, bearer_token, base_url, provider_type, ...)",
+    "streaming": "run(streaming=...)",
+    "hooks": "nothing — CopilotBot uses them for tool-call logging",
+    "system_message": "folder_to_mount / additional_tools usage instructions",
+}
+
+
+def _validate_session_options(
+    session_options: Optional[Mapping[str, Any]],
+    create_session: Callable,
+) -> dict[str, Any]:
+    """Return a copy of *session_options* after checking each key is an
+    argument of the SDK's ``create_session`` that CopilotBot does not own.
+
+    Parameters
+    ----------
+    session_options : Optional[Mapping[str, Any]]
+        Keyword arguments destined for ``create_session``.
+    create_session : Callable
+        The SDK's ``create_session`` whose signature defines accepted keys.
+
+    Returns
+    -------
+    dict[str, Any]
+        A shallow copy of the options, or an empty dict when *None*.
+
+    Raises
+    ------
+    TypeError
+        If *session_options* is not a mapping.
+    ValueError
+        If a key is managed by CopilotBot or unknown to the installed SDK.
+    """
+    if session_options is None:
+        return {}
+    if not isinstance(session_options, Mapping):
+        raise TypeError("session_options must be a mapping of create_session keyword arguments.")
+
+    for key in session_options:
+        if key in _RESERVED_SESSION_OPTIONS:
+            raise ValueError(
+                f"session_options cannot set '{key}'; it is managed by CopilotBot "
+                f"via {_RESERVED_SESSION_OPTIONS[key]}."
+            )
+
+    accepted = {
+        name
+        for name, param in inspect.signature(create_session).parameters.items()
+        if param.kind in (param.KEYWORD_ONLY, param.POSITIONAL_OR_KEYWORD) and name != "self"
+    }
+    unknown = sorted(set(session_options) - accepted)
+    if unknown:
+        raise ValueError(
+            f"Unsupported session_options {unknown} for the installed github-copilot-sdk. "
+            f"Supported options: {sorted(accepted - set(_RESERVED_SESSION_OPTIONS))}"
+        )
+    return dict(session_options)
+
+
+# copilot-cli (with its Node.js runtime) is installed from this tool definition,
+# which holds the per-distro install commands and the pinned CLI version.
+_COPILOT_CLI_TOOL = "copilot-cli.yaml"
+
+
 # Environment variable names for BYOK configuration
 _BYOK_ENV_PROVIDER_TYPE = "COPILOT_BYOK_PROVIDER_TYPE"
 _BYOK_ENV_BASE_URL = "COPILOT_BYOK_BASE_URL"
@@ -74,6 +146,7 @@ _BYOK_ENV_BEARER_TOKEN = "COPILOT_BYOK_BEARER_TOKEN"
 _BYOK_ENV_WIRE_API = "COPILOT_BYOK_WIRE_API" # completions / responses
 _BYOK_ENV_AZURE_API_VERSION = "COPILOT_BYOK_AZURE_API_VERSION"
 _BYOK_ENV_MODEL = "COPILOT_BYOK_MODEL"
+_BYOK_ENV_MODEL_ID = "COPILOT_BYOK_MODEL_ID"
 
 
 def resolve_auth_config(
@@ -86,6 +159,7 @@ def resolve_auth_config(
     wire_api: Optional[str] = None,
     azure_api_version: Optional[str] = None,
     token_provider: Optional[Callable[[], str]] = None,
+    model_id: Optional[str] = None,
 ) -> tuple[str, Optional[str], Optional[dict]]:
     """Resolve authentication and provider configuration for CopilotBot.
 
@@ -121,6 +195,12 @@ def resolve_auth_config(
         token provider).  The token is fetched once at config resolution
         time.  For long-running sessions, create a new session with a
         refreshed token.
+    model_id : Optional[str]
+        Well-known model behind a BYOK deployment (e.g. ``"gpt-5"`` for an
+        Azure deployment named ``"my-gpt5"``).  copilot-cli uses it to pick
+        the model's prompts, tools, reasoning behaviour and token limits,
+        while ``model`` is still sent to the provider as the wire model.
+        Falls back to ``COPILOT_BYOK_MODEL_ID``.
 
     Returns
     -------
@@ -149,6 +229,8 @@ def resolve_auth_config(
             bearer_token=bearer_token,
             wire_api=wire_api,
             azure_api_version=azure_api_version,
+            model=model,
+            model_id=model_id or os.environ.get(_BYOK_ENV_MODEL_ID),
         )
         logger.info("🔑 BYOK auth resolved via explicit credentials (type=%s)", provider["type"])
         return model, None, provider
@@ -167,6 +249,8 @@ def resolve_auth_config(
             bearer_token=env_bearer_token,
             wire_api=os.environ.get(_BYOK_ENV_WIRE_API),
             azure_api_version=os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
+            model=env_model,
+            model_id=model_id or os.environ.get(_BYOK_ENV_MODEL_ID),
         )
         logger.info("🔑 BYOK auth resolved via environment variables (type=%s)", provider["type"])
         return env_model, None, provider
@@ -203,15 +287,18 @@ def resolve_auth_config(
         if not isinstance(token, str) or not token:
             raise ValueError("token_provider must return a non-empty string token.")
 
+        resolved_model = os.environ.get(_BYOK_ENV_MODEL, model)
         provider = _build_provider_config(
             provider_type=provider_type or os.environ.get(_BYOK_ENV_PROVIDER_TYPE, "openai"),
             base_url=resolved_url,
             bearer_token=token,
             wire_api=wire_api or os.environ.get(_BYOK_ENV_WIRE_API),
             azure_api_version=azure_api_version or os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
+            model=resolved_model,
+            model_id=model_id or os.environ.get(_BYOK_ENV_MODEL_ID),
         )
         logger.info("🔑 BYOK auth resolved via token_provider (type=%s)", provider["type"])
-        return os.environ.get(_BYOK_ENV_MODEL, model), None, provider
+        return resolved_model, None, provider
 
     # ── 4. Native GitHub Copilot auth ────────────────────────────────
     resolved_github_token = (
@@ -232,6 +319,8 @@ def _build_provider_config(
     bearer_token: Optional[str] = None,
     wire_api: Optional[str] = None,
     azure_api_version: Optional[str] = None,
+    model: Optional[str] = None,
+    model_id: Optional[str] = None,
 ) -> dict:
     """Build the ``provider`` dict accepted by ``create_session``."""
     config: dict = {
@@ -249,6 +338,12 @@ def _build_provider_config(
 
     if provider_type == "azure" and azure_api_version:
         config["azure"] = {"api_version": azure_api_version}
+
+    if model_id:
+        config["model_id"] = model_id
+        # The CLI sends model_id on the wire unless wire_model is set.
+        if model:
+            config["wire_model"] = model
 
     return config
 
@@ -299,6 +394,12 @@ class CopilotBot:
     token_provider : Optional[Callable[[], str]]
         A callable returning a bearer token (e.g. Azure AD token
         provider).  Requires ``base_url``.
+    model_id : Optional[str]
+        For BYOK, the well-known model behind a custom deployment name
+        (e.g. ``"gpt-5"`` for a deployment named ``"my-gpt5"``), so
+        copilot-cli applies that model's request settings such as reasoning
+        and temperature.  ``model`` is still the name sent to the provider.
+        Falls back to ``COPILOT_BYOK_MODEL_ID``.
     sudo_access : bool
         Give the agent passwordless ``sudo`` inside the sandbox.  Needed by
         tools such as ``mock``.  Commands still run as the host user unless
@@ -308,6 +409,21 @@ class CopilotBot:
         tasks and repositories.
         Applies to the auto-created environment; a passed-in ``environment``
         must already have been created with ``sudo_access=True``.
+    image : Optional[str]
+        Shell-server image of the auto-created environment, for example
+        ``images.AZURELINUX_IMAGE``.  Defaults to the Debian image.  Cannot
+        be combined with ``environment``.  copilot-cli is installed to suit
+        the image's distro (from its ``/etc/os-release``).
+    session_options : Optional[Mapping[str, Any]]
+        Extra keyword arguments forwarded to the SDK's
+        ``CopilotClient.create_session`` for every run — for example
+        ``skill_directories``, ``disabled_skills``, ``custom_agents``,
+        ``mcp_servers``, ``working_directory``, ``enable_config_discovery``,
+        ``reasoning_effort`` or ``on_permission_request``.  Paths are
+        resolved inside the sandbox (the mounted folder lives at
+        ``/workdir/<folder name>``).  ``model``, ``provider``,
+        ``streaming``, ``hooks`` and ``system_message`` are managed by
+        CopilotBot and rejected here.  ``run()`` accepts per-run overrides.
     """
 
     def __init__(
@@ -325,32 +441,40 @@ class CopilotBot:
         wire_api: Optional[str] = None,
         azure_api_version: Optional[str] = None,
         token_provider: Optional[Callable[[], str]] = None,
+        model_id: Optional[str] = None,
         sudo_access: bool = False,
+        image: Optional[str] = None,
+        session_options: Optional[Mapping[str, Any]] = None,
     ):
         try:
-            from copilot import CopilotClient, ExternalServerConfig
+            import copilot  # noqa: F401
         except ImportError:
             raise ImportError(
                 "CopilotBot requires the github-copilot-sdk package. "
                 "Install with: pip install microbots[ghcp]"
             )
-
-        # ``PermissionHandler`` lives in ``copilot.session`` in
-        # github-copilot-sdk >= 0.3.0 and in ``copilot.types`` in older
-        # releases.  Try the new location first and fall back to the old
-        # one so we work with both.
         try:
+            from copilot import CopilotClient, UriRuntimeConnection
             from copilot.session import PermissionHandler
-        except ImportError:
-            try:
-                from copilot.types import PermissionHandler
-            except ImportError as exc:
-                raise ImportError(
-                    "CopilotBot could not locate 'PermissionHandler' in the "
-                    "installed github-copilot-sdk (looked in copilot.session "
-                    "and copilot.types). Please install a compatible version, "
-                    "e.g. pip install -U microbots[ghcp]."
-                ) from exc
+        except ImportError as exc:
+            raise ImportError(
+                "CopilotBot requires github-copilot-sdk 1.x (UriRuntimeConnection, "
+                "copilot.session.PermissionHandler). "
+                "Upgrade with: pip install -U microbots[ghcp]"
+            ) from exc
+
+        self._sdk_create_session = CopilotClient.create_session
+        self.session_options = _validate_session_options(
+            session_options, self._sdk_create_session
+        )
+        self.invoked_skills: list[str] = []
+
+        if image is not None and environment is not None:
+            raise ValueError(
+                "Pass either `image` or `environment`, not both: the image of a "
+                "provided environment is chosen when that environment is created."
+            )
+        self.image = image or DEFAULT_IMAGE
 
         if (
             environment is not None
@@ -376,6 +500,7 @@ class CopilotBot:
             wire_api=wire_api,
             azure_api_version=azure_api_version,
             token_provider=token_provider,
+            model_id=model_id,
         )
 
         # ── Mount setup ─────────────────────────────────────────────
@@ -418,7 +543,7 @@ class CopilotBot:
         container_ip = self.environment.get_ipv4_address()
         logger.info("🔌 Connecting Copilot SDK to CLI server at %s:%d", container_ip, _CONTAINER_CLI_PORT)
         self._client = CopilotClient(
-            ExternalServerConfig(url=f"{container_ip}:{_CONTAINER_CLI_PORT}")
+            connection=UriRuntimeConnection(url=f"{container_ip}:{_CONTAINER_CLI_PORT}")
         )
         self._run_async(self._client.start())
         self._PermissionHandler = PermissionHandler
@@ -440,6 +565,7 @@ class CopilotBot:
         additional_mounts: Optional[list[Mount]] = None,
         timeout_in_seconds: int = 600,
         streaming: bool = False,
+        session_options: Optional[Mapping[str, Any]] = None,
     ) -> BotRunResult:
         """Send *task* to the Copilot agent and wait for completion.
 
@@ -457,6 +583,9 @@ class CopilotBot:
             Maximum wall-clock time for the agent run.
         streaming : bool
             Whether to enable streaming delta events (logged at DEBUG level).
+        session_options : Optional[Mapping[str, Any]]
+            Per-run ``create_session`` arguments, merged over (and taking
+            precedence on) the constructor's ``session_options``.
 
         Returns
         -------
@@ -465,6 +594,12 @@ class CopilotBot:
             or status=False with an error description.
         """
         logger.info("🚀 Starting CopilotBot run — task: %.120s...", task)
+
+        run_session_options = {
+            **self.session_options,
+            **_validate_session_options(session_options, self._sdk_create_session),
+        }
+        self.invoked_skills = []
 
         # Setup additional tools (env vars, files, setup_commands)
         for tool in self.additional_tools:
@@ -485,6 +620,7 @@ class CopilotBot:
                     system_content=system_content,
                     timeout=timeout_in_seconds,
                     streaming=streaming,
+                    session_options=run_session_options,
                 )
             )
             logger.info("✅ CopilotBot run completed successfully")
@@ -536,41 +672,28 @@ class CopilotBot:
         self.environment = LocalDockerEnvironment(
             port=free_port,
             folder_to_mount=self.folder_to_mount,
+            image=self.image,
             sudo_access=self.sudo_access,
         )
 
     def _install_copilot_cli(self):
-        """Install copilot-cli inside the Docker container."""
+        """Install copilot-cli inside the container from ``copilot-cli.yaml``.
+
+        The tool definition picks the Node.js install for the sandbox's distro
+        (from its ``/etc/os-release``) and pins the CLI version.
+
+        Raises
+        ------
+        RuntimeError
+            If installation or ``copilot --version`` fails, or (as
+            ``UnsupportedDistroError``) if the sandbox runs a detected but
+            unsupported distro.
+        """
         logger.info("📦 Installing copilot-cli inside container...")
-
-        # Install Node.js (required for copilot-cli via npm)
-        install_commands = [
-            # Remove stale third-party repos that may have expired GPG keys
-            "rm -f /etc/apt/sources.list.d/yarn.list",
-            # Install Node.js 22.x (copilot-cli requires Node 22+)
-            "apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null 2>&1",
-            "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1",
-            "apt-get install -y -qq nodejs > /dev/null 2>&1",
-            # Install copilot-cli globally
-            # NOTE: Pinning to 1.0.39 which is the latest @github/copilot release compatible with github-copilot-sdk==0.3.0 as of May 2026.
-            "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1",
-        ]
-
-        for cmd in install_commands:
-            result = self.environment.execute_privileged(cmd, timeout=300)
-            if result.return_code != 0:
-                raise RuntimeError(
-                    f"Failed to install copilot-cli: {cmd}\n"
-                    f"stdout: {result.stdout}\nstderr: {result.stderr}"
-                )
-
-        # Verify installation
-        verify = self.environment.execute("copilot --version")
-        if verify.return_code != 0:
-            raise RuntimeError(
-                f"copilot-cli installation verification failed: {verify.stderr}"
-            )
-        logger.info("✅ copilot-cli installed: %s", verify.stdout.strip())
+        tool = parse_tool_definition(_COPILOT_CLI_TOOL)
+        tool.install_tool(self.environment)
+        tool.verify_tool_installation(self.environment)
+        logger.info("✅ copilot-cli installed")
 
     def _start_copilot_cli_server(self):
         """Start copilot-cli in headless server mode inside the container.
@@ -647,9 +770,10 @@ class CopilotBot:
         system_content: str,
         timeout: int,
         streaming: bool,
+        session_options: Optional[Mapping[str, Any]] = None,
     ) -> str:
         """Create a Copilot session, send the task, and collect the result."""
-        from copilot.generated.session_events import SessionEventType
+        from copilot.session_events import SessionEventType
 
         session_kwargs = {
             "model": self.model,
@@ -669,10 +793,16 @@ class CopilotBot:
 
         logger.info("📡 Creating Copilot session (model=%s, streaming=%s, byok=%s)", self.model, streaming, self._provider_config is not None)
         logger.debug("Session kwargs: %s", session_kwargs)
+        if session_options:
+            # Only keys are logged: values (e.g. MCP server env/headers) may hold secrets.
+            logger.info("🧩 Extra session options: %s", sorted(session_options))
+            session_kwargs.update(session_options)
         session = await self._client.create_session(**session_kwargs)
 
         collected_text = []
         done_event = asyncio.Event()
+        skill_invoked = getattr(SessionEventType, "SKILL_INVOKED", None)
+        skills_loaded = getattr(SessionEventType, "SESSION_SKILLS_LOADED", None)
 
         def _on_event(event):
             if event.type == SessionEventType.ASSISTANT_MESSAGE:
@@ -685,6 +815,13 @@ class CopilotBot:
             elif event.type == SessionEventType.SESSION_IDLE:
                 logger.info("⏹️  Session idle — agent finished processing")
                 done_event.set()
+            elif skill_invoked is not None and event.type == skill_invoked:
+                name = getattr(event.data, "name", None) or "unknown"
+                self.invoked_skills.append(name)
+                logger.info("🧠 Skill invoked: %s (%s)", name, getattr(event.data, "path", ""))
+            elif skills_loaded is not None and event.type == skills_loaded:
+                names = [s.name for s in (getattr(event.data, "skills", None) or [])]
+                logger.info("📚 Skills loaded (%d): %s", len(names), ", ".join(names))
             else:
                 logger.debug("📨 Session event: %s", event.type)
 

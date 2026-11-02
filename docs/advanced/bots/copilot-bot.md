@@ -16,10 +16,10 @@ CopilotBot is a Microbots agent that delegates the entire agent loop to the **Gi
 pip install microbots[ghcp]
 ```
 
-This installs the `github-copilot-sdk` package alongside Microbots.
+This installs the `github-copilot-sdk` package (1.x) alongside Microbots.
 
 !!! note
-    You do **not** need to install `copilot-cli` on your host machine. Microbots automatically installs and runs it inside the Docker container during initialization.
+    You do **not** need to install `copilot-cli` on your host machine. Microbots automatically installs and runs it inside the Docker container during initialization, using the `copilot-cli` version that the pinned `github-copilot-sdk` release targets.
 
 ## Quick Start
 
@@ -132,6 +132,22 @@ bot = CopilotBot(
 )
 ```
 
+#### Using `model_id` for custom deployment names
+
+copilot-cli adjusts its requests to the model, for example whether it sends `temperature` or `reasoning_effort`. It recognises the model by name. When a BYOK deployment has a custom name (common on Azure), set `model_id` to the model behind it. Otherwise the CLI falls back to generic defaults that reasoning models such as GPT-5 reject (`'temperature' does not support 0 with this model`):
+
+```python
+bot = CopilotBot(
+    model="my-gpt5-deployment",   # name sent to the provider
+    model_id="gpt-5",             # model behind the deployment
+    folder_to_mount="/path/to/project",
+    bearer_token=token,
+    base_url="https://my-resource.openai.azure.com",
+    provider_type="azure",
+    wire_api="responses",
+)
+```
+
 ### 3. BYOK — Bearer Token
 
 If your provider uses bearer token authentication instead of an API key:
@@ -181,6 +197,7 @@ export COPILOT_BYOK_BASE_URL="https://api.openai.com/v1"
 export COPILOT_BYOK_API_KEY="sk-your-key"
 export COPILOT_BYOK_PROVIDER_TYPE="openai"          # optional, defaults to "openai"
 export COPILOT_BYOK_MODEL="gpt-4.1"                 # optional, overrides the model param
+export COPILOT_BYOK_MODEL_ID="gpt-4.1"              # optional, model behind a custom deployment name
 export COPILOT_BYOK_WIRE_API="completions"           # optional
 export COPILOT_BYOK_AZURE_API_VERSION="2024-10-21"   # optional, for Azure only
 ```
@@ -225,7 +242,10 @@ When multiple auth methods are configured simultaneously, CopilotBot resolves th
 | `wire_api` | `str` | `None` | API format: `"completions"` or `"responses"`. |
 | `azure_api_version` | `str` | `None` | Azure API version (for `provider_type="azure"` only). |
 | `token_provider` | `Callable[[], str]` | `None` | Callable returning a bearer token string. |
+| `model_id` | `str` | `None` | BYOK only: the model behind a custom deployment name, e.g. `"gpt-5"`. Falls back to `COPILOT_BYOK_MODEL_ID`. See [Using `model_id`](#using-model_id-for-custom-deployment-names). |
 | `sudo_access` | `bool` | `False` | Give the agent passwordless `sudo` inside the sandbox. See [Sudo access](../sandbox-images.md#sudo-access). |
+| `image` | `str` | `None` | Shell-server image of the auto-created sandbox, e.g. `AZURELINUX_IMAGE`. See [Sandbox Images](../sandbox-images.md). |
+| `session_options` | `Mapping[str, Any]` | `None` | Extra keyword arguments forwarded to the SDK's `create_session` on every run. See [Copilot SDK session options](#copilot-sdk-session-options). |
 
 ### `run()` method
 
@@ -235,6 +255,9 @@ When multiple auth methods are configured simultaneously, CopilotBot resolves th
 | `additional_mounts` | `list[Mount]` | `None` | Extra folders to copy into the container. |
 | `timeout_in_seconds` | `int` | `600` | Maximum wall-clock time for the agent run. |
 | `streaming` | `bool` | `False` | Enable streaming delta events (logged at DEBUG level). |
+| `session_options` | `Mapping[str, Any]` | `None` | Per-run `create_session` arguments. They override the constructor's `session_options` for this run only. |
+
+After a run, `bot.invoked_skills` lists the names of the agent skills used during that run.
 
 ### Return value — `BotRunResult`
 
@@ -325,6 +348,55 @@ result = bot.run(
 )
 bot.stop()
 ```
+
+## Copilot SDK session options
+
+`session_options` passes extra keyword arguments to the Copilot SDK's `CopilotClient.create_session`. Use it to configure agent skills, custom agents, MCP servers, or the working directory:
+
+```python
+bot = CopilotBot(
+    folder_to_mount="/path/to/project",
+    session_options={
+        "working_directory": "/workdir/project",
+        "skill_directories": ["/workdir/project/.agents/skills"],
+        "disabled_skills": ["experimental-skill"],
+    },
+)
+```
+
+- Paths are resolved inside the sandbox. The mounted folder is at `/workdir/<folder name>`.
+- CopilotBot checks each key against the installed SDK's `create_session` signature and raises `ValueError` for unknown keys.
+- CopilotBot manages `model`, `provider`, `streaming`, `hooks`, and `system_message` itself, so `session_options` rejects them. Use the matching CopilotBot parameters instead.
+- Only option names are logged, never values, because values such as MCP server environment variables can contain secrets.
+
+The Copilot CLI always loads `AGENTS.md` and `.github/copilot-instructions.md` from the working directory.
+
+## Using a repository's agent skills (Azure Linux example)
+
+The Azure Linux repository ships `AGENTS.md` and `azldev-*` skills under `.agents/skills`. These skills drive `azldev`, `mock`, and `rpm`, which Microbots provides as the `azldev.yaml`, `mock.yaml`, and `rpm.yaml` [tool definitions](../sandbox-images.md#azure-linux-build-tools). They run in the Azure Linux sandbox image, and `mock` requires `sudo_access=True`.
+
+```python
+from microbots.bot.CopilotBot import CopilotBot
+from microbots.environment.local_docker.images import AZURELINUX_IMAGE
+from microbots.tools.tool_yaml_parser import parse_tool_definition
+
+bot = CopilotBot(
+    folder_to_mount="/mnt/azurelinux",
+    permission="READ_WRITE",  # use READ_ONLY to try changes without keeping them
+    image=AZURELINUX_IMAGE,
+    sudo_access=True,
+    additional_tools=[parse_tool_definition(n) for n in ("rpm.yaml", "mock.yaml", "azldev.yaml")],
+    session_options={
+        "working_directory": "/workdir/azurelinux",
+        "skill_directories": ["/workdir/azurelinux/.agents/skills"],
+    },
+)
+result = bot.run("Upgrade the util-linux component to the newest Fedora rawhide version.")
+print(bot.invoked_skills)
+bot.stop()
+```
+
+See `test/bot/test_copilot_bot_azurelinux_skills.py` for an end-to-end example.
 
 ## Cleanup
 
