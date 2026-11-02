@@ -7,10 +7,10 @@ description: GitHub Copilot CLI, which CopilotBot runs as a headless server insi
 # and has no usage instructions.
 usage_instructions_to_llm: ""
 
-# copilot-cli needs Node.js 22+. Keep the CLI version in step with the
-# github-copilot-sdk version pinned by the `ghcp` extra in pyproject.toml:
-# 1.0.39 is the latest @github/copilot release compatible with
-# github-copilot-sdk==0.3.0 (as of May 2026).
+# copilot-cli needs Node.js 22+. The CLI version must match the github-copilot-sdk
+# pinned by the `ghcp` extra in pyproject.toml: github-copilot-sdk==1.0.28 targets
+# @github/copilot 1.0.105 (CLI_VERSION in the SDK's copilot/_cli_version.py).
+# When upgrading, also update the `ghcp` pin in pyproject.toml.
 install_commands:
   debian:
     # Remove stale third-party repos that may have expired GPG keys.
@@ -18,7 +18,7 @@ install_commands:
     - apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null 2>&1
     - curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
     - apt-get install -y -qq nodejs > /dev/null 2>&1
-    - &install_cli "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1"
+    - &install_cli "npm install -g @github/copilot@1.0.105 > /dev/null 2>&1"
   azurelinux:
     - tdnf install -y curl ca-certificates tar xz > /dev/null
     # Azure Linux 3 only packages Node.js 20: install the official Node.js 22

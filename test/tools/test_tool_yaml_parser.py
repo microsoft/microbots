@@ -90,7 +90,7 @@ class TestParseToolDefinitionValidYaml:
         # Infrastructure for CopilotBot: nothing is added to the model's prompt.
         assert tool.usage_instructions_to_llm == ""
         assert list(tool.install_commands) == ["debian", "azurelinux"]
-        cli = "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1"
+        cli = "npm install -g @github/copilot@1.0.105 > /dev/null 2>&1"
         for distro in ("debian", "azurelinux"):
             assert tool.resolve_commands("install", [distro])[-1] == cli
         assert "nodesource.com/setup_22.x" in " ".join(tool.resolve_commands("install", ["debian"]))

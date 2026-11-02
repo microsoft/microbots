@@ -16,10 +16,10 @@ CopilotBot is a Microbots agent that delegates the entire agent loop to the **Gi
 pip install microbots[ghcp]
 ```
 
-This installs the `github-copilot-sdk` package alongside Microbots.
+This installs the `github-copilot-sdk` package (1.x) alongside Microbots.
 
 !!! note
-    You do **not** need to install `copilot-cli` on your host machine. Microbots automatically installs and runs it inside the Docker container during initialization.
+    You do **not** need to install `copilot-cli` on your host machine. Microbots automatically installs and runs it inside the Docker container during initialization, using the `copilot-cli` version that the pinned `github-copilot-sdk` release targets.
 
 ## Quick Start
 

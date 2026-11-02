@@ -167,7 +167,7 @@ jobs:
       - name: Install GitHub Copilot SDK dependencies for GHCP tests
         if: matrix.test-type == 'ghcp'
         run: |
-          pip install "github-copilot-sdk==0.3.0"
+          pip install -e ".[ghcp]"
 
       - name: Install Azure AD / keyless auth dependencies
         run: |
