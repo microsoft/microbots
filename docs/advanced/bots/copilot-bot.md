@@ -132,6 +132,22 @@ bot = CopilotBot(
 )
 ```
 
+#### Using `model_id` for custom deployment names
+
+copilot-cli adjusts its requests to the model, for example whether it sends `temperature` or `reasoning_effort`. It recognises the model by name. When a BYOK deployment has a custom name (common on Azure), set `model_id` to the model behind it. Otherwise the CLI falls back to generic defaults that reasoning models such as GPT-5 reject (`'temperature' does not support 0 with this model`):
+
+```python
+bot = CopilotBot(
+    model="my-gpt5-deployment",   # name sent to the provider
+    model_id="gpt-5",             # model behind the deployment
+    folder_to_mount="/path/to/project",
+    bearer_token=token,
+    base_url="https://my-resource.openai.azure.com",
+    provider_type="azure",
+    wire_api="responses",
+)
+```
+
 ### 3. BYOK — Bearer Token
 
 If your provider uses bearer token authentication instead of an API key:
@@ -181,6 +197,7 @@ export COPILOT_BYOK_BASE_URL="https://api.openai.com/v1"
 export COPILOT_BYOK_API_KEY="sk-your-key"
 export COPILOT_BYOK_PROVIDER_TYPE="openai"          # optional, defaults to "openai"
 export COPILOT_BYOK_MODEL="gpt-4.1"                 # optional, overrides the model param
+export COPILOT_BYOK_MODEL_ID="gpt-4.1"              # optional, model behind a custom deployment name
 export COPILOT_BYOK_WIRE_API="completions"           # optional
 export COPILOT_BYOK_AZURE_API_VERSION="2024-10-21"   # optional, for Azure only
 ```
@@ -225,6 +242,7 @@ When multiple auth methods are configured simultaneously, CopilotBot resolves th
 | `wire_api` | `str` | `None` | API format: `"completions"` or `"responses"`. |
 | `azure_api_version` | `str` | `None` | Azure API version (for `provider_type="azure"` only). |
 | `token_provider` | `Callable[[], str]` | `None` | Callable returning a bearer token string. |
+| `model_id` | `str` | `None` | BYOK only: the model behind a custom deployment name, e.g. `"gpt-5"`. Falls back to `COPILOT_BYOK_MODEL_ID`. See [Using `model_id`](#using-model_id-for-custom-deployment-names). |
 | `sudo_access` | `bool` | `False` | Give the agent passwordless `sudo` inside the sandbox. See [Sudo access](../sandbox-images.md#sudo-access). |
 | `image` | `str` | `None` | Shell-server image of the auto-created sandbox, e.g. `AZURELINUX_IMAGE`. See [Sandbox Images](../sandbox-images.md). |
 | `session_options` | `Mapping[str, Any]` | `None` | Extra keyword arguments forwarded to the SDK's `create_session` on every run. See [Copilot SDK session options](#copilot-sdk-session-options). |

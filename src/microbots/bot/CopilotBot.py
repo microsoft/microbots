@@ -146,6 +146,7 @@ _BYOK_ENV_BEARER_TOKEN = "COPILOT_BYOK_BEARER_TOKEN"
 _BYOK_ENV_WIRE_API = "COPILOT_BYOK_WIRE_API" # completions / responses
 _BYOK_ENV_AZURE_API_VERSION = "COPILOT_BYOK_AZURE_API_VERSION"
 _BYOK_ENV_MODEL = "COPILOT_BYOK_MODEL"
+_BYOK_ENV_MODEL_ID = "COPILOT_BYOK_MODEL_ID"
 
 
 def resolve_auth_config(
@@ -158,6 +159,7 @@ def resolve_auth_config(
     wire_api: Optional[str] = None,
     azure_api_version: Optional[str] = None,
     token_provider: Optional[Callable[[], str]] = None,
+    model_id: Optional[str] = None,
 ) -> tuple[str, Optional[str], Optional[dict]]:
     """Resolve authentication and provider configuration for CopilotBot.
 
@@ -193,6 +195,12 @@ def resolve_auth_config(
         token provider).  The token is fetched once at config resolution
         time.  For long-running sessions, create a new session with a
         refreshed token.
+    model_id : Optional[str]
+        Well-known model behind a BYOK deployment (e.g. ``"gpt-5"`` for an
+        Azure deployment named ``"my-gpt5"``).  copilot-cli uses it to pick
+        the model's prompts, tools, reasoning behaviour and token limits,
+        while ``model`` is still sent to the provider as the wire model.
+        Falls back to ``COPILOT_BYOK_MODEL_ID``.
 
     Returns
     -------
@@ -221,6 +229,8 @@ def resolve_auth_config(
             bearer_token=bearer_token,
             wire_api=wire_api,
             azure_api_version=azure_api_version,
+            model=model,
+            model_id=model_id or os.environ.get(_BYOK_ENV_MODEL_ID),
         )
         logger.info("🔑 BYOK auth resolved via explicit credentials (type=%s)", provider["type"])
         return model, None, provider
@@ -239,6 +249,8 @@ def resolve_auth_config(
             bearer_token=env_bearer_token,
             wire_api=os.environ.get(_BYOK_ENV_WIRE_API),
             azure_api_version=os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
+            model=env_model,
+            model_id=model_id or os.environ.get(_BYOK_ENV_MODEL_ID),
         )
         logger.info("🔑 BYOK auth resolved via environment variables (type=%s)", provider["type"])
         return env_model, None, provider
@@ -275,15 +287,18 @@ def resolve_auth_config(
         if not isinstance(token, str) or not token:
             raise ValueError("token_provider must return a non-empty string token.")
 
+        resolved_model = os.environ.get(_BYOK_ENV_MODEL, model)
         provider = _build_provider_config(
             provider_type=provider_type or os.environ.get(_BYOK_ENV_PROVIDER_TYPE, "openai"),
             base_url=resolved_url,
             bearer_token=token,
             wire_api=wire_api or os.environ.get(_BYOK_ENV_WIRE_API),
             azure_api_version=azure_api_version or os.environ.get(_BYOK_ENV_AZURE_API_VERSION),
+            model=resolved_model,
+            model_id=model_id or os.environ.get(_BYOK_ENV_MODEL_ID),
         )
         logger.info("🔑 BYOK auth resolved via token_provider (type=%s)", provider["type"])
-        return os.environ.get(_BYOK_ENV_MODEL, model), None, provider
+        return resolved_model, None, provider
 
     # ── 4. Native GitHub Copilot auth ────────────────────────────────
     resolved_github_token = (
@@ -304,6 +319,8 @@ def _build_provider_config(
     bearer_token: Optional[str] = None,
     wire_api: Optional[str] = None,
     azure_api_version: Optional[str] = None,
+    model: Optional[str] = None,
+    model_id: Optional[str] = None,
 ) -> dict:
     """Build the ``provider`` dict accepted by ``create_session``."""
     config: dict = {
@@ -321,6 +338,12 @@ def _build_provider_config(
 
     if provider_type == "azure" and azure_api_version:
         config["azure"] = {"api_version": azure_api_version}
+
+    if model_id:
+        config["model_id"] = model_id
+        # The CLI sends model_id on the wire unless wire_model is set.
+        if model:
+            config["wire_model"] = model
 
     return config
 
@@ -371,6 +394,12 @@ class CopilotBot:
     token_provider : Optional[Callable[[], str]]
         A callable returning a bearer token (e.g. Azure AD token
         provider).  Requires ``base_url``.
+    model_id : Optional[str]
+        For BYOK, the well-known model behind a custom deployment name
+        (e.g. ``"gpt-5"`` for a deployment named ``"my-gpt5"``), so
+        copilot-cli applies that model's request settings such as reasoning
+        and temperature.  ``model`` is still the name sent to the provider.
+        Falls back to ``COPILOT_BYOK_MODEL_ID``.
     sudo_access : bool
         Give the agent passwordless ``sudo`` inside the sandbox.  Needed by
         tools such as ``mock``.  Commands still run as the host user unless
@@ -412,6 +441,7 @@ class CopilotBot:
         wire_api: Optional[str] = None,
         azure_api_version: Optional[str] = None,
         token_provider: Optional[Callable[[], str]] = None,
+        model_id: Optional[str] = None,
         sudo_access: bool = False,
         image: Optional[str] = None,
         session_options: Optional[Mapping[str, Any]] = None,
@@ -470,6 +500,7 @@ class CopilotBot:
             wire_api=wire_api,
             azure_api_version=azure_api_version,
             token_provider=token_provider,
+            model_id=model_id,
         )
 
         # ── Mount setup ─────────────────────────────────────────────

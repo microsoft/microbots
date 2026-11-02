@@ -484,6 +484,60 @@ class TestResolveAuthConfig:
         )
         assert provider["wire_api"] == "responses"
 
+    def test_model_id_absent_by_default(self, monkeypatch):
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.delenv("COPILOT_BYOK_MODEL_ID", raising=False)
+        _, _, provider = resolve_auth_config(
+            model="my-deployment", api_key="key", base_url="https://endpoint.com/v1"
+        )
+        assert "model_id" not in provider
+        assert "wire_model" not in provider
+
+    def test_model_id_sets_wire_model_to_deployment(self):
+        """``model_id`` names the model for the CLI; the deployment stays the wire model."""
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        model, _, provider = resolve_auth_config(
+            model="my-gpt5-deployment",
+            api_key="key",
+            base_url="https://endpoint.com/v1",
+            model_id="gpt-5",
+        )
+        assert model == "my-gpt5-deployment"
+        assert provider["model_id"] == "gpt-5"
+        assert provider["wire_model"] == "my-gpt5-deployment"
+
+    def test_model_id_from_env_with_env_credentials(self, monkeypatch):
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        monkeypatch.setenv("COPILOT_BYOK_BASE_URL", "https://env-endpoint.com/v1")
+        monkeypatch.setenv("COPILOT_BYOK_API_KEY", "env-key")
+        monkeypatch.setenv("COPILOT_BYOK_MODEL", "env-deployment")
+        monkeypatch.setenv("COPILOT_BYOK_MODEL_ID", "gpt-5")
+
+        model, _, provider = resolve_auth_config(model="gpt-4.1")
+        assert model == "env-deployment"
+        assert provider["model_id"] == "gpt-5"
+        assert provider["wire_model"] == "env-deployment"
+
+    def test_model_id_with_token_provider(self, monkeypatch):
+        from microbots.bot.CopilotBot import resolve_auth_config
+
+        for var in ("COPILOT_BYOK_BASE_URL", "COPILOT_BYOK_API_KEY",
+                    "COPILOT_BYOK_BEARER_TOKEN", "COPILOT_BYOK_MODEL", "COPILOT_BYOK_MODEL_ID"):
+            monkeypatch.delenv(var, raising=False)
+        model, _, provider = resolve_auth_config(
+            model="my-deployment",
+            base_url="https://endpoint.com/v1",
+            token_provider=lambda: "token",
+            model_id="gpt-5",
+        )
+        assert model == "my-deployment"
+        assert provider["bearer_token"] == "token"
+        assert provider["model_id"] == "gpt-5"
+        assert provider["wire_model"] == "my-deployment"
+
     def test_env_vars_resolve_byok(self, monkeypatch):
         from microbots.bot.CopilotBot import resolve_auth_config
 
@@ -691,6 +745,28 @@ class TestCopilotBotBYOKInit:
             assert bot._provider_config is not None
             assert bot._provider_config["bearer_token"] == "ad-token-xyz"
             assert bot.github_token is None
+            bot.stop()
+
+    def test_byok_model_id_forwarded_to_provider_config(self, mock_environment, mock_copilot_client):
+        with (
+            patch("microbots.bot.CopilotBot.LocalDockerEnvironment", return_value=mock_environment),
+            patch("microbots.bot.CopilotBot.get_free_port", side_effect=[9000]),
+            patch("microbots.bot.CopilotBot.CopilotBot._install_copilot_cli"),
+            patch("microbots.bot.CopilotBot.CopilotBot._start_copilot_cli_server"),
+            patch("microbots.bot.CopilotBot.CopilotBot._wait_for_cli_ready"),
+            patch("copilot.CopilotClient", return_value=mock_copilot_client),
+            patch("copilot.UriRuntimeConnection", return_value=MagicMock()),
+        ):
+            from microbots.bot.CopilotBot import CopilotBot
+            bot = CopilotBot(
+                model="my-gpt5-deployment",
+                environment=mock_environment,
+                api_key="sk-byok-key",
+                base_url="https://api.openai.com/v1",
+                model_id="gpt-5",
+            )
+            assert bot._provider_config["model_id"] == "gpt-5"
+            assert bot._provider_config["wire_model"] == "my-gpt5-deployment"
             bot.stop()
 
     def test_native_auth_has_no_provider_config(self, copilot_bot):
