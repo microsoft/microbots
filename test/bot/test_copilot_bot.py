@@ -532,7 +532,7 @@ class TestCopilotBotCLIInstall:
             patch("copilot.CopilotClient", return_value=AsyncMock()),
             patch("copilot.ExternalServerConfig", return_value=MagicMock()),
         ):
-            with pytest.raises(RuntimeError, match="Failed to install copilot-cli"):
+            with pytest.raises(RuntimeError, match="Failed to install tool copilot-cli"):
                 CopilotBot(
                     model="gpt-4.1",
                     environment=mock_environment,
@@ -968,7 +968,7 @@ class TestCopilotBotCLIVerification:
             patch("copilot.CopilotClient", return_value=AsyncMock()),
             patch("copilot.ExternalServerConfig", return_value=MagicMock()),
         ):
-            with pytest.raises(RuntimeError, match="verification failed"):
+            with pytest.raises(RuntimeError, match="Failed to verify installation of tool copilot-cli"):
                 CopilotBot(
                     model="gpt-4.1",
                     environment=mock_environment,
@@ -1845,6 +1845,7 @@ class TestCopilotBotImage:
         [
             (["debian"], "rm -f /etc/apt/sources.list.d/yarn.list"),
             (["ubuntu", "debian"], "rm -f /etc/apt/sources.list.d/yarn.list"),
+            # Unknown distro: the tool falls back to its first entry (Debian).
             ([], "rm -f /etc/apt/sources.list.d/yarn.list"),
             (["azurelinux"], "tdnf install -y curl ca-certificates tar xz > /dev/null"),
         ],
@@ -1861,19 +1862,21 @@ class TestCopilotBotImage:
 
         commands = [c.args[0] for c in mock_environment.execute_privileged.call_args_list]
         assert commands[0] == first_command
-        assert commands[-1] == f"npm install -g {bot_module._COPILOT_CLI_PACKAGE} > /dev/null 2>&1"
+        assert commands[-1] == "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1"
         if ids == ["azurelinux"]:
             assert "sha256sum -c" in commands[1] and "latest-v22.x" in commands[1]
+        mock_environment.execute.assert_called_once_with("copilot --version")
 
     def test_copilot_cli_install_rejects_unsupported_distro(self, mock_environment):
         import importlib
+        from microbots.tools.tool import UnsupportedDistroError
 
         bot_module = importlib.import_module("microbots.bot.CopilotBot")
         bot = bot_module.CopilotBot.__new__(bot_module.CopilotBot)
         bot.environment = mock_environment
         mock_environment.get_distro_ids = MagicMock(return_value=["alpine"])
 
-        with pytest.raises(RuntimeError, match="cannot install copilot-cli on distro alpine"):
+        with pytest.raises(UnsupportedDistroError, match="no install commands for distro alpine"):
             bot._install_copilot_cli()
         mock_environment.execute_privileged.assert_not_called()
 

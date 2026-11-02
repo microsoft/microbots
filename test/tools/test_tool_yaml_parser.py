@@ -82,6 +82,23 @@ class TestParseToolDefinitionValidYaml:
         # azldev runs as the agent, so it needs no root override.
         assert not any("AZLDEV_ALLOW_ROOT" in c for c in azl + deb)
 
+    def test_copilot_cli_yaml_installs_node_and_pinned_cli_per_distro(self):
+        from microbots.tools.tool import UnsupportedDistroError
+
+        tool = parse_tool_definition("copilot-cli.yaml")
+        assert isinstance(tool, Tool)
+        # Infrastructure for CopilotBot: nothing is added to the model's prompt.
+        assert tool.usage_instructions_to_llm == ""
+        assert list(tool.install_commands) == ["debian", "azurelinux"]
+        cli = "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1"
+        for distro in ("debian", "azurelinux"):
+            assert tool.resolve_commands("install", [distro])[-1] == cli
+        assert "nodesource.com/setup_22.x" in " ".join(tool.resolve_commands("install", ["debian"]))
+        assert "sha256sum -c" in " ".join(tool.resolve_commands("install", ["azurelinux"]))
+        assert tool.resolve_commands("verify", ["azurelinux"]) == ["copilot --version"]
+        with pytest.raises(UnsupportedDistroError):
+            tool.resolve_commands("install", ["alpine"])
+
     def test_parse_absolute_path(self, tmp_path):
         """Test parsing with absolute path works correctly."""
         yaml_content = """

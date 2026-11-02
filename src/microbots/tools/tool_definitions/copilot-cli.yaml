@@ -1,0 +1,40 @@
+name: copilot-cli
+tool_type: internal
+description: GitHub Copilot CLI, which CopilotBot runs as a headless server inside the sandbox.
+
+# Infrastructure for CopilotBot rather than a tool for the model: CopilotBot installs
+# it itself before starting the server, so it is never passed as an additional tool
+# and has no usage instructions.
+usage_instructions_to_llm: ""
+
+# copilot-cli needs Node.js 22+. Keep the CLI version in step with the
+# github-copilot-sdk version pinned by the `ghcp` extra in pyproject.toml:
+# 1.0.39 is the latest @github/copilot release compatible with
+# github-copilot-sdk==0.3.0 (as of May 2026).
+install_commands:
+  debian:
+    # Remove stale third-party repos that may have expired GPG keys.
+    - rm -f /etc/apt/sources.list.d/yarn.list
+    - apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null 2>&1
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
+    - apt-get install -y -qq nodejs > /dev/null 2>&1
+    - &install_cli "npm install -g @github/copilot@1.0.39 > /dev/null 2>&1"
+  azurelinux:
+    - tdnf install -y curl ca-certificates tar xz > /dev/null
+    # Azure Linux 3 only packages Node.js 20: install the official Node.js 22
+    # build, verified against the release's SHASUMS256.txt.
+    - |
+      set -e
+      base=https://nodejs.org/dist/latest-v22.x
+      case "$(uname -m)" in x86_64) arch=x64;; aarch64) arch=arm64;; *) arch=$(uname -m);; esac
+      cd /tmp
+      curl -fsSL "$base/SHASUMS256.txt" -o SHASUMS256.txt
+      tarball=$(grep -o "node-v22[^ ]*-linux-$arch.tar.xz" SHASUMS256.txt | head -1)
+      curl -fsSL "$base/$tarball" -o "$tarball"
+      grep " $tarball\$" SHASUMS256.txt | sha256sum -c - > /dev/null
+      tar -xJf "$tarball" -C /usr/local --strip-components=1 --no-same-owner
+      rm -f "$tarball" SHASUMS256.txt
+    - *install_cli
+
+verify_commands:
+  - copilot --version

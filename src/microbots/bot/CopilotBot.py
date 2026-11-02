@@ -10,8 +10,9 @@ CopilotBot reuses the Microbots infrastructure:
   - Docker sandbox (LocalDockerEnvironment) for isolated execution
   - Mount system for folder access control
   - ToolAbstract lifecycle (install → verify → setup) for additional tools
-  - copilot-cli is installed **inside** the container and run in headless
-    server mode; the SDK on the host connects to it via TCP.
+  - copilot-cli is installed **inside** the container (from the
+    ``copilot-cli.yaml`` tool definition) and run in headless server mode;
+    the SDK on the host connects to it via TCP.
 
 Architecture:
 
@@ -54,6 +55,7 @@ from microbots.extras.mount import Mount, MountType
 from microbots.MicroBot import BotRunResult
 from microbots.tools.external_tool import ExternalTool
 from microbots.tools.tool import ToolAbstract
+from microbots.tools.tool_yaml_parser import parse_tool_definition
 from microbots.utils.copilot_auth import get_copilot_token
 from microbots.utils.network import get_free_port  # still used for _create_environment
 
@@ -131,31 +133,9 @@ def _validate_session_options(
     return dict(session_options)
 
 
-# copilot-cli needs Node.js 22+; how to get it differs per sandbox distro.
-# NOTE: Pinning to 1.0.39 which is the latest @github/copilot release compatible with github-copilot-sdk==0.3.0 as of May 2026.
-_COPILOT_CLI_PACKAGE = "@github/copilot@1.0.39"
-_NODE_INSTALL_COMMANDS = {
-    "debian": [
-        # Remove stale third-party repos that may have expired GPG keys
-        "rm -f /etc/apt/sources.list.d/yarn.list",
-        "apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null 2>&1",
-        "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1",
-        "apt-get install -y -qq nodejs > /dev/null 2>&1",
-    ],
-    # Azure Linux 3 only packages Node.js 20: install the official Node.js 22
-    # build, verified against the release's SHASUMS256.txt.
-    "azurelinux": [
-        "tdnf install -y curl ca-certificates tar xz > /dev/null",
-        "set -e; base=https://nodejs.org/dist/latest-v22.x; "
-        "case \"$(uname -m)\" in x86_64) arch=x64;; aarch64) arch=arm64;; *) arch=$(uname -m);; esac; "
-        "cd /tmp; curl -fsSL \"$base/SHASUMS256.txt\" -o SHASUMS256.txt; "
-        "tarball=$(grep -o \"node-v22[^ ]*-linux-$arch.tar.xz\" SHASUMS256.txt | head -1); "
-        "curl -fsSL \"$base/$tarball\" -o \"$tarball\"; "
-        "grep \" $tarball\\$\" SHASUMS256.txt | sha256sum -c - > /dev/null; "
-        "tar -xJf \"$tarball\" -C /usr/local --strip-components=1 --no-same-owner; "
-        "rm -f \"$tarball\" SHASUMS256.txt",
-    ],
-}
+# copilot-cli (with its Node.js runtime) is installed from this tool definition,
+# which holds the per-distro install commands and the pinned CLI version.
+_COPILOT_CLI_TOOL = "copilot-cli.yaml"
 
 
 # Environment variable names for BYOK configuration
@@ -674,54 +654,23 @@ class CopilotBot:
         )
 
     def _install_copilot_cli(self):
-        """Install copilot-cli inside the Docker container."""
-        logger.info("📦 Installing copilot-cli inside container...")
+        """Install copilot-cli inside the container from ``copilot-cli.yaml``.
 
-        install_commands = [
-            *self._node_install_commands(),
-            f"npm install -g {_COPILOT_CLI_PACKAGE} > /dev/null 2>&1",
-        ]
-
-        for cmd in install_commands:
-            result = self.environment.execute_privileged(cmd, timeout=300)
-            if result.return_code != 0:
-                raise RuntimeError(
-                    f"Failed to install copilot-cli: {cmd}\n"
-                    f"stdout: {result.stdout}\nstderr: {result.stderr}"
-                )
-
-        # Verify installation
-        verify = self.environment.execute("copilot --version")
-        if verify.return_code != 0:
-            raise RuntimeError(
-                f"copilot-cli installation verification failed: {verify.stderr}"
-            )
-        logger.info("✅ copilot-cli installed: %s", verify.stdout.strip())
-
-    def _node_install_commands(self) -> list[str]:
-        """Return the commands that install Node.js 22+ on the sandbox's distro.
-
-        Returns
-        -------
-        list[str]
-            Commands for the first supported distro ID (``ID`` then
-            ``ID_LIKE``); Debian's when the distro cannot be detected.
+        The tool definition picks the Node.js install for the sandbox's distro
+        (from its ``/etc/os-release``) and pins the CLI version.
 
         Raises
         ------
         RuntimeError
-            If the sandbox runs a detected but unsupported distro.
+            If installation or ``copilot --version`` fails, or (as
+            ``UnsupportedDistroError``) if the sandbox runs a detected but
+            unsupported distro.
         """
-        ids = list(self.environment.get_distro_ids())
-        for distro_id in ids:
-            if distro_id in _NODE_INSTALL_COMMANDS:
-                return _NODE_INSTALL_COMMANDS[distro_id]
-        if not ids:
-            return _NODE_INSTALL_COMMANDS["debian"]
-        raise RuntimeError(
-            f"CopilotBot cannot install copilot-cli on distro {'/'.join(ids)}; "
-            f"supported: {sorted(_NODE_INSTALL_COMMANDS)}."
-        )
+        logger.info("📦 Installing copilot-cli inside container...")
+        tool = parse_tool_definition(_COPILOT_CLI_TOOL)
+        tool.install_tool(self.environment)
+        tool.verify_tool_installation(self.environment)
+        logger.info("✅ copilot-cli installed")
 
     def _start_copilot_cli_server(self):
         """Start copilot-cli in headless server mode inside the container.
