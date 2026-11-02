@@ -30,6 +30,9 @@ class AgentBoss(MicroBot):
     image : Optional[str]
         Shell-server image of the auto-created environment, for example
         ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
+    sudo_access : bool
+        Give the sandbox's agent account passwordless ``sudo`` (needed by
+        tools such as ``mock``). Defaults to False.
 
     Workflow
     --------
@@ -49,6 +52,7 @@ class AgentBoss(MicroBot):
         environment: Optional[any] = None,
         additional_tools: Optional[list[ToolAbstract]] = None,
         image: Optional[str] = None,
+        sudo_access: bool = False,
     ):
         """
         Create the bot with the ``microbot_sub`` tool and the repository mounted read-write.
@@ -67,6 +71,9 @@ class AgentBoss(MicroBot):
         image : Optional[str]
             Shell-server image of the auto-created environment, for example
             ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
+        sudo_access : bool
+            Give the sandbox's agent account passwordless ``sudo`` (needed by
+            tools such as ``mock``). Defaults to False.
         """
         if additional_tools is None:
             additional_tools = []
@@ -123,6 +130,7 @@ microbot_sub --task "<task description>" --iterations <max_iterations> --timeout
             additional_tools=additional_tools,
             folder_to_mount=folder_mount_info,
             image=image,
+            sudo_access=sudo_access,
         )
 
     def run(

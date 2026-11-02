@@ -225,6 +225,7 @@ When multiple auth methods are configured simultaneously, CopilotBot resolves th
 | `wire_api` | `str` | `None` | API format: `"completions"` or `"responses"`. |
 | `azure_api_version` | `str` | `None` | Azure API version (for `provider_type="azure"` only). |
 | `token_provider` | `Callable[[], str]` | `None` | Callable returning a bearer token string. |
+| `sudo_access` | `bool` | `False` | Give the agent passwordless `sudo` inside the sandbox. See [Sudo access](../sandbox-images.md#sudo-access). |
 
 ### `run()` method
 

@@ -583,6 +583,7 @@ class TestPrivilegedControlChannel:
 
     def test_start_restricts_container_privileges_and_published_port(self, env):
         env.image = "test_image"
+        env.sudo_access = False
         env.working_dir = "/tmp/test_workdir"
         env.folder_to_mount = None
         env.port = 12345
@@ -612,6 +613,7 @@ class TestPrivilegedControlChannel:
     @pytest.mark.parametrize("failing", ["_prepare_shell_server", "_launch_shell_server"])
     def test_start_stops_container_when_shell_server_setup_fails(self, env, failing):
         env.image = "test_image"
+        env.sudo_access = False
         env.working_dir = "/tmp/test_workdir"
         env.folder_to_mount = None
         env.port = 12345
@@ -765,6 +767,7 @@ class TestShellServerPreparation:
         env = LocalDockerEnvironment.__new__(LocalDockerEnvironment)
         env.deleted = True
         env.image = "mcr.example/stock:1"
+        env.sudo_access = False
         env.port = 12345
         env.container_port = 8080
         env.container = Mock()
@@ -790,11 +793,14 @@ class TestShellServerPreparation:
         assert members["shell_server/prepare.sh"].mode == 0o755
         assert members["shell_server/dockerShell.py"].mode == 0o644
 
-    @pytest.mark.parametrize("identity, prefix", [
-        ({}, ""),
-        ({"AGENT_UID": "2001", "AGENT_GID": "2002"}, "AGENT_UID=2001 AGENT_GID=2002 "),
+    @pytest.mark.parametrize("identity, sudo_access, prefix", [
+        ({}, False, ""),
+        ({"AGENT_UID": "2001", "AGENT_GID": "2002"}, False, "AGENT_UID=2001 AGENT_GID=2002 "),
+        ({}, True, "AGENT_SUDO=1 "),
+        ({"AGENT_UID": "2001", "AGENT_GID": "2002"}, True, "AGENT_UID=2001 AGENT_GID=2002 AGENT_SUDO=1 "),
     ])
-    def test_prepare_copies_server_and_runs_prepare_script_as_root(self, env, identity, prefix):
+    def test_prepare_copies_server_and_runs_prepare_script_as_root(self, env, identity, sudo_access, prefix):
+        env.sudo_access = sudo_access
         with patch.object(env, "_host_identity", return_value=identity):
             env._prepare_shell_server()
 
@@ -846,3 +852,117 @@ class TestShellServerPreparation:
              patch("microbots.environment.local_docker.LocalDockerEnvironment.time.monotonic", side_effect=lambda: next(clock)):
             with pytest.raises(RuntimeError, match="did not start within 120s(.|\n)*Traceback: boom"):
                 env._launch_shell_server()
+
+
+@pytest.mark.unit
+class TestSudoAccess:
+    """Unit tests for the opt-in passwordless sudo mode."""
+
+    @pytest.fixture
+    def env(self):
+        env = LocalDockerEnvironment.__new__(LocalDockerEnvironment)
+        env.deleted = True
+        env.image = "test_image"
+        env.sudo_access = True
+        env.working_dir = "/tmp/test_workdir"
+        env.folder_to_mount = None
+        env.port = 12345
+        env.container_port = 8080
+        env.client = Mock()
+        env.client.containers.run.return_value.id = "test_container"
+        env.container = Mock()
+        env.overlay_mount = False
+        env.execute = Mock(return_value=CmdReturn("", "", 0))
+        env.execute_privileged = Mock(return_value=CmdReturn("", "", 0))
+        return env
+
+    def test_start_allows_privilege_escalation_and_verifies_sudo(self, env):
+        with patch.object(env, "_verify_sudo_access") as verify, \
+             patch.object(env, "_prepare_shell_server"), \
+             patch.object(env, "_launch_shell_server"):
+            env.start()
+
+        # sudo and setuid helpers need no-new-privileges off; everything else is unchanged.
+        kwargs = env.client.containers.run.call_args.kwargs
+        assert kwargs["security_opt"] == ["apparmor=unconfined"]
+        assert kwargs["cap_add"] == ["SYS_ADMIN"]
+        verify.assert_called_once_with()
+
+    def test_start_without_sudo_keeps_no_new_privileges_and_skips_check(self, env):
+        env.sudo_access = False
+        with patch.object(env, "_verify_sudo_access") as verify, \
+             patch.object(env, "_prepare_shell_server"), \
+             patch.object(env, "_launch_shell_server"):
+            env.start()
+
+        assert env.client.containers.run.call_args.kwargs["security_opt"] == [
+            "no-new-privileges:true", "apparmor=unconfined"
+        ]
+        verify.assert_not_called()
+
+    def test_shell_server_never_gets_a_root_flag(self, env):
+        # The shell always drops to the agent account; sudo is configured by prepare.sh.
+        with patch.object(env, "_host_identity", return_value={}):
+            assert env._shell_server_environment() == {"BOT_PORT": "8080", "BOT_WORKDIR": DOCKER_WORKING_DIR}
+
+    def test_init_defaults_to_no_sudo(self):
+        with patch.object(LocalDockerEnvironment, "_create_working_dir"), \
+             patch.object(LocalDockerEnvironment, "start"), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.docker"):
+            env = LocalDockerEnvironment(port=1234)
+            env.deleted = True
+        assert env.sudo_access is False
+
+    def test_init_warns_but_allows_read_only_mount(self, tmp_path, caplog):
+        mount = Mount(str(tmp_path), f"{DOCKER_WORKING_DIR}/repo", "READ_ONLY")
+        with patch.object(LocalDockerEnvironment, "_create_working_dir"), \
+             patch.object(LocalDockerEnvironment, "start") as start, \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.docker"), \
+             caplog.at_level(logging.WARNING):
+            env = LocalDockerEnvironment(port=1234, folder_to_mount=mount, sudo_access=True)
+            env.deleted = True
+        start.assert_called_once_with()
+        assert env.sudo_access is True
+        assert caplog.text.count("sudo_access=True with a READ_ONLY mount") == 1
+        assert str(tmp_path) in caplog.text
+
+    @pytest.mark.parametrize("sudo_access, permission", [(False, "READ_ONLY"), (True, "READ_WRITE")])
+    def test_init_no_read_only_warning_otherwise(self, tmp_path, caplog, sudo_access, permission):
+        mount = Mount(str(tmp_path), f"{DOCKER_WORKING_DIR}/repo", permission)
+        with patch.object(LocalDockerEnvironment, "_create_working_dir"), \
+             patch.object(LocalDockerEnvironment, "start"), \
+             patch("microbots.environment.local_docker.LocalDockerEnvironment.docker"), \
+             caplog.at_level(logging.WARNING):
+            env = LocalDockerEnvironment(port=1234, folder_to_mount=mount, sudo_access=sudo_access)
+            env.deleted = True
+        assert "READ_ONLY mount" not in caplog.text
+
+    def test_verify_sudo_access_accepts_passwordless_sudo(self, env, caplog):
+        with caplog.at_level(logging.WARNING):
+            env._verify_sudo_access()
+
+        env.execute.assert_called_once_with("sudo -n true")
+        assert "Sudo access enabled" in caplog.text
+
+    @pytest.mark.parametrize("result, shown", [
+        (CmdReturn("", "sudo: a password is required", 1), "sudo: a password is required"),
+        (CmdReturn("", "", 127), "unknown error"),
+    ])
+    def test_verify_sudo_access_stops_and_raises_when_sudo_fails(self, env, result, shown):
+        env.execute.return_value = result
+        env.stop = Mock()
+
+        with pytest.raises(RuntimeError, match=f"cannot use sudo in image 'test_image': {shown}"):
+            env._verify_sudo_access()
+
+        env.stop.assert_called_once_with()
+
+    def test_stop_does_not_change_file_ownership(self, env, tmp_path):
+        env.working_dir = str(tmp_path / "missing")
+        container = env.container
+
+        env.stop()
+
+        assert not any("chown" in str(c) for c in env.execute_privileged.call_args_list)
+        container.stop.assert_called_once_with()
+        container.remove.assert_called_once_with()

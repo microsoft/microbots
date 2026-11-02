@@ -31,6 +31,9 @@ class WritingBot(MicroBot):
     image : Optional[str]
         Shell-server image of the auto-created environment, for example
         ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
+    sudo_access : bool
+        Give the sandbox's agent account passwordless ``sudo`` (needed by
+        tools such as ``mock``). Defaults to False.
     """
 
     def __init__(
@@ -41,6 +44,7 @@ class WritingBot(MicroBot):
         additional_tools: Optional[list[ToolAbstract]] = None,
         token_provider: Optional[any] = None,
         image: Optional[str] = None,
+        sudo_access: bool = False,
     ):
         """
         Create the bot with the repository mounted read-write.
@@ -62,6 +66,9 @@ class WritingBot(MicroBot):
         image : Optional[str]
             Shell-server image of the auto-created environment, for example
             ``images.AZURELINUX_IMAGE``. Defaults to None (Debian image).
+        sudo_access : bool
+            Give the sandbox's agent account passwordless ``sudo`` (needed by
+            tools such as ``mock``). Defaults to False.
         """
         # validate init values before assigning
         bot_type = BotType.WRITING_BOT
@@ -95,4 +102,5 @@ class WritingBot(MicroBot):
             folder_to_mount=folder_mount_info,
             token_provider=token_provider,
             image=image,
+            sudo_access=sudo_access,
         )
