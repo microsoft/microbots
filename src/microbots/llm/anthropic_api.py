@@ -164,15 +164,25 @@ class AnthropicApi(LLMInterface):
                 The model's tool calls, or its final answer when it calls none.
         """
         self.messages.append({"role": "user", "content": user_content})
-        response = self.ai_client.messages.create(
-            model=self.deployment_name,
-            system=self.system_prompt,
-            messages=self.messages,
-            tools=self.tools,
-            max_tokens=MAX_TOKENS,
+        request = {
+            "model": self.deployment_name,
+            "system": self.system_prompt,
+            "messages": self.messages,
+            "tools": self.tools,
+            "max_tokens": MAX_TOKENS,
             # Automatic prompt caching; this SDK version has no named parameter for it.
-            extra_body={"cache_control": {"type": "ephemeral"}},
-        )
+            "extra_body": {"cache_control": {"type": "ephemeral"}},
+        }
+        try:
+            response = self.ai_client.messages.create(**request)
+        except Exception as error:
+            status_code = getattr(error, "status_code", None)
+            if status_code is None:
+                status_code = getattr(getattr(error, "response", None), "status_code", None)
+            if not self.token_provider or status_code != 404:
+                raise
+            self.token_provider()
+            response = self.ai_client.messages.create(**request)
         usage = response.usage
         logger.info(
             "Anthropic token usage: input=%s cache_read=%s cache_write=%s output=%s",
