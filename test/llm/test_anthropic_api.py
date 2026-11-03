@@ -159,6 +159,51 @@ class TestAnthropicApiConversation:
         assert request["extra_body"] == {"cache_control": {"type": "ephemeral"}}
         assert api.messages[0] == {"role": "user", "content": [{"type": "text", "text": "Fix the bug"}]}
 
+    def test_404_refreshes_token_and_retries_once(self):
+        token_provider = Mock(return_value="refreshed-token")
+        not_found = Exception("Not Found")
+        not_found.status_code = 404
+
+        with patch("microbots.llm.anthropic_api.api_key", None), \
+             patch("microbots.llm.anthropic_api.AnthropicFoundry"):
+            api = make_api(token_provider=token_provider)
+
+        api.ai_client.messages.create = Mock(
+            side_effect=[not_found, make_response(text_block("Done."))]
+        )
+
+        result = api.ask("Fix the bug")
+
+        assert result.task_done is True
+        assert api.ai_client.messages.create.call_count == 2
+        assert token_provider.call_count == 2
+
+    def test_404_without_token_provider_is_not_retried(self):
+        not_found = Exception("Not Found")
+        not_found.status_code = 404
+        api = make_api()
+        api.ai_client.messages.create = Mock(side_effect=not_found)
+
+        with pytest.raises(Exception, match="Not Found"):
+            api.ask("Fix the bug")
+
+        api.ai_client.messages.create.assert_called_once()
+
+    def test_non_404_with_token_provider_is_not_retried(self):
+        token_provider = Mock(return_value="token")
+        with patch("microbots.llm.anthropic_api.api_key", None), \
+             patch("microbots.llm.anthropic_api.AnthropicFoundry"):
+            api = make_api(token_provider=token_provider)
+        forbidden = Exception("Forbidden")
+        forbidden.status_code = 403
+        api.ai_client.messages.create = Mock(side_effect=forbidden)
+
+        with pytest.raises(Exception, match="Forbidden"):
+            api.ask("Fix the bug")
+
+        api.ai_client.messages.create.assert_called_once()
+        token_provider.assert_called_once()
+
     def test_ask_returns_the_tool_calls(self):
         api = make_api()
         api.ai_client.messages.create = Mock(return_value=make_response(
